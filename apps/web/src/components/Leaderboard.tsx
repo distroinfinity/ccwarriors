@@ -111,7 +111,7 @@ export function Leaderboard({
         </div>
         <div className="live">
           <span className="dot" />
-          {connected ? "live · updates every ~2.5s" : "reconnecting…"}
+          {connected ? "live" : "reconnecting…"}
         </div>
       </div>
 

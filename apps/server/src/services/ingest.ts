@@ -5,7 +5,7 @@ import { hashToken } from "../lib/token.js";
 import { computeTier } from "../lib/tier.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 
-export const MIN_SYNC_INTERVAL_MS = 60_000;
+export const MIN_SYNC_INTERVAL_MS = 10_000;
 export const SANITY_CAP = 1_000_000;
 
 export interface IngestPayload {

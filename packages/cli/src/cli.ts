@@ -23,6 +23,7 @@ ${bold("USAGE")}
   ccwarriors login      Authenticate with GitHub
   ccwarriors logout     Remove stored credentials
   ccwarriors whoami     Show the currently enlisted login
+  ccwarriors watch [seconds]         Live mode — re-sync every N seconds (default 30, min 10)
   ccwarriors autosync on [minutes]   Keep your rank fresh automatically (default: every 60 min)
   ccwarriors autosync off            Stop the scheduled sync
   ccwarriors autosync status         Show whether autosync is enabled
@@ -63,6 +64,25 @@ interface IngestResponse {
   rankAllTime?: number | null;
 }
 
+async function postIngest(
+  token: string,
+  payload: { cost30d: number; costAllTime: number; ccusageVersion?: string },
+): Promise<{ status: number; data?: IngestResponse; text: string }> {
+  const res = await fetch(`${API_BASE}/ingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let data: IngestResponse | undefined;
+  try {
+    data = JSON.parse(text) as IngestResponse;
+  } catch {
+    /* non-JSON error body */
+  }
+  return { status: res.status, data, text };
+}
+
 async function cmdSync(): Promise<void> {
   let config = await loadConfig();
 
@@ -78,52 +98,35 @@ async function cmdSync(): Promise<void> {
   console.log(dim(`  all-time cost: $${costAllTime}`));
   console.log(dim("Syncing with Claude Warriors…"));
 
-  const body = JSON.stringify({
-    cost30d,
-    costAllTime,
-    ...(ccusageVersion ? { ccusageVersion } : {}),
-  });
-
-  let res: Response;
+  let result: Awaited<ReturnType<typeof postIngest>>;
   try {
-    res = await fetch(`${API_BASE}/ingest`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.token}`,
-      },
-      body,
+    result = await postIngest(config.token, {
+      cost30d,
+      costAllTime,
+      ...(ccusageVersion ? { ccusageVersion } : {}),
     });
   } catch (err) {
     console.error(red("Network error — could not reach the API."), err);
     process.exit(1);
   }
 
-  if (res.status === 401) {
+  if (result.status === 401) {
     await clearConfig();
     console.error(red("Token invalid or expired. Run `ccwarriors login` to re-authenticate."));
     process.exit(1);
   }
 
-  if (res.status === 429) {
-    console.error(yellow("Syncing too fast — try again in a minute."));
+  if (result.status === 429) {
+    console.error(yellow("Syncing too fast — try again in ~10 seconds."));
     process.exit(1);
   }
 
-  const text = await res.text();
-
-  if (!res.ok) {
-    console.error(red(`API error (${res.status}):`), text);
+  if (result.status < 200 || result.status >= 300 || !result.data) {
+    console.error(red(`API error (${result.status}):`), result.text);
     process.exit(1);
   }
 
-  let data: IngestResponse;
-  try {
-    data = JSON.parse(text) as IngestResponse;
-  } catch {
-    console.error(red("Unexpected API response:"), text);
-    process.exit(1);
-  }
+  const data = result.data;
 
   const tier = data.tier ?? "—";
   const rank30dDisplay = data.rank30d != null ? `#${data.rank30d}` : "—";
@@ -139,6 +142,42 @@ async function cmdSync(): Promise<void> {
     console.log(dim("   tip: `ccwarriors autosync on` keeps your rank fresh every hour"));
   }
   console.log();
+}
+
+async function cmdWatch(args: string[]): Promise<void> {
+  const seconds = Math.max(10, Math.round(Number(args[0] ?? 30) || 30));
+  let config = await loadConfig();
+  if (!config) {
+    console.log(yellow("Hey there — first time? Let's get you enlisted."));
+    config = await runLoginFlow(API_BASE);
+  }
+  console.log(cyan(`⚔️  Watch mode — syncing every ${seconds}s. Your board updates live. Ctrl+C to stop.`));
+  for (;;) {
+    const t = new Date().toTimeString().slice(0, 8);
+    try {
+      const { cost30d, costAllTime, ccusageVersion } = await readCosts();
+      const res = await postIngest(config.token, {
+        cost30d,
+        costAllTime,
+        ...(ccusageVersion ? { ccusageVersion } : {}),
+      });
+      if (res.data?.ok) {
+        const rank = res.data.rank30d != null ? `#${res.data.rank30d}` : "—";
+        console.log(`${dim(`[${t}]`)} synced ${green(`$${cost30d}`)} (30d) · rank ${cyan(rank)}`);
+      } else if (res.status === 429) {
+        console.log(dim(`[${t}] server cooldown (10s minimum) — next cycle`));
+      } else if (res.status === 401) {
+        await clearConfig();
+        console.error(red("Token invalid. Run `ccwarriors login` and restart watch."));
+        process.exit(1);
+      } else {
+        console.log(dim(`[${t}] sync failed (${res.status}) — retrying next cycle`));
+      }
+    } catch (err) {
+      console.log(dim(`[${t}] ${err instanceof Error ? err.message : String(err)} — retrying next cycle`));
+    }
+    await new Promise((r) => setTimeout(r, seconds * 1000));
+  }
 }
 
 function cmdAutosync(args: string[]): void {
@@ -182,6 +221,11 @@ async function main(): Promise<void> {
 
   if (cmd === "whoami") {
     await cmdWhoami();
+    return;
+  }
+
+  if (cmd === "watch") {
+    await cmdWatch(args.slice(1));
     return;
   }
 
