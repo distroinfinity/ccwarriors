@@ -31,7 +31,7 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
   const monogram = (entry.githubLogin[0] ?? "?").toUpperCase();
 
   const shareOnX = () => {
-    const text = `${formatUsd(entry.cost30d)} burned on Claude Code in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️`;
+    const text = `${formatUsd(entry.cost30d)} burned on Claude Code in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\n@claudeai devs — check your rank now:`;
     const url = "https://ccwarriors.xyz";
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
