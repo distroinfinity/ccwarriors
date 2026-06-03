@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "./config.js";
 import { readCosts } from "./ccusage.js";
-import { postIngest } from "./core.js";
+import { postIngest, postTelemetry } from "./core.js";
 
 const DEBOUNCE_MS = 12_000; // respects the server's 10s minimum between syncs
 
@@ -23,6 +23,9 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   let timer: NodeJS.Timeout | null = null;
   let syncing = false;
   let pending = false;
+  // Beacon once after 3 consecutive hard failures (not 429s), reset on success —
+  // surfaces fleet-wide sync breakage without spamming telemetry.
+  let failStreak = 0;
 
   async function syncNow(reason: string): Promise<void> {
     if (syncing) {
@@ -38,6 +41,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         ...(ccusageVersion ? { ccusageVersion } : {}),
       });
       if (res.data?.ok) {
+        failStreak = 0;
         log(`synced (${reason}) — $${cost30d} 30d · rank #${res.data.rank30d ?? "—"}`);
       } else if (res.status === 429) {
         // Server enforces 10s between syncs — retry instead of dropping the update.
@@ -45,9 +49,18 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         schedule(`retry ${reason}`);
       } else {
         log(`sync skipped (${reason}) — status ${res.status}`);
+        failStreak += 1;
+        if (failStreak === 3) void postTelemetry("sync_failed", { status: res.status, reason });
       }
     } catch (err) {
       log(`sync failed (${reason}) — ${err instanceof Error ? err.message : String(err)}`);
+      failStreak += 1;
+      if (failStreak === 3) {
+        void postTelemetry("sync_failed", {
+          status: 0,
+          reason: String(err instanceof Error ? err.message : err).slice(0, 120),
+        });
+      }
     } finally {
       syncing = false;
       if (pending) {

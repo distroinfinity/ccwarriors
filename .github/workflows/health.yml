@@ -40,6 +40,12 @@ jobs:
           check "cli.js served"      sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/cli.js | head -1 | grep -q node'
           check "end-to-end install" env HOME="$RUNNER_TEMP/ccw-e2e" CCWARRIORS_NO_RUN=1 CCWARRIORS_TELEMETRY=0 \
             bash -c 'mkdir -p "$HOME" && curl -fsSL https://api.ccwarriors.xyz/install.sh | bash'
+          check "telemetry endpoint"  curl -fsS -m 10 -X POST https://api.ccwarriors.xyz/telemetry \
+            -H 'content-type: application/json' -d '{"event":"health_check","distinctId":"gh-health","props":{"os":"ci"}}'
+          check "websocket upgrade"   sh -c 'code=$(curl -s -o /dev/null -w "%{http_code}" -m 10 --http1.1 \
+            -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
+            -H "Sec-WebSocket-Key: aGVhbHRoY2hlY2sxMjM0NQ==" https://api.ccwarriors.xyz/); [ "$code" = "101" ]'
+          check "website (deployment)" sh -c 'curl -fsS -m 10 https://ccwarriors.vercel.app/ | grep -qi "<div id=\"root\"\|ccwarriors"'
 
           # Informational only — the Vercel apex challenge cycles on its own.
           apex=$(curl -s -o /dev/null -w "%{http_code}" -m 10 https://ccwarriors.xyz/install.sh || echo ERR)

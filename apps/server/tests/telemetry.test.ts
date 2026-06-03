@@ -14,6 +14,15 @@ describe("telemetry endpoint", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  it("accepts health_check events", async () => {
+    const res = await app.request("/telemetry", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event: "health_check", distinctId: "gh-health", props: { os: "ci" } }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("rejects unknown events", async () => {
     const res = await app.request("/telemetry", {
       method: "POST",

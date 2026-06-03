@@ -28,3 +28,18 @@ export async function postIngest(
   }
   return { status: res.status, data, text };
 }
+
+/** Anonymous failure beacon — fire-and-forget, never throws. Opt-out: CCWARRIORS_TELEMETRY=0. */
+export async function postTelemetry(event: string, props: Record<string, string | number | boolean>): Promise<void> {
+  if (process.env["CCWARRIORS_TELEMETRY"] === "0") return;
+  try {
+    await fetch(`${API_BASE}/telemetry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event, props: { os: process.platform, ...props } }),
+      signal: AbortSignal.timeout(4000),
+    });
+  } catch {
+    /* telemetry must never break the caller */
+  }
+}
