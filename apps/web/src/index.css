@@ -103,7 +103,8 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .row.top .rank{ color:var(--or); }
 .av{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--bg); object-fit:cover; filter:grayscale(1); }
 .row.top .av{ box-shadow:0 0 0 1.5px var(--or); filter:grayscale(0); }
-.who{ min-width:0; }
+.who{ min-width:0; color:inherit; text-decoration:none; display:block; }
+.who:hover .h{ text-decoration:underline; text-underline-offset:3px; }
 .who .h{ font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .who .x{ font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tierc{ font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
@@ -115,6 +116,8 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .more:hover{ background:var(--segoff); }
 
 .side{ position:sticky; top:18px; }
+@keyframes cardin{ from{ opacity:0; transform:translateY(5px); } to{ opacity:1; transform:none; } }
+.side .card,.side .enlist{ animation:cardin .28s ease; }
 .card{ width:100%; position:relative; overflow:hidden; background:#0A0B0C; border:1px solid rgba(255,255,255,.1); display:flex; flex-direction:column; color:#ECEAE3; }
 .card .edge{ position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(184,138,99,.85),transparent); z-index:5; }
 .cc{ display:flex; align-items:center; justify-content:space-between; padding:9px 12px; }

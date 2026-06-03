@@ -15,7 +15,7 @@ type Board = "30d" | "allTime";
 
 export default function App() {
   const { count, top30d, topAllTime, connected, hasSnapshot } = useLeaderboard();
-  const session = useMe();
+  const { me: session, resolved: meResolved } = useMe();
   const [board, setBoard] = useState<Board>("30d");
 
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
@@ -67,7 +67,13 @@ export default function App() {
               connected={connected}
               hasSnapshot={hasSnapshot}
             />
-            {!hasSnapshot ? <CardSkeleton /> : me ? <YourCard entry={me} rank={meRank} /> : <EnlistCard />}
+            {!hasSnapshot || !meResolved ? (
+              <CardSkeleton />
+            ) : me ? (
+              <YourCard entry={me} rank={meRank} />
+            ) : (
+              <EnlistCard />
+            )}
           </div>
         </main>
         <footer>

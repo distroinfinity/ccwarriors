@@ -53,10 +53,16 @@ function Row({
     >
       <div className="rank mono">{rank}</div>
       <Avatar src={entry.avatarUrl} name={entry.githubLogin} index={rank - 1} />
-      <div className="who">
+      <a
+        className="who"
+        href={`https://github.com/${entry.githubLogin}`}
+        target="_blank"
+        rel="noopener"
+        title={`${entry.githubLogin} on GitHub`}
+      >
         <div className="h">{entry.githubLogin}</div>
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
-      </div>
+      </a>
       <div className="tierc">{tierLabel(entry.tier)}</div>
       <Sparkline id={entry.id} />
       <div className="amt mono">
