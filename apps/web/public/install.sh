@@ -4,6 +4,7 @@
 set -euo pipefail
 
 BASE="${CCWARRIORS_BASE:-https://ccwarriors.xyz}"
+FALLBACK="${CCWARRIORS_FALLBACK:-https://get.ccwarriors.xyz}"
 CCW_HOME="${CCWARRIORS_HOME:-$HOME/.ccwarriors}"
 BIN_NAME="ccwarriors"
 
@@ -23,7 +24,10 @@ fi
 # 2) Download the CLI bundle
 mkdir -p "$CCW_HOME/bin"
 say "⚔  Downloading the CCWarriors CLI…"
-curl -fsSL "$BASE/cli.js" -o "$CCW_HOME/cli.js"
+if ! curl -fsSL "$BASE/cli.js" -o "$CCW_HOME/cli.js"; then
+  say "… primary host unavailable, using fallback"
+  curl -fsSL "$FALLBACK/cli.js" -o "$CCW_HOME/cli.js"
+fi
 
 # 3) Wrapper executable
 cat > "$CCW_HOME/bin/$BIN_NAME" <<WRAP

@@ -3,6 +3,7 @@
 $ErrorActionPreference = "Stop"
 
 $Base = if ($env:CCWARRIORS_BASE) { $env:CCWARRIORS_BASE } else { "https://ccwarriors.xyz" }
+$Fallback = if ($env:CCWARRIORS_FALLBACK) { $env:CCWARRIORS_FALLBACK } else { "https://get.ccwarriors.xyz" }
 
 # 1) Node.js 20+ is required (the CLI is a single-file Node script)
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
@@ -20,7 +21,12 @@ if ($nodeMajor -lt 20) {
 $CcwHome = Join-Path $env:USERPROFILE ".ccwarriors"
 New-Item -ItemType Directory -Force -Path $CcwHome | Out-Null
 Write-Host "Downloading the CCWarriors CLI..."
-Invoke-WebRequest -UseBasicParsing -Uri "$Base/cli.js" -OutFile (Join-Path $CcwHome "cli.js")
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri "$Base/cli.js" -OutFile (Join-Path $CcwHome "cli.js")
+} catch {
+  Write-Host "... primary host unavailable, using fallback"
+  Invoke-WebRequest -UseBasicParsing -Uri "$Fallback/cli.js" -OutFile (Join-Path $CcwHome "cli.js")
+}
 
 # 3) Command shim. WindowsApps is on PATH for the current user by default.
 $ShimDir = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps"
