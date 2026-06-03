@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Entry } from "../types";
 import { Avatar } from "./Avatar";
@@ -6,6 +6,7 @@ import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
 import { BoardSkeleton } from "./Skeleton";
+import { API_HTTP } from "../api";
 
 type Board = "30d" | "allTime";
 
@@ -66,33 +67,72 @@ function Row({
   );
 }
 
+const FIRST_PAGE = 15;
+const PAGE = 25;
+
 export function Leaderboard({
   board,
   setBoard,
   entries,
+  total,
   connected,
   hasSnapshot,
 }: {
   board: Board;
   setBoard: (b: Board) => void;
   entries: Entry[];
+  /** Total warriors on the board (beyond what the live socket holds). */
+  total: number;
   connected: boolean;
   /** True once a snapshot has arrived — distinguishes "connecting" from "empty". */
   hasSnapshot: boolean;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  const [visibleN, setVisibleN] = useState(FIRST_PAGE);
+  // Ranks beyond the live top-100 are paged in via the REST API (static rows).
+  const [extra, setExtra] = useState<Entry[]>([]);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Track previous rank per id (across renders) to compute ▲ deltas.
   const prevRanks = useRef<Map<string, number>>(new Map());
 
-  const ranked = entries.map((e, i) => {
+  useEffect(() => {
+    setExtra([]);
+    setVisibleN(FIRST_PAGE);
+  }, [board]);
+
+  // Live entries first, fetched tail after (deduped — order can drift slightly).
+  const all = useMemo(() => {
+    const seen = new Set(entries.map((e) => e.id));
+    return [...entries, ...extra.filter((e) => !seen.has(e.id))];
+  }, [entries, extra]);
+
+  const ranked = all.map((e, i) => {
     const prev = prevRanks.current.get(e.id);
     const delta = prev !== undefined && prev > i ? prev - i : 0;
     return { entry: e, rank: i + 1, delta };
   });
   // Update the ref after computing deltas for this render.
-  prevRanks.current = new Map(entries.map((e, i) => [e.id, i]));
+  prevRanks.current = new Map(all.map((e, i) => [e.id, i]));
 
-  const visible = showAll ? ranked : ranked.slice(0, 15);
+  const showMore = async () => {
+    const next = visibleN + PAGE;
+    if (next > all.length && all.length < total && !loadingMore) {
+      setLoadingMore(true);
+      try {
+        const r = await fetch(
+          `${API_HTTP}/leaderboard?board=${board}&limit=${Math.max(PAGE, 50)}&offset=${all.length}`,
+        );
+        const d = (await r.json()) as { entries?: Entry[] };
+        if (Array.isArray(d.entries)) setExtra((prev) => [...prev, ...d.entries!]);
+      } catch {
+        /* next click retries */
+      } finally {
+        setLoadingMore(false);
+      }
+    }
+    setVisibleN(next);
+  };
+
+  const visible = ranked.slice(0, visibleN);
   // Genuinely empty only once a snapshot confirms zero entries; otherwise connecting.
   const isEmpty = entries.length === 0 && hasSnapshot;
   const isConnecting = entries.length === 0 && !hasSnapshot;
@@ -129,11 +169,16 @@ export function Leaderboard({
         )}
       </div>
 
-      {ranked.length > 15 && (
-        <button className="more" onClick={() => setShowAll((v) => !v)}>
-          {showAll ? "Show less" : `Show more (${ranked.length - 15})`}
-        </button>
-      )}
+      {total > FIRST_PAGE &&
+        (visibleN < total ? (
+          <button className="more" onClick={() => void showMore()} disabled={loadingMore}>
+            {loadingMore ? "Loading…" : `Show more (${total - Math.min(visibleN, total)} more)`}
+          </button>
+        ) : (
+          <button className="more" onClick={() => setVisibleN(FIRST_PAGE)}>
+            Show less
+          </button>
+        ))}
     </div>
   );
 }

@@ -63,6 +63,7 @@ export default function App() {
               board={board}
               setBoard={setBoard}
               entries={entries}
+              total={count}
               connected={connected}
               hasSnapshot={hasSnapshot}
             />

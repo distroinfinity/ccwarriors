@@ -28,8 +28,8 @@ export class LeaderboardStore {
     return [...this.entries.values()].sort((a, b) => metric(b, board) - metric(a, board));
   }
 
-  getTop(board: Board, limit: number): Entry[] {
-    return this.sorted(board).slice(0, limit);
+  getTop(board: Board, limit: number, offset = 0): Entry[] {
+    return this.sorted(board).slice(offset, offset + limit);
   }
 
   getRank(board: Board, id: string): number | null {
