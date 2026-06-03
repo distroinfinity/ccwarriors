@@ -77,16 +77,24 @@ export default function App() {
           </div>
         </main>
         <footer>
-          Built with <PixelHeart /> by{" "}
-          <a href="https://x.com/distroinfinity" target="_blank" rel="noopener">
-            Manu
-          </a>{" "}
-          ·{" "}
-          <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
-            GitHub
-          </a>{" "}
-          ·{" "}
-          <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
+          <div className="fleft">
+            <div className="fbrand">CCWARRIORS</div>
+            <div className="fcredit">
+              Built with <PixelHeart /> by{" "}
+              <a href="https://x.com/distroinfinity" target="_blank" rel="noopener">
+                Manu
+              </a>
+            </div>
+          </div>
+          <nav className="flinks" aria-label="Footer">
+            <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
+              GitHub
+            </a>
+            <a href="https://x.com/distroinfinity" target="_blank" rel="noopener">
+              X
+            </a>
+            <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
+          </nav>
         </footer>
       </div>
     </>
