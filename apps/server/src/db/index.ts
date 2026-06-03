@@ -10,6 +10,13 @@ export function createDb(url: string) {
 }
 
 // Test-only: in-memory Postgres via PGlite, migrated from ./drizzle.
+// Picks a driver from the environment: real Postgres when DATABASE_URL is set
+// (production / Railway), otherwise in-memory PGlite (local dev + zero-setup demo).
+export async function createDbFromEnv(databaseUrl?: string): Promise<DB> {
+  if (databaseUrl) return createDb(databaseUrl);
+  return createTestDb();
+}
+
 export async function createTestDb(): Promise<DB> {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
