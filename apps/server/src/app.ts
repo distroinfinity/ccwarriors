@@ -6,6 +6,7 @@ import { ingestRoute } from "./routes/ingest.js";
 import { leaderboardRoute } from "./routes/leaderboard.js";
 import { authRoute } from "./routes/auth.js";
 import { installerRoute } from "./routes/installer.js";
+import { telemetryRoute } from "./routes/telemetry.js";
 
 export interface AppDeps {
   db: DB;
@@ -34,6 +35,7 @@ export function createApp(deps?: AppDeps) {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.route("/", installerRoute());
+  app.route("/telemetry", telemetryRoute());
   if (deps) {
     app.route("/ingest", ingestRoute(deps.db, deps.store, deps.onIngest));
     app.route("/leaderboard", leaderboardRoute(deps.store));

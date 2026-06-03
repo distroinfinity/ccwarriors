@@ -1,0 +1,78 @@
+name: health
+# Prod health checks every 10 minutes. On failure, opens (or updates) a
+# "health-alert" issue so the repo owner gets a GitHub notification;
+# auto-closes it when everything recovers.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run health checks
+        id: checks
+        run: |
+          set -u
+          report="$RUNNER_TEMP/report.md"
+          : > "$report"
+          failed=0
+          check() {
+            name="$1"; shift
+            if "$@" >/dev/null 2>&1; then
+              echo "- ✅ $name" >> "$report"
+            else
+              echo "- ❌ **$name**" >> "$report"
+              failed=1
+            fi
+          }
+
+          check "API /health"        curl -fsS -m 10 https://api.ccwarriors.xyz/health
+          check "leaderboard API"    curl -fsS -m 10 "https://api.ccwarriors.xyz/leaderboard?limit=1"
+          check "install.sh served"  sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/install.sh | head -1 | grep -q bash'
+          check "install.ps1 served" curl -fsS -m 10 -o /dev/null https://api.ccwarriors.xyz/install.ps1
+          check "cli.js served"      sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/cli.js | head -1 | grep -q node'
+          check "end-to-end install" env HOME="$RUNNER_TEMP/ccw-e2e" CCWARRIORS_NO_RUN=1 CCWARRIORS_TELEMETRY=0 \
+            bash -c 'mkdir -p "$HOME" && curl -fsSL https://api.ccwarriors.xyz/install.sh | bash'
+
+          # Informational only — the Vercel apex challenge cycles on its own.
+          apex=$(curl -s -o /dev/null -w "%{http_code}" -m 10 https://ccwarriors.xyz/install.sh || echo ERR)
+          echo "- ℹ️ apex \`ccwarriors.xyz/install.sh\` → HTTP $apex *(Vercel challenge cycles; not alerting)*" >> "$report"
+
+          echo "---" >> "$report"
+          echo "[Run log](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" >> "$report"
+          cat "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
+
+      - name: Alert — open or update incident issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create health-alert --repo "$GITHUB_REPOSITORY" --color D93F0B --description "Automated prod health alerts" 2>/dev/null || true
+          body="$(printf '🔴 Prod health check failed at %s UTC\n\n%s' "$(date -u '+%Y-%m-%d %H:%M')" "$(cat "$RUNNER_TEMP/report.md")")"
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label health-alert --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label health-alert \
+              --title "🔴 Prod health check failing" --body "$body"
+          fi
+
+      - name: Recovery — close incident issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --label health-alert --state open --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" \
+              --comment "✅ All checks passing again at $(date -u '+%Y-%m-%d %H:%M') UTC — auto-closing."
+          fi

@@ -10,7 +10,22 @@ BIN_NAME="ccwarriors"
 
 say() { printf '%s\n' "$*"; }
 
+# Anonymous install telemetry (no personal data: random id, OS, failing step).
+# Opt out with CCWARRIORS_TELEMETRY=0.
+TID="$(date +%s)$$${RANDOM}"
+STEP="start"
+beacon() {
+  [ "${CCWARRIORS_TELEMETRY:-1}" = "0" ] && return 0
+  curl -m 4 -fsS -o /dev/null -X POST "$BASE/telemetry" \
+    -H 'content-type: application/json' \
+    -d "{\"event\":\"$1\",\"distinctId\":\"$TID\",\"props\":{\"os\":\"$(uname -s)\",\"step\":\"$STEP\"}}" \
+    >/dev/null 2>&1 || true
+}
+trap 'rc=$?; if [ "$rc" -ne 0 ]; then beacon install_failed; fi' EXIT
+beacon install_started
+
 # 1) Node.js 20+ is required (the CLI is a single-file Node script)
+STEP="node_check"
 if ! command -v node >/dev/null 2>&1; then
   say "✗ Node.js 20+ is required. Install it from https://nodejs.org and re-run."
   exit 1
@@ -22,6 +37,7 @@ if [ "$NODE_MAJOR" -lt 20 ]; then
 fi
 
 # 2) Download the CLI bundle
+STEP="download"
 mkdir -p "$CCW_HOME/bin"
 say "⚔  Downloading the CCWarriors CLI…"
 if ! curl -fsSL "$BASE/cli.js" -o "$CCW_HOME/cli.js"; then
@@ -30,6 +46,7 @@ if ! curl -fsSL "$BASE/cli.js" -o "$CCW_HOME/cli.js"; then
 fi
 
 # 3) Wrapper executable
+STEP="wrapper"
 cat > "$CCW_HOME/bin/$BIN_NAME" <<WRAP
 #!/usr/bin/env bash
 exec node "$CCW_HOME/cli.js" "\$@"
@@ -44,8 +61,10 @@ case ":$PATH:" in
   *":$HOME/.local/bin:"*) say "✓ '$BIN_NAME' is on your PATH" ;;
   *) say "→ Add to your shell profile:  export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
 esac
+beacon install_completed
 
 # 5) Enlist now (skippable with CCWARRIORS_NO_RUN=1)
+STEP="enlist"
 if [ -z "${CCWARRIORS_NO_RUN:-}" ]; then
   say ""
   say "⚔  Hey there — installed! Starting your enlistment…"
