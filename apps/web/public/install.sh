@@ -44,6 +44,6 @@ esac
 # 5) Enlist now (skippable with CCWARRIORS_NO_RUN=1)
 if [ -z "${CCWARRIORS_NO_RUN:-}" ]; then
   say ""
-  say "⚔  Enlisting — your browser will open for GitHub login…"
+  say "⚔  Hey there — installed! Starting your enlistment…"
   exec "$CCW_HOME/bin/$BIN_NAME"
 fi

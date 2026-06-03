@@ -63,7 +63,7 @@ async function cmdSync(): Promise<void> {
   let config = await loadConfig();
 
   if (!config) {
-    console.log(yellow("No credentials found — starting login…"));
+    console.log(yellow("Hey there — first time? Let's get you enlisted."));
     config = await runLoginFlow(API_BASE);
   }
 
@@ -126,11 +126,11 @@ async function cmdSync(): Promise<void> {
   const rankAllDisplay = data.rankAllTime != null ? `#${data.rankAllTime}` : "—";
 
   console.log();
-  console.log(green(`⚔️  ${bold("Enlisted / updated!")}`));
+  console.log(green(`⚔️  ${bold("You're all set!")}`));
   console.log(`   Tier:        ${cyan(tier)}`);
   console.log(`   30-day rank: ${cyan(rank30dDisplay)}`);
   console.log(`   All-time:    ${cyan(rankAllDisplay)}`);
-  console.log(`   Profile:     ${underline(`${WEB_BASE}/u/${config.login}`)}`);
+  console.log(`   See your rank live → ${underline(WEB_BASE)}`);
   console.log();
 }
 

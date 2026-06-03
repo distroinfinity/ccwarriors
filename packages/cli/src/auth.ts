@@ -103,8 +103,8 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
       const port = addr.port;
       const authUrl = `${apiBase}/cli/auth?port=${port}`;
 
-      console.log(cyan(`Opening browser for GitHub OAuth…`));
-      console.log(dim(`  ${authUrl}`));
+      console.log(cyan(`Opening GitHub login in your browser…`));
+      console.log(dim(`  (if nothing opens, visit: ${authUrl})`));
 
       openBrowser(authUrl).catch(() => {
         console.log(yellow(`Couldn't open browser automatically. Visit:`));

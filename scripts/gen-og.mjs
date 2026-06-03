@@ -33,3 +33,11 @@ drawClawd(cellPainter(fav, F, 6, 62, 74));
 writeFileSync("assets/favicon-256.png", encodePng(F, F, fav));
 copyFileSync("assets/favicon-256.png", "apps/web/public/favicon.png");
 console.log("wrote assets/favicon-256.png (+ apps/web/public/favicon.png)");
+
+// ---- apple-touch-icon 180x180 (solid dark, iOS rounds the corners itself) ----
+const A = 180;
+const apple = makeCanvas(A, A, "#0A0A0B");
+drawClawd(cellPainter(apple, A, 4, 46, 54));
+writeFileSync("assets/apple-touch-icon-180.png", encodePng(A, A, apple));
+copyFileSync("assets/apple-touch-icon-180.png", "apps/web/public/apple-touch-icon.png");
+console.log("wrote assets/apple-touch-icon-180.png (+ apps/web/public/apple-touch-icon.png)");
