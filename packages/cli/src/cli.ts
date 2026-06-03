@@ -2,6 +2,7 @@ import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
 import { loadConfig, clearConfig } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readCosts } from "./ccusage.js";
+import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
 
 const API_BASE = process.env["CCWARRIORS_API"] ?? "https://api.ccwarriors.xyz";
 const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
@@ -22,6 +23,9 @@ ${bold("USAGE")}
   ccwarriors login      Authenticate with GitHub
   ccwarriors logout     Remove stored credentials
   ccwarriors whoami     Show the currently enlisted login
+  ccwarriors autosync on [minutes]   Keep your rank fresh automatically (default: every 60 min)
+  ccwarriors autosync off            Stop the scheduled sync
+  ccwarriors autosync status         Show whether autosync is enabled
   ccwarriors --help     Show this help
 
 ${bold("ENVIRONMENT")}
@@ -131,7 +135,26 @@ async function cmdSync(): Promise<void> {
   console.log(`   30-day rank: ${cyan(rank30dDisplay)}`);
   console.log(`   All-time:    ${cyan(rankAllDisplay)}`);
   console.log(`   See your rank live → ${underline(WEB_BASE)}`);
+  if (!autosyncEnabled() && (process.platform === "darwin" || process.platform === "linux")) {
+    console.log(dim("   tip: `ccwarriors autosync on` keeps your rank fresh every hour"));
+  }
   console.log();
+}
+
+function cmdAutosync(args: string[]): void {
+  const sub = args[0];
+  if (sub === "on") {
+    const minutes = Number(args[1] ?? 60) || 60;
+    autosyncOn(minutes);
+    console.log(green(`Autosync on — your costs will sync every ${Math.max(5, Math.round(minutes))} min.`));
+    return;
+  }
+  if (sub === "off") {
+    autosyncOff();
+    console.log(green("Autosync off."));
+    return;
+  }
+  console.log(`autosync: ${autosyncStatus()}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +182,11 @@ async function main(): Promise<void> {
 
   if (cmd === "whoami") {
     await cmdWhoami();
+    return;
+  }
+
+  if (cmd === "autosync") {
+    cmdAutosync(args.slice(1));
     return;
   }
 
