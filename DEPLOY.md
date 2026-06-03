@@ -3,9 +3,9 @@
 Architecture in production:
 
 ```
-ccwarriors.xyz        →  Vercel   (frontend, apps/web)
+ccwarriors.xyz        →  Vercel   (frontend, apps/web — also serves /install.sh + /cli.js)
 api.ccwarriors.xyz    →  Railway  (backend, apps/server) + Railway Postgres
-npx claude-warriors   →  npm      (CLI, packages/cli)
+CLI                   →  curl -fsSL https://ccwarriors.xyz/install.sh | bash   (no npm)
 ```
 
 Production has **no seed/dummy data** — the board fills up as real people run the
@@ -17,8 +17,7 @@ CLI. Seeding/simulation is local-only (the `SEED_DEMO` / `SIMULATE` flags).
 
 - A **GitHub OAuth App** (Client ID + Secret) — for login + the CLI.
 - A **Railway** account (you have a paid plan) — backend + Postgres.
-- A **Vercel** account — frontend.
-- An **npm** account — to publish the CLI.
+- A **Vercel** account — frontend (it also serves the CLI installer; no npm needed).
 - DNS access for **ccwarriors.xyz**.
 
 ---
@@ -35,6 +34,11 @@ Fill in (production app):
 Click **Register application**, then:
 - Copy the **Client ID**.
 - Click **Generate a new client secret**, copy the **secret** (shown once).
+- **Logo:** upload `assets/logo-dark-512.png` (the armed Clawd) as the application logo.
+
+> Your Client ID/Secret are already in the gitignored `apps/server/.env` for local
+> use — paste the SAME two values into Railway in step 2. (The secret was shared
+> in chat; rotate it from the OAuth app page if that ever concerns you.)
 
 > A classic OAuth App allows only ONE callback URL. To also test login locally,
 > create a **second** OAuth App with callback `http://localhost:8787/cli/callback`
@@ -109,38 +113,25 @@ Wait for propagation + TLS issuance (minutes to an hour). Then:
 
 ---
 
-## 5. Publish the CLI (packages/cli → npm)
+## 5. CLI distribution — no npm, it ships with the site
 
-1. **Check the name is free:**
-   ```bash
-   npm show claude-warriors
-   ```
-   If it's taken, rename: set `"name": "@ccwarriors/cli"` in `packages/cli/package.json`
-   (keep `publishConfig.access: "public"`), and update the install command shown
-   in the web Hero (`apps/web/src/components/Hero.tsx`) to `npx @ccwarriors/cli`.
-2. **Build & publish:**
-   ```bash
-   npm login
-   cd packages/cli
-   pnpm build
-   npm publish --access public
-   ```
-3. **GitHub release (optional but nice):**
-   ```bash
-   git tag cli-v0.1.0
-   git push origin cli-v0.1.0
-   gh release create cli-v0.1.0 --title "claude-warriors CLI v0.1.0" --notes "Initial CLI release."
-   ```
-4. **Bumping versions later:** `cd packages/cli && npm version patch && pnpm build && npm publish`, then push the tag.
+The CLI is a **zero-dependency single-file Node bundle**. The web app's build
+(`apps/web` `prebuild` script) bundles `packages/cli` and copies it to
+`public/cli.js`; `public/install.sh` is the installer. **Every Vercel deploy is
+automatically a CLI release** — there is no separate publish step, no npm, no
+version ceremony.
 
-> Optional CI: add a GitHub Action that runs `npm publish` on a `cli-v*` tag
-> (set an `NPM_TOKEN` repo secret). Ask and I'll add the workflow.
-
-Once published, anyone runs:
+Users install + enlist with one command:
 ```bash
-npx claude-warriors
+curl -fsSL https://ccwarriors.xyz/install.sh | bash
 ```
-→ opens GitHub login → reads their `ccusage` totals → posts to the API → they're on the board.
+What it does: checks Node 20+, downloads `cli.js` to `~/.ccwarriors/`, installs
+a `ccwarriors` command (symlinked into `~/.local/bin`), then immediately runs
+the first sync — GitHub login opens in the browser, `ccusage` totals are read,
+and the user lands on the board. After that, re-syncing is just `ccwarriors`.
+
+Useful flags/env: `CCWARRIORS_NO_RUN=1` (install without auto-running),
+`CCWARRIORS_BASE` (download from a different host — used for local testing).
 
 ---
 
@@ -176,7 +167,7 @@ CCWARRIORS_API=http://localhost:8787 CCWARRIORS_WEB=http://localhost:5173 \
 - [ ] Railway: Postgres added, `DATABASE_URL` wired, migration run, env vars set, `SEED_DEMO`/`SIMULATE` NOT set.
 - [ ] `https://api.ccwarriors.xyz/health` returns ok; `api` CNAME + TLS live.
 - [ ] Vercel: `VITE_WS_URL=wss://api.ccwarriors.xyz`; `ccwarriors.xyz` domain + TLS live.
-- [ ] CLI published to npm; `npx claude-warriors` works end-to-end (login → ccusage → on the board).
+- [ ] `curl -fsSL https://ccwarriors.xyz/install.sh | bash` installs + enlists end-to-end (login → ccusage → on the board).
 - [ ] Smoke test: run the CLI yourself, confirm you appear on the live board at `ccwarriors.xyz`.
 
 ---

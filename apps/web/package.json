@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prebuild": "pnpm --filter claude-warriors build && cp ../../packages/cli/dist/cli.js public/cli.js"
   },
   "dependencies": {
     "framer-motion": "^11.5.4",

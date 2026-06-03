@@ -1,7 +1,6 @@
 import http from "node:http";
 import { URL } from "node:url";
-import open from "open";
-import pc from "picocolors";
+import { bold, cyan, dim, green, yellow, openBrowser } from "./ui.js";
 import { saveConfig, type Config } from "./config.js";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -104,12 +103,12 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
       const port = addr.port;
       const authUrl = `${apiBase}/cli/auth?port=${port}`;
 
-      console.log(pc.cyan(`Opening browser for GitHub OAuth…`));
-      console.log(pc.dim(`  ${authUrl}`));
+      console.log(cyan(`Opening browser for GitHub OAuth…`));
+      console.log(dim(`  ${authUrl}`));
 
-      open(authUrl).catch(() => {
-        console.log(pc.yellow(`Couldn't open browser automatically. Visit:`));
-        console.log(pc.bold(`  ${authUrl}`));
+      openBrowser(authUrl).catch(() => {
+        console.log(yellow(`Couldn't open browser automatically. Visit:`));
+        console.log(bold(`  ${authUrl}`));
       });
     });
 
@@ -118,9 +117,7 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
       if (!settled) {
         settled = true;
         reject(
-          new Error(
-            "Login timed out after 2 minutes. Run `npx claude-warriors login` to try again."
-          )
+          new Error("Login timed out after 2 minutes. Run `ccwarriors login` to try again."),
         );
       }
     }, LOGIN_TIMEOUT_MS);
@@ -129,7 +126,7 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
     timer.unref();
   }).then(async (config) => {
     await saveConfig(config);
-    console.log(pc.green(`\n⚔️  Enlisted as ${pc.bold(config.login)}!\n`));
+    console.log(green(`\n⚔️  Enlisted as ${bold(config.login)}!\n`));
     return config;
   });
 }

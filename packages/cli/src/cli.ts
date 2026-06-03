@@ -1,4 +1,4 @@
-import pc from "picocolors";
+import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
 import { loadConfig, clearConfig } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readCosts } from "./ccusage.js";
@@ -12,16 +12,19 @@ const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
 
 function printHelp(): void {
   console.log(`
-${pc.bold("claude-warriors")} — sync your Claude Code costs and climb the leaderboard
+${bold("ccwarriors")} — sync your Claude Code costs and climb the leaderboard
 
-${pc.bold("USAGE")}
-  npx claude-warriors            Sync costs (default)
-  npx claude-warriors login      Authenticate with GitHub
-  npx claude-warriors logout     Remove stored credentials
-  npx claude-warriors whoami     Show the currently enlisted login
-  npx claude-warriors --help     Show this help
+${bold("INSTALL")}
+  curl -fsSL https://ccwarriors.xyz/install.sh | bash
 
-${pc.bold("ENVIRONMENT")}
+${bold("USAGE")}
+  ccwarriors            Sync costs (default)
+  ccwarriors login      Authenticate with GitHub
+  ccwarriors logout     Remove stored credentials
+  ccwarriors whoami     Show the currently enlisted login
+  ccwarriors --help     Show this help
+
+${bold("ENVIRONMENT")}
   CCWARRIORS_API   Override API base  (default: https://api.ccwarriors.xyz)
   CCWARRIORS_WEB   Override web base  (default: https://ccwarriors.xyz)
 `);
@@ -37,7 +40,7 @@ async function cmdLogin(): Promise<void> {
 
 async function cmdLogout(): Promise<void> {
   await clearConfig();
-  console.log(pc.green("Logged out — credentials removed."));
+  console.log(green("Logged out — credentials removed."));
 }
 
 async function cmdWhoami(): Promise<void> {
@@ -60,16 +63,16 @@ async function cmdSync(): Promise<void> {
   let config = await loadConfig();
 
   if (!config) {
-    console.log(pc.yellow("No credentials found — starting login…"));
+    console.log(yellow("No credentials found — starting login…"));
     config = await runLoginFlow(API_BASE);
   }
 
-  console.log(pc.dim("Reading ccusage…"));
+  console.log(dim("Reading ccusage…"));
   const { cost30d, costAllTime, ccusageVersion } = await readCosts();
 
-  console.log(pc.dim(`  30-day cost:  $${cost30d}`));
-  console.log(pc.dim(`  all-time cost: $${costAllTime}`));
-  console.log(pc.dim("Syncing with Claude Warriors…"));
+  console.log(dim(`  30-day cost:   $${cost30d}`));
+  console.log(dim(`  all-time cost: $${costAllTime}`));
+  console.log(dim("Syncing with Claude Warriors…"));
 
   const body = JSON.stringify({
     cost30d,
@@ -88,27 +91,25 @@ async function cmdSync(): Promise<void> {
       body,
     });
   } catch (err) {
-    console.error(pc.red("Network error — could not reach the API."), err);
+    console.error(red("Network error — could not reach the API."), err);
     process.exit(1);
   }
 
   if (res.status === 401) {
     await clearConfig();
-    console.error(
-      pc.red("Token invalid or expired. Run `npx claude-warriors login` to re-authenticate.")
-    );
+    console.error(red("Token invalid or expired. Run `ccwarriors login` to re-authenticate."));
     process.exit(1);
   }
 
   if (res.status === 429) {
-    console.error(pc.yellow("Syncing too fast — try again in a minute."));
+    console.error(yellow("Syncing too fast — try again in a minute."));
     process.exit(1);
   }
 
   const text = await res.text();
 
   if (!res.ok) {
-    console.error(pc.red(`API error (${res.status}):`), text);
+    console.error(red(`API error (${res.status}):`), text);
     process.exit(1);
   }
 
@@ -116,7 +117,7 @@ async function cmdSync(): Promise<void> {
   try {
     data = JSON.parse(text) as IngestResponse;
   } catch {
-    console.error(pc.red("Unexpected API response:"), text);
+    console.error(red("Unexpected API response:"), text);
     process.exit(1);
   }
 
@@ -125,11 +126,11 @@ async function cmdSync(): Promise<void> {
   const rankAllDisplay = data.rankAllTime != null ? `#${data.rankAllTime}` : "—";
 
   console.log();
-  console.log(pc.green(`⚔️  ${pc.bold("Enlisted / updated!")}`));
-  console.log(`   Tier:        ${pc.cyan(tier)}`);
-  console.log(`   30-day rank: ${pc.cyan(rank30dDisplay)}`);
-  console.log(`   All-time:    ${pc.cyan(rankAllDisplay)}`);
-  console.log(`   Profile:     ${pc.underline(`${WEB_BASE}/u/${config.login}`)}`);
+  console.log(green(`⚔️  ${bold("Enlisted / updated!")}`));
+  console.log(`   Tier:        ${cyan(tier)}`);
+  console.log(`   30-day rank: ${cyan(rank30dDisplay)}`);
+  console.log(`   All-time:    ${cyan(rankAllDisplay)}`);
+  console.log(`   Profile:     ${underline(`${WEB_BASE}/u/${config.login}`)}`);
   console.log();
 }
 
@@ -166,13 +167,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error(pc.red(`Unknown command: ${cmd}`));
+  console.error(red(`Unknown command: ${cmd}`));
   printHelp();
   process.exit(1);
 }
 
 main().catch((err: unknown) => {
   const message = err instanceof Error ? err.message : String(err);
-  console.error(pc.red("Error:"), message);
+  console.error(red("Error:"), message);
   process.exit(1);
 });
