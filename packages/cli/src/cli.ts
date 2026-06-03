@@ -137,7 +137,7 @@ async function cmdSync(): Promise<void> {
   console.log(`   Tier:        ${cyan(tier)}`);
   console.log(`   30-day rank: ${cyan(rank30dDisplay)}`);
   console.log(`   All-time:    ${cyan(rankAllDisplay)}`);
-  console.log(`   See your rank live → ${underline(WEB_BASE)}`);
+  console.log(`   See your rank live → ${underline(`${WEB_BASE}/?u=${encodeURIComponent(config.login)}`)}`);
   if (!autosyncEnabled() && (process.platform === "darwin" || process.platform === "linux")) {
     console.log(dim("   tip: `ccwarriors autosync on` keeps your rank fresh every hour"));
   }
@@ -151,7 +151,8 @@ async function cmdWatch(args: string[]): Promise<void> {
     console.log(yellow("Hey there — first time? Let's get you enlisted."));
     config = await runLoginFlow(API_BASE);
   }
-  console.log(cyan(`⚔️  Watch mode — syncing every ${seconds}s. Your board updates live. Ctrl+C to stop.`));
+  console.log(cyan(`⚔️  Watch mode — syncing every ${seconds}s. Ctrl+C to stop.`));
+  console.log(dim(`   watch live → ${WEB_BASE}/?u=${encodeURIComponent(config.login)}`));
   for (;;) {
     const t = new Date().toTimeString().slice(0, 8);
     try {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLeaderboard } from "./useLeaderboard";
 import { Marquee } from "./components/Marquee";
 import { Header } from "./components/Header";
@@ -19,10 +19,26 @@ export default function App() {
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
   const totalBurned = entries.reduce((s, e) => s + e.costAllTime, 0);
 
-  // "Your card" — find manu, fall back to the first entry.
-  const meIndex = entries.findIndex((e) => e.githubLogin === "manu");
-  const me = meIndex >= 0 ? entries[meIndex] : entries[0];
-  const meRank = meIndex >= 0 ? meIndex + 1 : 1;
+  // "Your card" — identity claimed via the CLI's personalized link (?u=login),
+  // remembered in localStorage. Unknown visitors get the enlist CTA instead.
+  const claimed = useMemo(() => {
+    try {
+      const url = new URL(window.location.href);
+      const u = url.searchParams.get("u");
+      if (u) {
+        localStorage.setItem("ccw_login", u);
+        url.searchParams.delete("u");
+        window.history.replaceState({}, "", url.toString());
+        return u;
+      }
+      return localStorage.getItem("ccw_login");
+    } catch {
+      return null;
+    }
+  }, []);
+  const meIndex = claimed ? entries.findIndex((e) => e.githubLogin === claimed) : -1;
+  const me = meIndex >= 0 ? entries[meIndex] : undefined;
+  const meRank = meIndex + 1;
 
   return (
     <>
