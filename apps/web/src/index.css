@@ -147,7 +147,10 @@ a{ color:inherit; }
 
 @media (max-width:880px){
   .wrap{ padding:0 16px; }
-  .layout{ grid-template-columns:1fr; gap:34px; } .side{ position:static; } .hstats{ display:none; }
+  .layout{ grid-template-columns:1fr; gap:34px; } .side{ position:static; }
+  /* Keep warriors count + total burned visible on mobile, just compacted. */
+  .right{ gap:16px; }
+  .hstats{ gap:16px; } .hstats .v{ font-size:15px; }
   .row{ grid-template-columns:34px 30px 1fr 104px; } .tierc,.spark{ display:none; }
 }
 
@@ -161,6 +164,9 @@ a{ color:inherit; }
 @media (max-width:400px){
   .install{ flex-direction:column; }
   .install button{ border-left:0; border-top:1px solid var(--line); padding:11px 18px; }
-  .right{ gap:14px; }
+  .right{ gap:12px; }
   .brand svg{ width:48px; height:36px; }
+  .hstats{ gap:12px; } .hstats .v{ font-size:13px; }
+  .hstats .l{ font-size:9px; letter-spacing:.1em; }
+  .dot{ width:6px; height:6px; margin-right:5px; }
 }
