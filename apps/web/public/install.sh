@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # CCWarriors CLI installer — https://ccwarriors.xyz
-#   curl -fsSL https://ccwarriors.xyz/install.sh | bash
+#   curl -fsSL https://api.ccwarriors.xyz/install.sh | bash
 set -euo pipefail
 
-BASE="${CCWARRIORS_BASE:-https://ccwarriors.xyz}"
+BASE="${CCWARRIORS_BASE:-https://api.ccwarriors.xyz}"
 FALLBACK="${CCWARRIORS_FALLBACK:-https://get.ccwarriors.xyz}"
 CCW_HOME="${CCWARRIORS_HOME:-$HOME/.ccwarriors}"
 BIN_NAME="ccwarriors"

@@ -6,12 +6,12 @@ const COMMANDS: Record<Os, { label: string; prompt: string; cmd: string }> = {
   unix: {
     label: "macOS / Linux",
     prompt: "$",
-    cmd: "curl -fsSL https://ccwarriors.xyz/install.sh | bash",
+    cmd: "curl -fsSL https://api.ccwarriors.xyz/install.sh | bash",
   },
   win: {
     label: "Windows",
     prompt: ">",
-    cmd: "irm https://ccwarriors.xyz/install.ps1 | iex",
+    cmd: "irm https://api.ccwarriors.xyz/install.ps1 | iex",
   },
 };
 

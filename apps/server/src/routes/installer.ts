@@ -7,7 +7,9 @@ import path from "node:path";
 // client. Serving the same assets from this server (get.ccwarriors.xyz on
 // Railway) keeps the install funnel alive regardless of Vercel policy.
 
-const PRIMARY_ORIGIN = "https://ccwarriors.xyz";
+// Origins to rewrite to the serving host (longest first so the apex match
+// doesn't clobber the api subdomain).
+const REWRITE_ORIGINS = ["https://api.ccwarriors.xyz", "https://ccwarriors.xyz"];
 
 // Walk up from cwd until the workspace root (works from apps/server in dev,
 // tests, and the Railway container, all of which run inside the monorepo).
@@ -42,7 +44,7 @@ export function installerRoute() {
         const url = new URL(c.req.url);
         const proto = c.req.header("x-forwarded-proto") ?? url.protocol.replace(":", "");
         const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? url.host;
-        body = body.replaceAll(PRIMARY_ORIGIN, `${proto}://${host}`);
+        for (const origin of REWRITE_ORIGINS) body = body.replaceAll(origin, `${proto}://${host}`);
       }
       return c.body(body, 200, { "content-type": asset.type, "cache-control": "no-cache" });
     });

@@ -17,8 +17,8 @@ function printHelp(): void {
 ${bold("ccwarriors")} — sync your Claude Code costs and climb the leaderboard
 
 ${bold("INSTALL")}
-  macOS/Linux:  curl -fsSL https://ccwarriors.xyz/install.sh | bash
-  Windows:      irm https://ccwarriors.xyz/install.ps1 | iex
+  macOS/Linux:  curl -fsSL https://api.ccwarriors.xyz/install.sh | bash
+  Windows:      irm https://api.ccwarriors.xyz/install.ps1 | iex
 
 ${bold("USAGE")}
   ccwarriors            Sync costs (default)

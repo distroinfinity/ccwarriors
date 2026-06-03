@@ -12,7 +12,7 @@ see who's burning the most tokens, claim your rank, flex on the timeline.
 ## Enlist (one command)
 
 ```bash
-curl -fsSL https://ccwarriors.xyz/install.sh | bash
+curl -fsSL https://api.ccwarriors.xyz/install.sh | bash
 ```
 
 That's it. GitHub login opens in your browser, your [ccusage](https://github.com/ryoppippi/ccusage)

@@ -1,8 +1,8 @@
 # CCWarriors CLI installer (Windows PowerShell)
-#   irm https://ccwarriors.xyz/install.ps1 | iex
+#   irm https://api.ccwarriors.xyz/install.ps1 | iex
 $ErrorActionPreference = "Stop"
 
-$Base = if ($env:CCWARRIORS_BASE) { $env:CCWARRIORS_BASE } else { "https://ccwarriors.xyz" }
+$Base = if ($env:CCWARRIORS_BASE) { $env:CCWARRIORS_BASE } else { "https://api.ccwarriors.xyz" }
 $Fallback = if ($env:CCWARRIORS_FALLBACK) { $env:CCWARRIORS_FALLBACK } else { "https://get.ccwarriors.xyz" }
 
 # 1) Node.js 20+ is required (the CLI is a single-file Node script)
