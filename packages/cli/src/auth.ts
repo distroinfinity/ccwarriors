@@ -2,10 +2,13 @@ import http from "node:http";
 import { URL } from "node:url";
 import { bold, cyan, dim, green, yellow, openBrowser } from "./ui.js";
 import { saveConfig, type Config } from "./config.js";
+import { WEB_BASE } from "./core.js";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
 
-const SUCCESS_HTML = `<!DOCTYPE html>
+function successHtml(login: string): string {
+  const boardUrl = `${WEB_BASE}/?u=${encodeURIComponent(login)}`;
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -24,10 +27,13 @@ const SUCCESS_HTML = `<!DOCTYPE html>
 <body>
   <div class="card">
     <h1>&#9876; Enlisted</h1>
-    <p>You can close this tab and return to your terminal.</p>
+    <p>Taking you to the board&hellip;</p>
+    <p><a href="${boardUrl}" style="color:#e6edf3">ccwarriors.xyz</a></p>
   </div>
+  <script>setTimeout(function () { location.replace(${JSON.stringify(boardUrl)}); }, 1200);</script>
 </body>
 </html>`;
+}
 
 function errorHtml(message: string): string {
   return `<!DOCTYPE html>
@@ -84,7 +90,7 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
       }
 
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(SUCCESS_HTML);
+      res.end(successHtml(login));
       server.close();
 
       if (!settled) {
