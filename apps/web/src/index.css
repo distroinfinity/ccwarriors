@@ -9,6 +9,7 @@ html[data-theme="dark"]{
   --or:#CC785C; --bronze:#B88A63; --grid:rgba(204,120,92,.06); --spark:#454a51; --avbg:#33363b; --segoff:#1a1b1e;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
+html,body{ overflow-x:hidden; }
 body{ background:var(--bg); color:var(--ink); font-family:'Geist',system-ui,sans-serif; -webkit-font-smoothing:antialiased; transition:background .25s,color .25s; }
 body::before{ content:""; position:fixed; inset:auto -40% -34% -40%; height:64%;
   background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
@@ -19,9 +20,13 @@ body::before{ content:""; position:fixed; inset:auto -40% -34% -40%; height:64%;
 .ticker{ border-bottom:1px solid var(--line); overflow:hidden; white-space:nowrap; position:relative; z-index:2; }
 .ticker .run{ display:inline-block; padding:9px 0; animation:run 40s linear infinite; font-size:12.5px; color:var(--muted); }
 .ticker b{ color:var(--ink); font-weight:600; } .ticker .o{ color:var(--or); font-weight:600; }
+.ticker .static{ display:block; padding:9px 24px; font-size:12.5px; color:var(--muted); text-align:center; }
 @keyframes run{ from{transform:translateX(0)} to{transform:translateX(-50%)} }
 
-.wrap{ max-width:1140px; margin:0 auto; padding:0 24px 70px; position:relative; z-index:1; }
+/* Sticky-footer shell: full-viewport flex column, main grows, footer sinks. */
+.wrap{ max-width:1140px; margin:0 auto; padding:0 24px; position:relative; z-index:1;
+  min-height:100vh; min-height:100dvh; display:flex; flex-direction:column; }
+.main{ flex:1; }
 
 header{ display:flex; align-items:center; justify-content:space-between; padding:22px 0 20px; }
 .brand{ display:flex; align-items:center; gap:12px; }
@@ -35,23 +40,33 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .toggle{ background:transparent; border:1px solid var(--line); color:var(--ink); width:34px; height:34px; cursor:pointer; font-size:15px; }
 
 .hero{ padding:34px 0 32px; border-top:1px solid var(--line); }
-.hero h1{ font-size:54px; line-height:1.02; font-weight:800; letter-spacing:-.025em; }
+.hero h1{ font-size:clamp(30px,7.5vw,54px); line-height:1.02; font-weight:800; letter-spacing:-.025em; }
 .hero h1 .o{ color:var(--or); }
 .hero p{ color:var(--muted); margin-top:13px; font-size:16px; }
-.install{ display:inline-flex; align-items:stretch; border:1px solid var(--line); margin-top:24px; }
-.install code{ font-family:'Geist Mono'; font-size:14.5px; padding:12px 16px; display:flex; align-items:center; }
+.install{ display:inline-flex; align-items:stretch; border:1px solid var(--line); margin-top:24px; max-width:100%; }
+.install code{ font-family:'Geist Mono'; font-size:14.5px; padding:12px 16px; display:flex; align-items:center; min-width:0; }
 .install .p{ color:var(--or); margin-right:9px; }
-.install button{ border:0; border-left:1px solid var(--line); background:var(--ink); color:var(--bg); padding:0 18px; font:inherit; font-weight:600; font-size:12.5px; cursor:pointer; letter-spacing:.04em; }
+.install button{ border:0; border-left:1px solid var(--line); background:var(--ink); color:var(--bg); padding:0 18px; font:inherit; font-weight:600; font-size:12.5px; cursor:pointer; letter-spacing:.04em; white-space:nowrap; }
 .install button:hover{ opacity:.85; }
 
 .seclabel{ font-size:11px; letter-spacing:.16em; color:var(--muted); text-transform:uppercase; font-weight:600; margin-bottom:13px; display:flex; align-items:center; gap:11px; }
 .seclabel::after{ content:""; flex:1; height:1px; background:var(--line); }
 
-.controls{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.controls{ display:flex; align-items:center; justify-content:space-between; gap:10px 14px; flex-wrap:wrap; margin-bottom:14px; }
 .seg{ display:inline-flex; border:1px solid var(--line); }
 .seg button{ font:inherit; font-size:12.5px; font-weight:600; background:var(--segoff); color:var(--muted); border:0; padding:9px 18px; cursor:pointer; }
 .seg button.on{ background:var(--ink); color:var(--bg); }
 .live{ font-size:12px; color:var(--muted); }
+
+/* Empty / connecting states inside the board panel + enlist CTA in side panel. */
+.empty,.enlist{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:48px 24px 52px; }
+.enlist{ border:1px solid var(--line); background:var(--panel); padding:40px 22px 44px; }
+.empty-clawd{ width:76px; height:auto; image-rendering:pixelated; opacity:.85; margin-bottom:18px; }
+.empty h3,.enlist h3{ font-size:17px; font-weight:700; letter-spacing:-.01em; }
+.empty p{ color:var(--muted); font-size:13.5px; margin-top:9px; }
+.empty .install,.enlist .install{ margin-top:18px; }
+.connecting{ padding:44px 24px; text-align:center; font-size:12.5px; color:var(--muted); letter-spacing:.02em; }
+.connecting::before{ content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--muted); margin-right:8px; vertical-align:middle; animation:pulse 1.6s infinite; }
 
 .layout{ display:grid; grid-template-columns:1fr 332px; gap:30px; align-items:start; }
 
@@ -63,7 +78,9 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .row.top .rank{ color:var(--or); }
 .av{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--bg); object-fit:cover; filter:grayscale(1); }
 .row.top .av{ box-shadow:0 0 0 1.5px var(--or); }
-.who .h{ font-size:14px; font-weight:600; } .who .x{ font-size:11.5px; color:var(--muted); }
+.who{ min-width:0; }
+.who .h{ font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.who .x{ font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tierc{ font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
 .spark{ font-family:'Geist Mono'; font-size:13px; color:var(--spark); letter-spacing:-1px; }
 .spark b{ color:var(--or); }
@@ -94,11 +111,29 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .btn.x{ background:var(--ink); color:var(--bg); border-color:var(--ink); margin-top:14px; } .btn.x:hover{ opacity:.85; }
 .btn.g{ background:transparent; color:var(--ink); margin-top:9px; } .btn.g:hover{ background:var(--segoff); }
 
-footer{ margin-top:46px; padding-top:20px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
+footer{ margin-top:46px; padding:20px 0 32px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
 footer a{ color:var(--bronze); text-decoration:underline; text-underline-offset:3px; font-weight:600; }
 .ph{ vertical-align:-1px; margin:0 2px; }
 
 a{ color:inherit; }
 
-@media (max-width:880px){ .layout{ grid-template-columns:1fr; } .side{ position:static; } .hero h1{ font-size:38px; } .hstats{ display:none; }
-  .row{ grid-template-columns:34px 30px 1fr 104px; } .tierc,.spark{ display:none; } }
+@media (max-width:880px){
+  .wrap{ padding:0 16px; }
+  .layout{ grid-template-columns:1fr; gap:34px; } .side{ position:static; } .hstats{ display:none; }
+  .row{ grid-template-columns:34px 30px 1fr 104px; } .tierc,.spark{ display:none; }
+}
+
+/* Small screens: full-width wrapping install command. */
+@media (max-width:560px){
+  .install{ display:flex; width:100%; }
+  .install code{ flex:1; min-width:0; white-space:pre-wrap; word-break:break-all; }
+}
+
+/* Very narrow: stack the Copy button under the wrapped command. */
+@media (max-width:400px){
+  .install{ flex-direction:column; }
+  .install button{ border-left:0; border-top:1px solid var(--line); padding:11px 18px; }
+  .right{ gap:14px; }
+  .brand{ gap:9px; } .brand svg{ width:34px; height:34px; }
+  .brand .nm{ font-size:16px; }
+}

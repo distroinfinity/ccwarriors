@@ -8,9 +8,17 @@ export interface BoardState {
   top30d: Snapshot["top30d"];
   topAllTime: Snapshot["topAllTime"];
   connected: boolean;
+  /** True once the first snapshot has been received from the backend. */
+  hasSnapshot: boolean;
 }
 
-const EMPTY: BoardState = { count: 0, top30d: [], topAllTime: [], connected: false };
+const EMPTY: BoardState = {
+  count: 0,
+  top30d: [],
+  topAllTime: [],
+  connected: false,
+  hasSnapshot: false,
+};
 
 /**
  * Connects to the live backend WebSocket, replacing state on every
@@ -38,6 +46,7 @@ export function useLeaderboard(): BoardState {
             top30d: msg.top30d,
             topAllTime: msg.topAllTime,
             connected: true,
+            hasSnapshot: true,
           });
         } catch {
           /* ignore malformed frames */

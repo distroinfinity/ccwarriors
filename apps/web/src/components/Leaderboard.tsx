@@ -2,9 +2,22 @@ import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Entry } from "../types";
 import { Avatar } from "./Avatar";
+import { ClawdLogo } from "./ClawdLogo";
+import { InstallBlock } from "./InstallBlock";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
 
 type Board = "30d" | "allTime";
+
+function EmptyBoard() {
+  return (
+    <div className="empty">
+      <ClawdLogo className="empty-clawd" />
+      <h3>No warriors enlisted yet.</h3>
+      <p>Be the first:</p>
+      <InstallBlock />
+    </div>
+  );
+}
 
 function Sparkline({ id }: { id: string }) {
   const bars = sparkBars(id);
@@ -57,11 +70,14 @@ export function Leaderboard({
   setBoard,
   entries,
   connected,
+  hasSnapshot,
 }: {
   board: Board;
   setBoard: (b: Board) => void;
   entries: Entry[];
   connected: boolean;
+  /** True once a snapshot has arrived — distinguishes "connecting" from "empty". */
+  hasSnapshot: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
   // Track previous rank per id (across renders) to compute ▲ deltas.
@@ -76,6 +92,9 @@ export function Leaderboard({
   prevRanks.current = new Map(entries.map((e, i) => [e.id, i]));
 
   const visible = showAll ? ranked : ranked.slice(0, 15);
+  // Genuinely empty only once a snapshot confirms zero entries; otherwise connecting.
+  const isEmpty = entries.length === 0 && hasSnapshot;
+  const isConnecting = entries.length === 0 && !hasSnapshot;
 
   return (
     <div>
@@ -96,11 +115,17 @@ export function Leaderboard({
       </div>
 
       <div className="board">
-        <AnimatePresence initial={false}>
-          {visible.map(({ entry, rank, delta }) => (
-            <Row key={entry.id} entry={entry} rank={rank} board={board} delta={delta} />
-          ))}
-        </AnimatePresence>
+        {isConnecting ? (
+          <div className="connecting">connecting…</div>
+        ) : isEmpty ? (
+          <EmptyBoard />
+        ) : (
+          <AnimatePresence initial={false}>
+            {visible.map(({ entry, rank, delta }) => (
+              <Row key={entry.id} entry={entry} rank={rank} board={board} delta={delta} />
+            ))}
+          </AnimatePresence>
+        )}
       </div>
 
       {ranked.length > 15 && (

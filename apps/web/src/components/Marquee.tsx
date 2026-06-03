@@ -30,6 +30,17 @@ function buildItems(entries: Entry[], count: number): string[] {
 }
 
 export function Marquee({ entries, count }: { entries: Entry[]; count: number }) {
+  // Empty board: a calm static line, no scroll animation.
+  if (count === 0 || entries.length === 0) {
+    return (
+      <div className="ticker">
+        <span className="static">
+          fresh board&nbsp;&nbsp;·&nbsp;&nbsp;no warriors yet&nbsp;&nbsp;·&nbsp;&nbsp;run the install
+          command to claim <span className="o">#1</span>
+        </span>
+      </div>
+    );
+  }
   const items = buildItems(entries, count);
   const sep = "&nbsp;&nbsp;·&nbsp;&nbsp;";
   const line = items.join(sep) + sep;

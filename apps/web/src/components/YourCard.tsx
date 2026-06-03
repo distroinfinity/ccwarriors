@@ -2,7 +2,22 @@ import { useState } from "react";
 import type { Entry } from "../types";
 import { ClawdLogo } from "./ClawdLogo";
 import { CardScene } from "./CardScene";
+import { InstallBlock } from "./InstallBlock";
 import { formatUsd, tierLabel } from "../util";
+
+/** Shown in the side panel when the viewer has no card to display yet. */
+export function EnlistCard() {
+  return (
+    <aside className="side">
+      <div className="seclabel">Your card</div>
+      <div className="enlist">
+        <ClawdLogo className="empty-clawd" />
+        <h3>Enlist to pull your card.</h3>
+        <InstallBlock />
+      </div>
+    </aside>
+  );
+}
 
 export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
   const [portraitFailed, setPortraitFailed] = useState(false);
