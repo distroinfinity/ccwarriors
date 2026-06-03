@@ -6,6 +6,8 @@ import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./auto
 import { runDaemon } from "./daemon.js";
 import { API_BASE, WEB_BASE, postIngest, type IngestResponse } from "./core.js";
 
+declare const __BUILD_ID__: string;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -27,6 +29,7 @@ ${bold("USAGE")}
   ccwarriors autosync off            Stop the background daemon
   ccwarriors autosync status         Show whether autosync is enabled
   ccwarriors daemon [heartbeatMin]   Run the sync daemon in the foreground (autosync runs this for you)
+  ccwarriors --version  Show the installed build
   ccwarriors --help     Show this help
 
 ${bold("ENVIRONMENT")}
@@ -186,6 +189,11 @@ async function main(): Promise<void> {
 
   if (cmd === "--help" || cmd === "-h") {
     printHelp();
+    return;
+  }
+
+  if (cmd === "--version" || cmd === "-v" || cmd === "version") {
+    console.log(`ccwarriors ${__BUILD_ID__}`);
     return;
   }
 
