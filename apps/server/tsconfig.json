@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "types": ["node"] },
-  "include": ["src", "tests", "drizzle.config.ts"]
+  "compilerOptions": { "types": ["node"], "noEmit": true },
+  "include": ["src", "tests", "drizzle.config.ts", "vitest.config.ts"]
 }
