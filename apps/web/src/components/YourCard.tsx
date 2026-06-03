@@ -68,7 +68,7 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
         <div className="cm">
           <div>
             <div className="n">{entry.githubLogin}</div>
-            <div className="h">{entry.xHandle ? "@" + entry.xHandle : "—"}</div>
+            <div className="h">@{entry.xHandle ?? entry.githubLogin}</div>
           </div>
           <div className="t">{tierLabel(entry.tier)}</div>
         </div>

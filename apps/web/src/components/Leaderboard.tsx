@@ -53,7 +53,7 @@ function Row({
       <Avatar src={entry.avatarUrl} name={entry.githubLogin} index={rank - 1} />
       <div className="who">
         <div className="h">{entry.githubLogin}</div>
-        <div className="x">{entry.xHandle ? "@" + entry.xHandle : "—"}</div>
+        <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </div>
       <div className="tierc">{tierLabel(entry.tier)}</div>
       <Sparkline id={entry.id} />
