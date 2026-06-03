@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { toPng } from "html-to-image";
+import { getFontEmbedCSS, toPng } from "html-to-image";
 import { API_HTTP } from "../api";
 import type { Entry } from "../types";
 import { ClawdLogo } from "./ClawdLogo";
@@ -44,7 +44,14 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
     if (!cardRef.current || exporting) return;
     setExporting(true);
     try {
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 3, cacheBust: true });
+      // Embed the webfonts (Geist/Geist Mono) so the export doesn't fall back to
+      // system fonts, and render at 4x for a crisp ~1330px-wide card.
+      const fontEmbedCSS = await getFontEmbedCSS(cardRef.current);
+      const dataUrl = await toPng(cardRef.current, {
+        pixelRatio: 4,
+        cacheBust: true,
+        fontEmbedCSS,
+      });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `ccwarriors-${entry.githubLogin}.png`;
