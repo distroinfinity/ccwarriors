@@ -17,7 +17,8 @@ function printHelp(): void {
 ${bold("ccwarriors")} — sync your Claude Code costs and climb the leaderboard
 
 ${bold("INSTALL")}
-  curl -fsSL https://ccwarriors.xyz/install.sh | bash
+  macOS/Linux:  curl -fsSL https://ccwarriors.xyz/install.sh | bash
+  Windows:      irm https://ccwarriors.xyz/install.ps1 | iex
 
 ${bold("USAGE")}
   ccwarriors            Sync costs (default)
@@ -117,6 +118,8 @@ async function cmdSync(): Promise<void> {
   console.log(`   See your rank live → ${underline(`${WEB_BASE}/?u=${encodeURIComponent(config.login)}`)}`);
   if (!autosyncEnabled() && (process.platform === "darwin" || process.platform === "linux")) {
     console.log(dim("   tip: `ccwarriors autosync on` keeps your rank fresh every hour"));
+  } else if (process.platform === "win32") {
+    console.log(dim("   tip: `ccwarriors watch` keeps your rank fresh while it runs"));
   }
   console.log();
 }

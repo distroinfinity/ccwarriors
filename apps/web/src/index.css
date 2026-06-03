@@ -43,7 +43,11 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .hero h1{ font-size:clamp(30px,7.5vw,54px); line-height:1.02; font-weight:800; letter-spacing:-.025em; }
 .hero h1 .o{ color:var(--or); }
 .hero p{ color:var(--muted); margin-top:13px; font-size:16px; }
-.install{ display:inline-flex; align-items:stretch; border:1px solid var(--line); margin-top:24px; max-width:100%; }
+.installwrap{ margin-top:22px; max-width:100%; }
+.ostabs{ display:flex; gap:16px; margin-bottom:8px; }
+.ostabs button{ font:inherit; font-size:11px; letter-spacing:.06em; text-transform:uppercase; background:none; border:0; padding:0 0 2px; color:var(--muted); cursor:pointer; border-bottom:1px solid transparent; }
+.ostabs button.on{ color:var(--ink); font-weight:700; border-bottom:1px solid var(--or); }
+.install{ display:inline-flex; align-items:stretch; border:1px solid var(--line); max-width:100%; }
 .install code{ font-family:'Geist Mono'; font-size:14.5px; padding:12px 16px; display:flex; align-items:center; min-width:0; }
 .install .p{ color:var(--or); margin-right:9px; }
 .install button{ border:0; border-left:1px solid var(--line); background:var(--ink); color:var(--bg); padding:0 18px; font:inherit; font-weight:600; font-size:12.5px; cursor:pointer; letter-spacing:.04em; white-space:nowrap; }
@@ -64,7 +68,9 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .empty-clawd{ width:76px; height:auto; image-rendering:pixelated; opacity:.85; margin-bottom:18px; }
 .empty h3,.enlist h3{ font-size:17px; font-weight:700; letter-spacing:-.01em; }
 .empty p{ color:var(--muted); font-size:13.5px; margin-top:9px; }
-.empty .install,.enlist .install{ margin-top:18px; max-width:100%; }
+.empty .installwrap,.enlist .installwrap{ margin-top:18px; width:100%; }
+.empty .ostabs,.enlist .ostabs{ justify-content:center; }
+.empty .install,.enlist .install{ max-width:100%; }
 /* Narrow containers (the 332px sidebar): stack the command above a full-width Copy. */
 .enlist .install{ display:flex; flex-direction:column; width:100%; }
 .enlist .install code{ white-space:pre-wrap; word-break:break-all; text-align:left; font-size:12.5px; padding:11px 13px; display:block; }

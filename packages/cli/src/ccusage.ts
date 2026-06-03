@@ -25,11 +25,14 @@ function yyyymmdd(date: Date): string {
   return `${y}${m}${d}`;
 }
 
+const IS_WIN = process.platform === "win32";
+
 async function runCcusage(args: string[]): Promise<CcusageJson> {
+  // Windows: npx is npx.cmd and needs a shell to spawn.
   const { stdout } = await execFileAsync(
-    "npx",
+    IS_WIN ? "npx.cmd" : "npx",
     ["--yes", "ccusage@latest", ...args],
-    { timeout: 120_000 }
+    { timeout: 120_000, shell: IS_WIN },
   );
   return JSON.parse(stdout) as CcusageJson;
 }
@@ -64,9 +67,9 @@ export async function readCosts(): Promise<CcusageCosts> {
   let ccusageVersion = "";
   try {
     const { stdout } = await execFileAsync(
-      "npx",
+      IS_WIN ? "npx.cmd" : "npx",
       ["--yes", "ccusage@latest", "--version"],
-      { timeout: 30_000 }
+      { timeout: 30_000, shell: IS_WIN },
     );
     ccusageVersion = stdout.trim();
   } catch {
