@@ -46,6 +46,10 @@ export default function App() {
           Built with <PixelHeart /> by{" "}
           <a href="https://x.com/distroinfinity" target="_blank" rel="noopener">
             Manu
+          </a>{" "}
+          ·{" "}
+          <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
+            GitHub
           </a>
         </footer>
       </div>

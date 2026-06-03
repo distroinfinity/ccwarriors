@@ -4,3 +4,4 @@ dist/
 .env
 apps/web/public/cli.js
 .vercel/
+.vercel

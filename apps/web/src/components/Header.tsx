@@ -19,10 +19,9 @@ export function Header({ count, totalBurned }: { count: number; totalBurned: num
   const burned = useTween(totalBurned);
   return (
     <header>
-      <div className="brand">
+      <a className="brand" href="/" aria-label="CCWarriors home">
         <ClawdLogo />
-        <div className="nm">CCWARRIORS</div>
-      </div>
+      </a>
       <div className="right">
         <div className="hstats">
           <div>
