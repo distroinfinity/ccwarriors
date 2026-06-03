@@ -3,3 +3,4 @@ node_modules/
 dist/
 .env
 apps/web/public/cli.js
+.vercel/
