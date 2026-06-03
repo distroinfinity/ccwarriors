@@ -15,6 +15,7 @@ export interface AppDeps {
     clientId: string;
     clientSecret: string;
     publicBaseUrl: string;
+    webBaseUrl: string;
   };
 }
 
@@ -24,7 +25,10 @@ export function createApp(deps?: AppDeps) {
   const corsOrigin = deps?.corsOrigin ?? "*";
   app.use(
     "*",
-    cors({ origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map((s) => s.trim()) }),
+    cors({
+      origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map((s) => s.trim()),
+      credentials: corsOrigin !== "*",
+    }),
   );
 
   app.get("/health", (c) => c.json({ status: "ok" }));
@@ -32,7 +36,7 @@ export function createApp(deps?: AppDeps) {
     app.route("/ingest", ingestRoute(deps.db, deps.store, deps.onIngest));
     app.route("/leaderboard", leaderboardRoute(deps.store));
     if (deps.auth) {
-      app.route("/cli", authRoute(deps.db, deps.auth));
+      app.route("/", authRoute(deps.db, deps.auth));
     }
   }
   return app;

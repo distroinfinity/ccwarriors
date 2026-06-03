@@ -38,12 +38,15 @@ async function main() {
   const wss = new WebSocketServer({ noServer: true });
   const broadcast = attachBroadcast(wss, store);
 
-  let authDeps: { clientId: string; clientSecret: string; publicBaseUrl: string } | undefined;
+  let authDeps:
+    | { clientId: string; clientSecret: string; publicBaseUrl: string; webBaseUrl: string }
+    | undefined;
   if (cfg.githubClientId && cfg.githubClientSecret) {
     authDeps = {
       clientId: cfg.githubClientId,
       clientSecret: cfg.githubClientSecret,
       publicBaseUrl: cfg.publicBaseUrl,
+      webBaseUrl: cfg.webBaseUrl,
     };
   } else {
     console.log("github oauth: disabled (no credentials)");

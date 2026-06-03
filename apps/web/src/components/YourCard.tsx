@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { toPng } from "html-to-image";
+import { API_HTTP } from "../api";
 import type { Entry } from "../types";
 import { ClawdLogo } from "./ClawdLogo";
 import { CardScene } from "./CardScene";
@@ -14,6 +16,9 @@ export function EnlistCard() {
         <ClawdLogo className="empty-clawd" />
         <h3>Enlist to pull your card.</h3>
         <InstallBlock />
+        <a className="ghsign" href={`${API_HTTP}/auth/web`}>
+          Already enlisted? Sign in with GitHub →
+        </a>
       </div>
     </aside>
   );
@@ -21,13 +26,13 @@ export function EnlistCard() {
 
 export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
   const [portraitFailed, setPortraitFailed] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
   const monogram = (entry.githubLogin[0] ?? "?").toUpperCase();
 
   const shareOnX = () => {
-    const text = `I'm ranked #${rank} on @CCWarriors, burning ${formatUsd(
-      entry.cost30d,
-    )} of Claude Code tokens this month. ${tierLabel(entry.tier)} tier. Outburn me.`;
-    const url = `https://ccwarriors.xyz/u/${entry.githubLogin}`;
+    const text = `${formatUsd(entry.cost30d)} burned on Claude Code in the last 30 days. rank #${rank} on the board.`;
+    const url = "https://ccwarriors.xyz";
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       "_blank",
@@ -35,14 +40,27 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
     );
   };
 
-  const downloadCard = () => {
-    alert("PNG export is coming soon. For now, screenshot your card or share it on X.");
+  const downloadCard = async () => {
+    if (!cardRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const dataUrl = await toPng(cardRef.current, { pixelRatio: 3, cacheBust: true });
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = `ccwarriors-${entry.githubLogin}.png`;
+      a.click();
+    } catch (err) {
+      console.error("card export failed", err);
+      alert("Export failed — try again (avatar image may still be loading).");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
     <aside className="side">
       <div className="seclabel">Your card</div>
-      <div className="card">
+      <div className="card" ref={cardRef}>
         <div className="edge" />
         <div className="cc">
           <div className="b">
@@ -60,6 +78,7 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
               className="pf"
               src={entry.avatarUrl}
               alt={entry.githubLogin}
+              crossOrigin="anonymous"
               onError={() => setPortraitFailed(true)}
             />
           )}
@@ -87,8 +106,8 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
       <button className="btn x" onClick={shareOnX}>
         Share on X
       </button>
-      <button className="btn g" onClick={downloadCard}>
-        Download card
+      <button className="btn g" onClick={downloadCard} disabled={exporting}>
+        {exporting ? "Exporting…" : "Download card"}
       </button>
     </aside>
   );

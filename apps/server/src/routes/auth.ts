@@ -1,102 +1,78 @@
 import { Hono } from "hono";
-import { createHmac, randomBytes } from "node:crypto";
+import { getCookie } from "hono/cookie";
+import { randomBytes } from "node:crypto";
 import type { DB } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { generateToken, hashToken } from "../lib/token.js";
 import { randomScene } from "../lib/scenes.js";
+import { createSessionToken, readSessionToken, sessionCookie, sign, verify } from "../lib/session.js";
 
 interface AuthCfg {
   clientId: string;
   clientSecret: string;
   publicBaseUrl: string;
+  webBaseUrl: string;
 }
 
-// Build a signed state token: base64url(JSON payload) + "." + HMAC-SHA256
-function buildState(payload: object, secret: string): string {
-  const payloadStr = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const sig = createHmac("sha256", secret).update(payloadStr).digest("hex");
-  return `${payloadStr}.${sig}`;
-}
-
-// Verify and decode the state. Returns the parsed payload or null if invalid.
-function verifyState(state: string, secret: string): Record<string, unknown> | null {
-  const dotIdx = state.lastIndexOf(".");
-  if (dotIdx === -1) return null;
-  const payloadStr = state.slice(0, dotIdx);
-  const sig = state.slice(dotIdx + 1);
-  const expected = createHmac("sha256", secret).update(payloadStr).digest("hex");
-  // Constant-time comparison
-  if (sig.length !== expected.length) return null;
-  let diff = 0;
-  for (let i = 0; i < sig.length; i++) {
-    diff |= sig.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  if (diff !== 0) return null;
-  try {
-    return JSON.parse(Buffer.from(payloadStr, "base64url").toString("utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
+type Mode = "cli" | "web";
 
 export function authRoute(db: DB, cfg: AuthCfg) {
   const app = new Hono();
 
-  // GET /cli/auth?port=<loopbackPort>
-  // Initiates the GitHub OAuth flow.
-  app.get("/auth", (c) => {
-    const portStr = c.req.query("port");
-    const port = portStr ? parseInt(portStr, 10) : NaN;
-    if (isNaN(port) || !Number.isInteger(port) || port < 1024 || port > 65535) {
-      return c.text("Invalid port: must be an integer between 1024 and 65535", 400);
-    }
+  const redirectUri = `${cfg.publicBaseUrl}/cli/callback`;
 
-    const nonce = randomBytes(16).toString("hex");
-    const state = buildState({ port, nonce }, cfg.clientSecret);
-
-    const redirectUri = `${cfg.publicBaseUrl}/cli/callback`;
+  function githubAuthorizeUrl(statePayload: object): string {
+    const state = sign(statePayload, cfg.clientSecret);
     const ghUrl = new URL("https://github.com/login/oauth/authorize");
     ghUrl.searchParams.set("client_id", cfg.clientId);
     ghUrl.searchParams.set("redirect_uri", redirectUri);
     ghUrl.searchParams.set("scope", "read:user");
     ghUrl.searchParams.set("state", state);
     ghUrl.searchParams.set("allow_signup", "true");
+    return ghUrl.toString();
+  }
 
-    return c.redirect(ghUrl.toString(), 302);
+  // CLI flow: opens GitHub, ends back at the CLI's loopback server.
+  app.get("/cli/auth", (c) => {
+    const portStr = c.req.query("port");
+    const port = portStr ? parseInt(portStr, 10) : NaN;
+    if (isNaN(port) || !Number.isInteger(port) || port < 1024 || port > 65535) {
+      return c.text("Invalid port: must be an integer between 1024 and 65535", 400);
+    }
+    const nonce = randomBytes(16).toString("hex");
+    return c.redirect(githubAuthorizeUrl({ mode: "cli", port, nonce }), 302);
   });
 
-  // GET /cli/callback?code=<code>&state=<state>
-  // GitHub redirects here after user authorization.
-  app.get("/callback", async (c) => {
+  // Web flow: opens GitHub, ends back on the landing page with a session.
+  app.get("/auth/web", (c) => {
+    const nonce = randomBytes(16).toString("hex");
+    return c.redirect(githubAuthorizeUrl({ mode: "web", nonce }), 302);
+  });
+
+  // Shared GitHub callback (the OAuth app's single registered redirect URI).
+  app.get("/cli/callback", async (c) => {
     const code = c.req.query("code");
     const state = c.req.query("state");
+    if (!code || !state) return c.text("Missing code or state", 400);
 
-    if (!code || !state) {
-      return c.text("Missing code or state", 400);
-    }
+    const payload = verify(state, cfg.clientSecret);
+    if (!payload) return c.text("Invalid state", 400);
 
-    // Verify state HMAC
-    const payload = verifyState(state, cfg.clientSecret);
-    if (!payload) {
-      return c.text("Invalid state", 400);
-    }
-
+    const mode: Mode = payload["mode"] === "web" ? "web" : "cli";
     const port = payload["port"];
-    if (typeof port !== "number" || port < 1024 || port > 65535) {
+    if (mode === "cli" && (typeof port !== "number" || port < 1024 || port > 65535)) {
       return c.text("Invalid port in state", 400);
     }
 
-    const loopbackBase = `http://127.0.0.1:${port}/callback`;
+    const fail = () =>
+      mode === "cli"
+        ? c.redirect(`http://127.0.0.1:${port}/callback?error=auth_failed`, 302)
+        : c.redirect(`${cfg.webBaseUrl}/?login=failed`, 302);
 
     try {
-      // Exchange code for access token
-      const redirectUri = `${cfg.publicBaseUrl}/cli/callback`;
       const tokenRes = await fetch("https://github.com/login/oauth/access_token", {
         method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
         body: JSON.stringify({
           client_id: cfg.clientId,
           client_secret: cfg.clientSecret,
@@ -104,61 +80,77 @@ export function authRoute(db: DB, cfg: AuthCfg) {
           redirect_uri: redirectUri,
         }),
       });
-
-      const tokenData = await tokenRes.json() as Record<string, unknown>;
+      const tokenData = (await tokenRes.json()) as Record<string, unknown>;
       const accessToken = tokenData["access_token"];
-      if (typeof accessToken !== "string" || !accessToken) {
-        return c.redirect(`${loopbackBase}?error=auth_failed`, 302);
-      }
+      if (typeof accessToken !== "string" || !accessToken) return fail();
 
-      // Fetch GitHub user info
       const userRes = await fetch("https://api.github.com/user", {
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "User-Agent": "ccwarriors",
-        },
+        headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "ccwarriors" },
       });
-
-      const ghUser = await userRes.json() as Record<string, unknown>;
+      const ghUser = (await userRes.json()) as Record<string, unknown>;
       const githubId = ghUser["id"];
       const login = ghUser["login"];
       const avatarUrl = ghUser["avatar_url"];
-
       if (typeof githubId !== "number" || typeof login !== "string" || typeof avatarUrl !== "string") {
-        return c.redirect(`${loopbackBase}?error=auth_failed`, 302);
+        return fail();
       }
-
-      // Generate a fresh CLI token
-      const cliToken = generateToken();
-      const cliTokenHash = hashToken(cliToken);
       const githubIdStr = String(githubId);
 
-      // Upsert the user — insert or update on conflict with github_id
+      // Every login (CLI or web) gets a browser session for the site.
+      const session = createSessionToken({ login, avatarUrl, githubId: githubIdStr }, cfg.clientSecret);
+      c.header("Set-Cookie", sessionCookie(session, cfg.publicBaseUrl));
+
+      if (mode === "web") {
+        // Web sign-in only identifies an existing/new visitor; no CLI token rotation.
+        await db
+          .insert(users)
+          .values({
+            githubId: githubIdStr,
+            githubLogin: login,
+            avatarUrl,
+            cliTokenHash: hashToken(generateToken()),
+            cardScene: randomScene(),
+          })
+          .onConflictDoUpdate({ target: users.githubId, set: { githubLogin: login, avatarUrl } });
+        return c.redirect(`${cfg.webBaseUrl}/?u=${encodeURIComponent(login)}`, 302);
+      }
+
+      // CLI mode: rotate the CLI token and hand it to the loopback server.
+      const cliToken = generateToken();
       await db
         .insert(users)
         .values({
           githubId: githubIdStr,
           githubLogin: login,
           avatarUrl,
-          cliTokenHash,
+          cliTokenHash: hashToken(cliToken),
           cardScene: randomScene(),
         })
         .onConflictDoUpdate({
           target: users.githubId,
-          set: {
-            githubLogin: login,
-            avatarUrl,
-            cliTokenHash,
-          },
+          set: { githubLogin: login, avatarUrl, cliTokenHash: hashToken(cliToken) },
         });
 
-      // Redirect the browser back to the CLI's loopback server
-      const callbackUrl = `${loopbackBase}?token=${encodeURIComponent(cliToken)}&login=${encodeURIComponent(login)}`;
-      return c.redirect(callbackUrl, 302);
+      return c.redirect(
+        `http://127.0.0.1:${port}/callback?token=${encodeURIComponent(cliToken)}&login=${encodeURIComponent(login)}`,
+        302,
+      );
     } catch (err) {
       console.error("[auth] OAuth callback error:", err);
-      return c.redirect(`${loopbackBase}?error=auth_failed`, 302);
+      return fail();
     }
+  });
+
+  // Who is this browser? (session cookie → identity; null when signed out)
+  app.get("/me", (c) => {
+    const token = getCookie(c, "ccw_session");
+    const session = token ? readSessionToken(token, cfg.clientSecret) : null;
+    return c.json(session ?? { login: null });
+  });
+
+  app.get("/logout", (c) => {
+    c.header("Set-Cookie", sessionCookie("", cfg.publicBaseUrl, 0));
+    return c.redirect(cfg.webBaseUrl, 302);
   });
 
   return app;

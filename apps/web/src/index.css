@@ -70,6 +70,9 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .enlist .install code{ white-space:pre-wrap; word-break:break-all; text-align:left; font-size:12.5px; padding:11px 13px; display:block; }
 .enlist .install button{ border-left:0; border-top:1px solid var(--line); padding:10px 0; width:100%; }
 .empty .install code{ display:block; white-space:pre-wrap; word-break:break-all; text-align:left; min-width:0; }
+.ghsign{ margin-top:15px; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:3px; }
+.ghsign:hover{ color:var(--ink); }
+
 .connecting{ padding:44px 24px; text-align:center; font-size:12.5px; color:var(--muted); letter-spacing:.02em; }
 .connecting::before{ content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--muted); margin-right:8px; vertical-align:middle; animation:pulse 1.6s infinite; }
 

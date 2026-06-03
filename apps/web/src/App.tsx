@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useLeaderboard } from "./useLeaderboard";
+import { useMe } from "./useMe";
 import { Marquee } from "./components/Marquee";
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
@@ -14,6 +15,7 @@ type Board = "30d" | "allTime";
 
 export default function App() {
   const { count, top30d, topAllTime, connected, hasSnapshot } = useLeaderboard();
+  const session = useMe();
   const [board, setBoard] = useState<Board>("30d");
 
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
@@ -36,7 +38,8 @@ export default function App() {
       return null;
     }
   }, []);
-  const meIndex = claimed ? entries.findIndex((e) => e.githubLogin === claimed) : -1;
+  const identity = session?.login ?? claimed;
+  const meIndex = identity ? entries.findIndex((e) => e.githubLogin === identity) : -1;
   const me = meIndex >= 0 ? entries[meIndex] : undefined;
   const meRank = meIndex + 1;
 
