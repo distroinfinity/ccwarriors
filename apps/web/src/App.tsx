@@ -84,7 +84,9 @@ export default function App() {
           ·{" "}
           <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
             GitHub
-          </a>
+          </a>{" "}
+          ·{" "}
+          <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
         </footer>
       </div>
     </>
