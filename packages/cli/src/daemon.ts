@@ -39,6 +39,10 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       });
       if (res.data?.ok) {
         log(`synced (${reason}) — $${cost30d} 30d · rank #${res.data.rank30d ?? "—"}`);
+      } else if (res.status === 429) {
+        // Server enforces 10s between syncs — retry instead of dropping the update.
+        log(`sync deferred (${reason}) — rate limited, retrying`);
+        schedule(`retry ${reason}`);
       } else {
         log(`sync skipped (${reason}) — status ${res.status}`);
       }
@@ -54,7 +58,10 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   }
 
   function schedule(reason: string): void {
-    if (timer) clearTimeout(timer);
+    // Batch, don't reset: fire DEBOUNCE_MS after the FIRST event in a burst.
+    // Resetting on every fs event starved syncs during continuous Claude Code
+    // activity (the timer never fired until a 12s quiet gap appeared).
+    if (timer) return;
     timer = setTimeout(() => {
       timer = null;
       void syncNow(reason);
