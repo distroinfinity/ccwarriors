@@ -3,9 +3,8 @@ import { loadConfig, clearConfig } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readCosts } from "./ccusage.js";
 import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
-
-const API_BASE = process.env["CCWARRIORS_API"] ?? "https://api.ccwarriors.xyz";
-const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
+import { runDaemon } from "./daemon.js";
+import { API_BASE, WEB_BASE, postIngest, type IngestResponse } from "./core.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -24,9 +23,10 @@ ${bold("USAGE")}
   ccwarriors logout     Remove stored credentials
   ccwarriors whoami     Show the currently enlisted login
   ccwarriors watch [seconds]         Live mode — re-sync every N seconds (default 30, min 10)
-  ccwarriors autosync on [minutes]   Keep your rank fresh automatically (default: every 60 min)
-  ccwarriors autosync off            Stop the scheduled sync
+  ccwarriors autosync on             Stream usage from a background daemon (real time, survives reboots)
+  ccwarriors autosync off            Stop the background daemon
   ccwarriors autosync status         Show whether autosync is enabled
+  ccwarriors daemon [heartbeatMin]   Run the sync daemon in the foreground (autosync runs this for you)
   ccwarriors --help     Show this help
 
 ${bold("ENVIRONMENT")}
@@ -55,32 +55,6 @@ async function cmdWhoami(): Promise<void> {
   } else {
     console.log(config.login);
   }
-}
-
-interface IngestResponse {
-  ok: boolean;
-  tier?: string;
-  rank30d?: number | null;
-  rankAllTime?: number | null;
-}
-
-async function postIngest(
-  token: string,
-  payload: { cost30d: number; costAllTime: number; ccusageVersion?: string },
-): Promise<{ status: number; data?: IngestResponse; text: string }> {
-  const res = await fetch(`${API_BASE}/ingest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-  const text = await res.text();
-  let data: IngestResponse | undefined;
-  try {
-    data = JSON.parse(text) as IngestResponse;
-  } catch {
-    /* non-JSON error body */
-  }
-  return { status: res.status, data, text };
 }
 
 async function cmdSync(): Promise<void> {
@@ -184,9 +158,14 @@ async function cmdWatch(args: string[]): Promise<void> {
 function cmdAutosync(args: string[]): void {
   const sub = args[0];
   if (sub === "on") {
-    const minutes = Number(args[1] ?? 60) || 60;
+    const minutes = Number(args[1] ?? 5) || 5;
     autosyncOn(minutes);
-    console.log(green(`Autosync on — your costs will sync every ${Math.max(5, Math.round(minutes))} min.`));
+    if (process.platform === "darwin") {
+      console.log(green("Autosync on — background daemon streaming your usage in real time."));
+      console.log(`  Syncs the moment Claude Code writes usage (heartbeat every ${Math.max(1, Math.round(minutes))}m).`);
+    } else {
+      console.log(green(`Autosync on — cron sync every ${Math.max(1, Math.round(minutes))} min.`));
+    }
     return;
   }
   if (sub === "off") {
@@ -232,6 +211,11 @@ async function main(): Promise<void> {
 
   if (cmd === "autosync") {
     cmdAutosync(args.slice(1));
+    return;
+  }
+
+  if (cmd === "daemon") {
+    await runDaemon(Number(args[1] ?? 5) || 5);
     return;
   }
 

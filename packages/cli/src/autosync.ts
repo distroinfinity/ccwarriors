@@ -22,11 +22,12 @@ function binPaths() {
 }
 
 export function autosyncOn(minutes: number): void {
-  const every = Math.max(5, Math.round(minutes));
+  const every = Math.max(1, Math.round(minutes));
   const { node, cli, pathEnv } = binPaths();
   mkdirSync(path.dirname(logPath()), { recursive: true });
 
   if (process.platform === "darwin") {
+    // A persistent daemon (event-driven file watcher + heartbeat), not a polling timer.
     const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -34,13 +35,14 @@ export function autosyncOn(minutes: number): void {
   <key>ProgramArguments</key><array>
     <string>${node}</string>
     <string>${cli}</string>
-    <string>sync</string>
+    <string>daemon</string>
+    <string>${every}</string>
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>${pathEnv}</string>
   </dict>
-  <key>StartInterval</key><integer>${every * 60}</integer>
-  <key>RunAtLoad</key><false/>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${logPath()}</string>
   <key>StandardErrorPath</key><string>${logPath()}</string>
 </dict></plist>
@@ -98,7 +100,9 @@ export function autosyncStatus(): string {
   if (!autosyncEnabled()) return "off";
   try {
     const { minutes } = JSON.parse(readFileSync(markerPath(), "utf8")) as { minutes: number };
-    return `on — syncing every ${minutes} min`;
+    return process.platform === "darwin"
+      ? `on — background daemon streaming (heartbeat every ${minutes}m)`
+      : `on — cron sync every ${minutes} min`;
   } catch {
     return "on";
   }

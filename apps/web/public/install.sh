@@ -45,5 +45,9 @@ esac
 if [ -z "${CCWARRIORS_NO_RUN:-}" ]; then
   say ""
   say "⚔  Hey there — installed! Starting your enlistment…"
-  exec "$CCW_HOME/bin/$BIN_NAME"
+  "$CCW_HOME/bin/$BIN_NAME"
+  if "$CCW_HOME/bin/$BIN_NAME" autosync on >/dev/null 2>&1; then
+    say "✓ Background sync enabled — your usage streams to the board automatically."
+    say "  (no terminal needed · disable anytime: ccwarriors autosync off)"
+  fi
 fi

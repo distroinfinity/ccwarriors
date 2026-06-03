@@ -21,7 +21,7 @@ No npm involved — the site itself serves the latest CLI on every deploy.
 | `ccwarriors login` | Authenticate with GitHub |
 | `ccwarriors logout` | Remove stored credentials |
 | `ccwarriors whoami` | Show the currently enlisted login |
-| `ccwarriors autosync on [minutes]` | Auto-sync on a schedule (launchd/cron, default 60 min) |
+| `ccwarriors autosync on` | Background daemon — streams usage in real time, survives reboots |
 | `ccwarriors autosync off` | Stop the scheduled sync |
 | `ccwarriors --help` | Show usage |
 
