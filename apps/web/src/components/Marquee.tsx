@@ -29,7 +29,24 @@ function buildItems(entries: Entry[], count: number): string[] {
   return items;
 }
 
-export function Marquee({ entries, count }: { entries: Entry[]; count: number }) {
+export function Marquee({
+  entries,
+  count,
+  loading,
+}: {
+  entries: Entry[];
+  count: number;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="ticker">
+        <div className="skline">
+          <span className="sk" style={{ width: 300, height: 13 }} />
+        </div>
+      </div>
+    );
+  }
   // Empty board: a calm static line, no scroll animation.
   if (count === 0 || entries.length === 0) {
     return (

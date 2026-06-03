@@ -5,6 +5,7 @@ import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
+import { BoardSkeleton } from "./Skeleton";
 
 type Board = "30d" | "allTime";
 
@@ -116,7 +117,7 @@ export function Leaderboard({
 
       <div className="board">
         {isConnecting ? (
-          <div className="connecting">connecting…</div>
+          <BoardSkeleton />
         ) : isEmpty ? (
           <EmptyBoard />
         ) : (

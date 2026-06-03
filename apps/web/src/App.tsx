@@ -5,6 +5,7 @@ import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
 import { Leaderboard } from "./components/Leaderboard";
 import { YourCard, EnlistCard } from "./components/YourCard";
+import { CardSkeleton } from "./components/Skeleton";
 import { SceneDefs } from "./components/CardScene";
 import { PixelHeart } from "./components/PixelHeart";
 import type { Entry } from "./types";
@@ -26,9 +27,9 @@ export default function App() {
   return (
     <>
       <SceneDefs />
-      <Marquee entries={entries} count={count} />
+      <Marquee entries={entries} count={count} loading={!hasSnapshot} />
       <div className="wrap">
-        <Header count={count} totalBurned={totalBurned} />
+        <Header count={count} totalBurned={totalBurned} loading={!hasSnapshot} />
         <main className="main">
           <Hero />
           <div className="layout">
@@ -39,7 +40,7 @@ export default function App() {
               connected={connected}
               hasSnapshot={hasSnapshot}
             />
-            {me ? <YourCard entry={me} rank={meRank} /> : <EnlistCard />}
+            {!hasSnapshot ? <CardSkeleton /> : me ? <YourCard entry={me} rank={meRank} /> : <EnlistCard />}
           </div>
         </main>
         <footer>

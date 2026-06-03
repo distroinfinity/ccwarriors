@@ -2,11 +2,11 @@
 
 html[data-theme="light"]{
   --bg:#FAFAF8; --panel:#FFFFFF; --line:#E7E4DC; --ink:#16140F; --muted:#857F73;
-  --or:#C2683E; --bronze:#9A6B3F; --grid:rgba(0,0,0,.035); --spark:#cdc9c0; --avbg:#dad6cd; --segoff:#F1EEE7;
+  --or:#C2683E; --bronze:#9A6B3F; --grid:rgba(0,0,0,.035); --spark:#cdc9c0; --avbg:#dad6cd; --segoff:#F1EEE7; --shimmer:rgba(255,255,255,.65);
 }
 html[data-theme="dark"]{
   --bg:#0a0a0b; --panel:#111214; --line:rgba(255,255,255,.09); --ink:#ECEAE3; --muted:#8b8f96;
-  --or:#CC785C; --bronze:#B88A63; --grid:rgba(204,120,92,.06); --spark:#454a51; --avbg:#33363b; --segoff:#1a1b1e;
+  --or:#CC785C; --bronze:#B88A63; --grid:rgba(204,120,92,.06); --spark:#454a51; --avbg:#33363b; --segoff:#1a1b1e; --shimmer:rgba(255,255,255,.07);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{ overflow-x:hidden; }
@@ -72,6 +72,17 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .empty .install code{ display:block; white-space:pre-wrap; word-break:break-all; text-align:left; min-width:0; }
 .connecting{ padding:44px 24px; text-align:center; font-size:12.5px; color:var(--muted); letter-spacing:.02em; }
 .connecting::before{ content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--muted); margin-right:8px; vertical-align:middle; animation:pulse 1.6s infinite; }
+
+/* Shimmer skeletons (initial load) */
+.sk{ display:inline-block; background:var(--segoff); border-radius:4px; position:relative; overflow:hidden; vertical-align:middle; }
+.sk::after{ content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(90deg,transparent,var(--shimmer),transparent); animation:shimmer 1.3s infinite; }
+.sk.circle{ border-radius:50%; }
+@keyframes shimmer{ 100%{ transform:translateX(100%); } }
+.ticker .skline{ display:flex; justify-content:center; padding:9px 0; }
+.card-skel{ border:1px solid var(--line); background:var(--panel); }
+.card-skel-head{ display:flex; justify-content:space-between; align-items:center; padding:11px 13px; }
+.card-skel-body{ padding:14px 13px 18px; display:flex; flex-direction:column; align-items:flex-start; }
 
 .layout{ display:grid; grid-template-columns:1fr 332px; gap:30px; align-items:start; }
 
