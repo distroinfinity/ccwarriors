@@ -64,7 +64,12 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .empty-clawd{ width:76px; height:auto; image-rendering:pixelated; opacity:.85; margin-bottom:18px; }
 .empty h3,.enlist h3{ font-size:17px; font-weight:700; letter-spacing:-.01em; }
 .empty p{ color:var(--muted); font-size:13.5px; margin-top:9px; }
-.empty .install,.enlist .install{ margin-top:18px; }
+.empty .install,.enlist .install{ margin-top:18px; max-width:100%; }
+/* Narrow containers (the 332px sidebar): stack the command above a full-width Copy. */
+.enlist .install{ display:flex; flex-direction:column; width:100%; }
+.enlist .install code{ white-space:pre-wrap; word-break:break-all; text-align:left; font-size:12.5px; padding:11px 13px; display:block; }
+.enlist .install button{ border-left:0; border-top:1px solid var(--line); padding:10px 0; width:100%; }
+.empty .install code{ display:block; white-space:pre-wrap; word-break:break-all; text-align:left; min-width:0; }
 .connecting{ padding:44px 24px; text-align:center; font-size:12.5px; color:var(--muted); letter-spacing:.02em; }
 .connecting::before{ content:""; display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--muted); margin-right:8px; vertical-align:middle; animation:pulse 1.6s infinite; }
 
