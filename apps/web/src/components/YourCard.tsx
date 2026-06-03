@@ -96,7 +96,7 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
             {formatUsd(entry.cost30d)}
             <small>30D</small>
           </div>
-          <div className="at">all time · {formatUsd(entry.costAllTime)}</div>
+          {/* all-time hidden — local logs only go back ~30 days (see Leaderboard note) */}
         </div>
         <div className="cfo">
           <span>ccwarriors.xyz</span>

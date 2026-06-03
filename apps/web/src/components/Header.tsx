@@ -36,7 +36,7 @@ export function Header({ count, totalBurned, loading }: { count: number; totalBu
             <div className="v mono">
               {loading ? <Sk w={64} h={16} /> : <>${Math.round(burned).toLocaleString("en-US")}</>}
             </div>
-            <div className="l">total burned</div>
+            <div className="l">burned · 30d</div>
           </div>
         </div>
         <ThemeToggle />

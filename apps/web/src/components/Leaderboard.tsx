@@ -105,9 +105,9 @@ export function Leaderboard({
           <button className={board === "30d" ? "on" : ""} onClick={() => setBoard("30d")}>
             30 Days
           </button>
-          <button className={board === "allTime" ? "on" : ""} onClick={() => setBoard("allTime")}>
-            All Time
-          </button>
+          {/* All Time hidden for now: Claude Code prunes local logs after ~30 days,
+              so ccusage "all-time" ≈ last 30 days. Re-enable once we compute true
+              history server-side from accumulated snapshots. */}
         </div>
         <div className="live">
           <span className="dot" />

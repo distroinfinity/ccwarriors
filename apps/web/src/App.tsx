@@ -19,7 +19,8 @@ export default function App() {
   const [board, setBoard] = useState<Board>("30d");
 
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
-  const totalBurned = entries.reduce((s, e) => s + e.costAllTime, 0);
+  // 30-day sum — "all-time" is unreliable (local logs are pruned after ~30 days).
+  const totalBurned = entries.reduce((s, e) => s + e.cost30d, 0);
 
   // "Your card" — identity claimed via the CLI's personalized link (?u=login),
   // remembered in localStorage. Unknown visitors get the enlist CTA instead.
