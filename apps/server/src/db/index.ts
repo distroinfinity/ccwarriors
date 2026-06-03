@@ -10,12 +10,12 @@ export function createDb(url: string) {
 }
 
 // Test-only: in-memory Postgres via PGlite, migrated from ./drizzle.
-export async function createTestDb() {
+export async function createTestDb(): Promise<DB> {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
   const client = new PGlite();
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: new URL("../../drizzle", import.meta.url).pathname });
-  return db;
+  return db as unknown as DB;
 }

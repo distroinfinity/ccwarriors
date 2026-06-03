@@ -28,7 +28,12 @@ export async function ingestUsage(
   const [user] = await db.select().from(users).where(eq(users.cliTokenHash, hashToken(token)));
   if (!user) return { ok: false, error: "unauthorized" };
 
-  if (payload.cost30d > SANITY_CAP || payload.costAllTime > SANITY_CAP) {
+  if (
+    payload.cost30d < 0 ||
+    payload.costAllTime < 0 ||
+    payload.cost30d > SANITY_CAP ||
+    payload.costAllTime > SANITY_CAP
+  ) {
     return { ok: false, error: "implausible" };
   }
   if (user.lastSyncedAt && now - user.lastSyncedAt.getTime() < MIN_SYNC_INTERVAL_MS) {
@@ -38,21 +43,23 @@ export async function ingestUsage(
   const tier = computeTier(payload.costAllTime);
   const syncedAt = new Date(now);
 
-  await db
-    .update(users)
-    .set({
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({
+        cost30d: String(payload.cost30d),
+        costAllTime: String(payload.costAllTime),
+        tier,
+        lastSyncedAt: syncedAt,
+      })
+      .where(eq(users.id, user.id));
+
+    await tx.insert(snapshots).values({
+      userId: user.id,
       cost30d: String(payload.cost30d),
       costAllTime: String(payload.costAllTime),
-      tier,
-      lastSyncedAt: syncedAt,
-    })
-    .where(eq(users.id, user.id));
-
-  await db.insert(snapshots).values({
-    userId: user.id,
-    cost30d: String(payload.cost30d),
-    costAllTime: String(payload.costAllTime),
-    ccusageVersion: payload.ccusageVersion ?? "",
+      ccusageVersion: payload.ccusageVersion ?? "",
+    });
   });
 
   store.upsert({
