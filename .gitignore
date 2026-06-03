@@ -5,3 +5,4 @@ dist/
 apps/web/public/cli.js
 .vercel/
 .vercel
+.DS_Store
