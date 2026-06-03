@@ -27,6 +27,12 @@ export default function App() {
   const claimed = useMemo(() => {
     try {
       const url = new URL(window.location.href);
+      if (url.searchParams.get("logout")) {
+        localStorage.removeItem("ccw_login");
+        url.searchParams.delete("logout");
+        window.history.replaceState({}, "", url.toString());
+        return null;
+      }
       const u = url.searchParams.get("u");
       if (u) {
         localStorage.setItem("ccw_login", u);

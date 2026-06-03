@@ -150,7 +150,7 @@ export function authRoute(db: DB, cfg: AuthCfg) {
 
   app.get("/logout", (c) => {
     c.header("Set-Cookie", sessionCookie("", cfg.publicBaseUrl, 0));
-    return c.redirect(cfg.webBaseUrl, 302);
+    return c.redirect(`${cfg.webBaseUrl}/?logout=1`, 302);
   });
 
   return app;
