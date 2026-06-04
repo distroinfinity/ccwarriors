@@ -19,6 +19,40 @@ const bodySchema = z.object({
   props: z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()])).optional(),
 });
 
+// Rolling in-memory window of install-funnel failures, surfaced at
+// GET /telemetry/failures so the scheduled health workflow can alert when
+// installs break in the wild (we only learned about the Node 20/21 ESM crash
+// from a user DM). Restarts clear it — fine: the alert cares about "failing
+// NOW", and PostHog/Railway logs keep the history.
+const FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_FAILURES_KEPT = 1000;
+interface FailureEntry {
+  event: string;
+  step: string;
+  os: string;
+  at: number;
+}
+const failures: FailureEntry[] = [];
+
+function pruneFailures(now: number) {
+  const cutoff = now - FAILURE_WINDOW_MS;
+  let drop = 0;
+  while (drop < failures.length && (failures[drop] as FailureEntry).at < cutoff) drop++;
+  if (drop > 0) failures.splice(0, drop);
+  if (failures.length > MAX_FAILURES_KEPT) failures.splice(0, failures.length - MAX_FAILURES_KEPT);
+}
+
+function recordFailure(event: string, props: Record<string, unknown>) {
+  const now = Date.now();
+  failures.push({ event, step: String(props["step"] ?? "unknown"), os: String(props["os"] ?? "unknown"), at: now });
+  pruneFailures(now);
+}
+
+/** Test-only: clear the rolling failure window. */
+export function resetFailuresForTest() {
+  failures.length = 0;
+}
+
 /** Log + forward an event to PostHog. Fire-and-forget — never blocks or throws. */
 export function captureEvent(event: string, distinctId: string, props: Record<string, unknown>) {
   console.log(JSON.stringify({ telemetry: event, distinctId, ...props }));
@@ -36,8 +70,32 @@ export function telemetryRoute() {
   const app = new Hono();
   app.post("/", zValidator("json", bodySchema), (c) => {
     const { event, distinctId, props } = c.req.valid("json");
+    if (event === "install_failed" || event === "enlist_failed" || event === "sync_failed") {
+      recordFailure(event, props ?? {});
+    }
     captureEvent(event, distinctId ?? "anonymous", props ?? {});
     return c.json({ ok: true });
+  });
+
+  // Aggregate failure counts for the health workflow. Anonymous by design:
+  // event/step/os/timestamp only, never distinct ids.
+  app.get("/failures", (c) => {
+    const now = Date.now();
+    pruneFailures(now);
+    const hourAgo = now - 60 * 60 * 1000;
+    const lastHour = failures.filter((f) => f.at >= hourAgo);
+    // sync_failed is a background-daemon blip, not a broken install — report
+    // it, but only install/enlist failures should page.
+    const installLastHour = lastHour.filter((f) => f.event !== "sync_failed");
+    const byStep: Record<string, number> = {};
+    for (const f of installLastHour) byStep[f.step] = (byStep[f.step] ?? 0) + 1;
+    return c.json({
+      installFailuresLastHour: installLastHour.length,
+      failuresLastHour: lastHour.length,
+      failuresLast24h: failures.length,
+      byStepLastHour: byStep,
+      recent: failures.slice(-10).map((f) => ({ event: f.event, step: f.step, os: f.os, at: new Date(f.at).toISOString() })),
+    });
   });
   return app;
 }

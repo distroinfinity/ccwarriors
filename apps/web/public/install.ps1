@@ -44,6 +44,9 @@ try {
   Write-Host "... primary host unavailable, using fallback"
   Invoke-WebRequest -UseBasicParsing -Uri "$Fallback/cli.js" -OutFile (Join-Path $CcwHome "cli.js")
 }
+# cli.js is an ES module; without this marker Node 20/21 parse it as CommonJS
+# and die on `import` (Node >=22.7 auto-detects, which hides the bug locally).
+'{ "type": "module" }' | Set-Content -Path (Join-Path $CcwHome "package.json") -Encoding ASCII
 
 # 3) Command shim. WindowsApps is on PATH for the current user by default.
 $script:Step = "shim"

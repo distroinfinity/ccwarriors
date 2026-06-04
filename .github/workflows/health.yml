@@ -38,14 +38,34 @@ jobs:
           check "install.sh served"  sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/install.sh | head -1 | grep -q bash'
           check "install.ps1 served" curl -fsS -m 10 -o /dev/null https://api.ccwarriors.xyz/install.ps1
           check "cli.js served"      sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/cli.js | head -1 | grep -q node'
+          # Installs AND executes the CLI — download-only checks miss runtime
+          # breakage (e.g. the ESM cli.js crashing without its package.json marker).
           check "end-to-end install" env HOME="$RUNNER_TEMP/ccw-e2e" CCWARRIORS_NO_RUN=1 CCWARRIORS_TELEMETRY=0 \
-            bash -c 'mkdir -p "$HOME" && curl -fsSL https://api.ccwarriors.xyz/install.sh | bash'
+            bash -c 'mkdir -p "$HOME" && curl -fsSL https://api.ccwarriors.xyz/install.sh | bash \
+              && test -f "$HOME/.ccwarriors/package.json" \
+              && "$HOME/.ccwarriors/bin/ccwarriors" --version'
           check "telemetry endpoint"  curl -fsS -m 10 -X POST https://api.ccwarriors.xyz/telemetry \
             -H 'content-type: application/json' -d '{"event":"health_check","distinctId":"gh-health","props":{"os":"ci"}}'
           check "websocket upgrade"   sh -c 'code=$(curl -s -o /dev/null -w "%{http_code}" -m 10 --http1.1 \
             -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Sec-WebSocket-Version: 13" \
             -H "Sec-WebSocket-Key: aGVhbHRoY2hlY2sxMjM0NQ==" https://api.ccwarriors.xyz/); [ "$code" = "101" ]'
           check "website (deployment)" sh -c 'curl -fsS -m 10 https://ccwarriors.vercel.app/ | grep -qi "<div id=\"root\"\|ccwarriors"'
+
+          # Alert when real users' installs are failing (installer beacons land
+          # in the server's rolling window at /telemetry/failures). This is how
+          # we hear about breakage like the Node 20/21 ESM crash without a DM.
+          fails=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/failures | jq -er '.installFailuresLastHour' || echo ERR)
+          fails="${fails:-ERR}"
+          if [ "$fails" = "ERR" ]; then
+            echo "- ❌ **install-failure telemetry unreachable** (\`/telemetry/failures\`)" >> "$report"
+            failed=1
+          elif [ "$fails" -ge 1 ]; then
+            steps=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/failures | jq -cr '.byStepLastHour' || echo '?')
+            echo "- ❌ **$fails user install failure(s) in the last hour** — by step: \`$steps\`" >> "$report"
+            failed=1
+          else
+            echo "- ✅ user install failures (last hour): 0" >> "$report"
+          fi
 
           # Informational only — the Vercel apex challenge cycles on its own.
           apex=$(curl -s -o /dev/null -w "%{http_code}" -m 10 https://ccwarriors.xyz/install.sh || echo ERR)
