@@ -9,7 +9,12 @@ import { YourCard, EnlistCard } from "./components/YourCard";
 import { CardSkeleton } from "./components/Skeleton";
 import { SceneDefs } from "./components/CardScene";
 import { PixelHeart } from "./components/PixelHeart";
+import { HowItWorks } from "./components/HowItWorks";
 import type { Entry } from "./types";
+
+// One extra route, no router: /how renders the mechanics page in the same shell.
+const isHow = window.location.pathname.replace(/\/+$/, "") === "/how";
+if (isHow) document.title = "How it works · CCWarriors";
 
 type Board = "30d" | "allTime";
 
@@ -59,31 +64,37 @@ export default function App() {
       <div className="wrap">
         <Header count={count} totalBurned={totalBurned} loading={!hasSnapshot} />
         <main className="main">
-          <Hero />
-          <div className="layout">
-            <Leaderboard
-              board={board}
-              setBoard={setBoard}
-              entries={entries}
-              total={count}
-              connected={connected}
-              hasSnapshot={hasSnapshot}
-              locate={locate}
-            />
-            {!hasSnapshot || !meResolved ? (
-              <CardSkeleton />
-            ) : me ? (
-              <YourCard
-                entry={me}
-                rank={meRank}
-                onLocate={() =>
-                  setLocate((s) => ({ seq: (s?.seq ?? 0) + 1, login: me.githubLogin }))
-                }
-              />
-            ) : (
-              <EnlistCard />
-            )}
-          </div>
+          {isHow ? (
+            <HowItWorks />
+          ) : (
+            <>
+              <Hero />
+              <div className="layout">
+                <Leaderboard
+                  board={board}
+                  setBoard={setBoard}
+                  entries={entries}
+                  total={count}
+                  connected={connected}
+                  hasSnapshot={hasSnapshot}
+                  locate={locate}
+                />
+                {!hasSnapshot || !meResolved ? (
+                  <CardSkeleton />
+                ) : me ? (
+                  <YourCard
+                    entry={me}
+                    rank={meRank}
+                    onLocate={() =>
+                      setLocate((s) => ({ seq: (s?.seq ?? 0) + 1, login: me.githubLogin }))
+                    }
+                  />
+                ) : (
+                  <EnlistCard />
+                )}
+              </div>
+            </>
+          )}
         </main>
         <footer>
           <div className="fleft">
@@ -96,6 +107,7 @@ export default function App() {
             </div>
           </div>
           <nav className="flinks" aria-label="Footer">
+            <a href="/how">How it works</a>
             <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
               GitHub
             </a>

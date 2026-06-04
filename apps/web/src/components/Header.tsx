@@ -50,6 +50,9 @@ export function Header({ count, totalBurned, loading }: { count: number; totalBu
             <div className="l">burned · 30d</div>
           </div>
         </div>
+        <a className="howlink" href="/how" title="What we read, what we send, where the code is">
+          How it works
+        </a>
         <ThemeToggle />
       </div>
     </header>
