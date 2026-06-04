@@ -6,7 +6,7 @@ export function Hero() {
       <h1>
         Token burn rate, <span className="o">ranked.</span>
       </h1>
-      <p>See who's burning the most Claude Code tokens.</p>
+      <p>See who's burning the most tokens across their AI coding tools.</p>
       <InstallBlock />
     </div>
   );

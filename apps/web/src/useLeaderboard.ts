@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Snapshot } from "./types";
+import type { Snapshot, ToolInfo } from "./types";
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8787";
 
@@ -7,6 +7,12 @@ export interface BoardState {
   count: number;
   top30d: Snapshot["top30d"];
   topAllTime: Snapshot["topAllTime"];
+  /** Per-tool live boards (ranked by that tool's 30d cost). {} on old servers. */
+  byTool: Record<string, { top30d: Snapshot["top30d"] }>;
+  /** Tools with at least one warrior. [] on old servers → filter chips hide. */
+  tools: ToolInfo[];
+  /** Server-computed totals — the headline numbers are never summed client-side. */
+  totals: { burned30d: number; count: number } | null;
   connected: boolean;
   /** True once the first snapshot has been received from the backend. */
   hasSnapshot: boolean;
@@ -16,6 +22,9 @@ const EMPTY: BoardState = {
   count: 0,
   top30d: [],
   topAllTime: [],
+  byTool: {},
+  tools: [],
+  totals: null,
   connected: false,
   hasSnapshot: false,
 };
@@ -43,8 +52,11 @@ export function useLeaderboard(): BoardState {
           const msg: Snapshot = JSON.parse(ev.data);
           setState({
             count: msg.count,
-            top30d: msg.top30d,
-            topAllTime: msg.topAllTime,
+            top30d: msg.top30d ?? [],
+            topAllTime: msg.topAllTime ?? [],
+            byTool: msg.byTool ?? {},
+            tools: Array.isArray(msg.tools) ? msg.tools : [],
+            totals: msg.totals ?? null,
             connected: true,
             hasSnapshot: true,
           });
