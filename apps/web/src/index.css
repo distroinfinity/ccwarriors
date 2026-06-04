@@ -3,10 +3,12 @@
 html[data-theme="light"]{
   --bg:#FAFAF8; --panel:#FFFFFF; --line:#E7E4DC; --ink:#16140F; --muted:#857F73;
   --or:#C2683E; --bronze:#9A6B3F; --grid:rgba(0,0,0,.035); --spark:#cdc9c0; --avbg:#dad6cd; --segoff:#F1EEE7; --shimmer:rgba(255,255,255,.65);
+  --up:#1F9D55; --up-glow:rgba(31,157,85,.10);
 }
 html[data-theme="dark"]{
   --bg:#0a0a0b; --panel:#111214; --line:rgba(255,255,255,.09); --ink:#ECEAE3; --muted:#8b8f96;
   --or:#CC785C; --bronze:#B88A63; --grid:rgba(204,120,92,.06); --spark:#454a51; --avbg:#33363b; --segoff:#1a1b1e; --shimmer:rgba(255,255,255,.07);
+  --up:#3FB97A; --up-glow:rgba(63,185,122,.12);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{ overflow-x:hidden; }
@@ -112,6 +114,16 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .spark b{ color:var(--or); }
 .amt{ text-align:right; font-size:15px; font-weight:700; }
 .delta{ color:var(--or); font-size:10px; font-weight:700; margin-left:7px; }
+
+/* Stock-ticker "up" flash — gated so reduced-motion users see clean instant swaps. */
+.row{ position:relative; }
+@media (prefers-reduced-motion: no-preference){
+  .amt.up, .v.up, .bn.up{ animation:flashup .9s ease-out; }
+  /* Glow via overlay so it composites over .row.top's gradient instead of replacing it. */
+  .row.up::after{ content:""; position:absolute; inset:0; background:var(--up-glow); pointer-events:none; animation:rowglow .9s ease-out forwards; }
+}
+@keyframes flashup{ 0%,15%{ color:var(--up); } 100%{ color:inherit; } }
+@keyframes rowglow{ 0%{ opacity:1; } 100%{ opacity:0; } }
 .more{ width:100%; text-align:center; padding:14px; background:transparent; border:0; border-top:1px solid var(--line); font:inherit; font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer; }
 .more:hover{ background:var(--segoff); }
 

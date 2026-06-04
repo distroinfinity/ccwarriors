@@ -6,6 +6,7 @@ import { ClawdLogo } from "./ClawdLogo";
 import { CardScene } from "./CardScene";
 import { InstallBlock } from "./InstallBlock";
 import { formatUsd, tierLabel } from "../util";
+import { useTickerTween } from "../useTween";
 
 /** Shown in the side panel when the viewer has no card to display yet. */
 export function EnlistCard() {
@@ -29,6 +30,8 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
   const [exporting, setExporting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const monogram = (entry.githubLogin[0] ?? "?").toUpperCase();
+  // Displayed burn ticks live; share text + export keep the raw confirmed value.
+  const burn = useTickerTween(entry.cost30d, { durationMs: 4000 });
 
   const shareOnX = () => {
     const text = `${formatUsd(entry.cost30d)} burned on Claude Code in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\n@claudeai devs — check your rank now:`;
@@ -99,8 +102,8 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
           <div className="t">{tierLabel(entry.tier)}</div>
         </div>
         <div className="cs">
-          <div className="bn mono">
-            {formatUsd(entry.cost30d)}
+          <div className={"bn mono" + (burn.flashing ? " up" : "")}>
+            {formatUsd(burn.value)}
             <small>30D</small>
           </div>
           {/* all-time hidden — local logs only go back ~30 days (see Leaderboard note) */}
