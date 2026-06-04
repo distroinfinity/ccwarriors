@@ -40,8 +40,6 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .dot{ width:7px; height:7px; background:var(--or); border-radius:50%; display:inline-block; margin-right:7px; vertical-align:middle; animation:pulse 2s infinite; }
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(194,104,62,.5)}70%{box-shadow:0 0 0 7px rgba(194,104,62,0)}100%{box-shadow:0 0 0 0 rgba(194,104,62,0)}}
 .toggle{ background:transparent; border:1px solid var(--line); color:var(--ink); width:34px; height:34px; cursor:pointer; font-size:15px; }
-.howlink{ font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:600; color:var(--muted); text-decoration:none; border-bottom:1px solid transparent; padding-bottom:2px; }
-.howlink:hover{ color:var(--ink); border-bottom-color:var(--or); }
 
 /* ── How it works — plain one-column mechanics page, centered ───────────── */
 .how{ padding:34px 0 44px; max-width:780px; margin:0 auto; }
@@ -60,7 +58,6 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .how-foot a:hover{ text-decoration:underline; text-underline-offset:3px; }
 .how-back{ display:inline-block; margin-top:18px; font-size:12.5px; font-weight:600; color:var(--muted); text-decoration:none; }
 .how-back:hover{ color:var(--ink); }
-@media (max-width:560px){ .howlink{ display:none; } }
 
 .hero{ padding:34px 0 32px; border-top:1px solid var(--line); }
 .hero h1{ font-size:clamp(30px,7.5vw,54px); line-height:1.02; font-weight:800; letter-spacing:-.025em; }
