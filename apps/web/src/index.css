@@ -99,14 +99,11 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 
 /* Fixed scroll viewport ≈ 20 rows tall (capped to the screen on laptops);
    infinite scroll fetches the tail inside it. `contain` stops scroll chaining
-   to the page; the thin themed scrollbar keeps the panel quiet. */
+   to the page; the scrollbar is hidden — rows cut off at the edge signal more. */
 .board{ border:1px solid var(--line); background:var(--panel);
   max-height:min(1102px, 76vh); overflow-y:auto; overscroll-behavior:contain;
-  scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
-.board::-webkit-scrollbar{ width:8px; }
-.board::-webkit-scrollbar-thumb{ background:var(--line); border-radius:4px; }
-.board::-webkit-scrollbar-thumb:hover{ background:var(--muted); }
-.board::-webkit-scrollbar-track{ background:transparent; }
+  scrollbar-width:none; -ms-overflow-style:none; }
+.board::-webkit-scrollbar{ display:none; }
 .rowload{ height:42px; background:var(--segoff); position:relative; overflow:hidden; }
 .rowload::after{ content:""; position:absolute; inset:0; transform:translateX(-100%);
   background:linear-gradient(90deg,transparent,var(--shimmer),transparent); animation:shimmer 1.1s infinite; }
