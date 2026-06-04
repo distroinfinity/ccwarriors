@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 
 const FLASH_MS = 900;
 
+// Cached once — `.matches` is still read live, so mid-session OS toggles apply
+// on the next target change (CSS @media gates the visuals instantly).
+const rmQuery =
+  typeof window !== "undefined" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+const reducedMotion = () => rmQuery?.matches ?? false;
+
 export interface TweenOptions {
   /** How long the count-up glides toward each new target. */
   durationMs?: number;
@@ -16,10 +22,6 @@ export interface TweenResult {
   flashing: boolean;
 }
 
-const reducedMotion = () =>
-  typeof window !== "undefined" &&
-  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 /**
  * Stock-ticker tween: eases the displayed value toward `target` on change and
  * signals `flashing` on increases. Only ever animates between confirmed values
@@ -30,7 +32,9 @@ export function useTickerTween(target: number, opts: TweenOptions = {}): TweenRe
   const [value, setValue] = useState(target);
   const [flashing, setFlashing] = useState(false);
   const fromRef = useRef(target);
-  // Seeded to the initial target so the first snapshot doesn't flash everything.
+  // Seeded to the mount-time target, so rows mounting with live values don't
+  // flash. The header mounts at 0, so its first 0→N snapshot flashes once —
+  // it lands with the skeleton→number reveal and reads as intentional.
   const prevTargetRef = useRef(target);
   const prevResetKeyRef = useRef(resetKey);
   const rafRef = useRef<number>();
@@ -43,6 +47,8 @@ export function useTickerTween(target: number, opts: TweenOptions = {}): TweenRe
       prevTargetRef.current = target;
       fromRef.current = target;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (flashRef.current) clearTimeout(flashRef.current);
+      setFlashing(false);
       setValue(target);
       return;
     }
@@ -91,9 +97,4 @@ export function useTickerTween(target: number, opts: TweenOptions = {}): TweenRe
   );
 
   return { value, flashing };
-}
-
-/** Eases the displayed value toward `target` on change (count-up ticker). */
-export function useTween(target: number, durationMs = 1100): number {
-  return useTickerTween(target, { durationMs }).value;
 }

@@ -5,7 +5,7 @@ import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
-import { useTickerTween } from "../useTween";
+import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { API_HTTP } from "../api";
 
@@ -46,13 +46,11 @@ function Row({
 }) {
   const top = rank <= 3;
   const amount = board === "30d" ? entry.cost30d : entry.costAllTime;
-  // Slow honest tween — glides toward each confirmed value, flashes green on growth.
-  const { value, flashing } = useTickerTween(amount, { durationMs: 4000, resetKey: board });
   return (
     <motion.div
       layout
       transition={{ type: "spring", stiffness: 600, damping: 44 }}
-      className={"row" + (top ? " top" : "") + (flashing ? " up" : "")}
+      className={"row" + (top ? " top" : "")}
     >
       <div className="rank mono">{rank}</div>
       <Avatar src={entry.avatarUrl} name={entry.githubLogin} index={rank - 1} />
@@ -68,8 +66,9 @@ function Row({
       </a>
       <div className="tierc">{tierLabel(entry.tier)}</div>
       <Sparkline id={entry.id} />
-      <div className={"amt mono" + (flashing ? " up" : "")}>
-        {formatUsd(value)}
+      <div className="amt mono">
+        {/* Slow honest tween — glides toward each confirmed value, flashes green on growth. */}
+        <TickerValue target={amount} durationMs={4000} resetKey={board} format={formatUsd} />
         {delta > 0 && <span className="delta">▲{delta}</span>}
       </div>
     </motion.div>

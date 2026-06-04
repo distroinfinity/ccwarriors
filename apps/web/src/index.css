@@ -98,7 +98,7 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .layout{ display:grid; grid-template-columns:1fr 332px; gap:30px; align-items:start; }
 
 .board{ border:1px solid var(--line); background:var(--panel); }
-.row{ display:grid; grid-template-columns:38px 32px 1fr 92px 88px 118px; align-items:center; gap:13px; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
+.row{ position:relative; display:grid; grid-template-columns:38px 32px 1fr 92px 88px 118px; align-items:center; gap:13px; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
 .row:last-child{ border-bottom:0; }
 .row.top{ background:linear-gradient(90deg, rgba(194,104,62,.05), transparent 55%); }
 .rank{ font-size:14px; font-weight:700; color:var(--muted); }
@@ -115,12 +115,12 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .amt{ text-align:right; font-size:15px; font-weight:700; }
 .delta{ color:var(--or); font-size:10px; font-weight:700; margin-left:7px; }
 
-/* Stock-ticker "up" flash — gated so reduced-motion users see clean instant swaps. */
-.row{ position:relative; }
+/* Stock-ticker "up" flash — gated so reduced-motion users see clean instant swaps.
+   The .up class lives on the TickerValue span; the row glow keys off it via :has. */
 @media (prefers-reduced-motion: no-preference){
-  .amt.up, .v.up, .bn.up{ animation:flashup .9s ease-out; }
+  .amt .up, .v .up, .bn .up{ animation:flashup .9s ease-out; }
   /* Glow via overlay so it composites over .row.top's gradient instead of replacing it. */
-  .row.up::after{ content:""; position:absolute; inset:0; background:var(--up-glow); pointer-events:none; animation:rowglow .9s ease-out forwards; }
+  .row:has(.up)::after{ content:""; position:absolute; inset:0; background:var(--up-glow); pointer-events:none; animation:rowglow .9s ease-out forwards; }
 }
 @keyframes flashup{ 0%,15%{ color:var(--up); } 100%{ color:inherit; } }
 @keyframes rowglow{ 0%{ opacity:1; } 100%{ opacity:0; } }
