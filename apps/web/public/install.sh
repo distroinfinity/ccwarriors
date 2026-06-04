@@ -35,6 +35,8 @@ STEP="node_old"
 NODE_MAJOR="$(node -v | sed 's/^v//' | cut -d. -f1)"
 if [ "$NODE_MAJOR" -lt 20 ]; then
   say "✗ Node.js 20+ required (found $(node -v))."
+  say "  Upgrade with:  nvm install 20   (or: brew upgrade node)"
+  say "  Then re-run this installer."
   exit 1
 fi
 
