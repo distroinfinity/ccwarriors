@@ -18,7 +18,8 @@ export function sparkBars(id: string): number[] {
 }
 
 export function formatUsd(n: number): string {
-  return "$" + Math.round(n).toLocaleString("en-US");
+  // Cents keep the ticker visibly moving even for small spend deltas.
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 /** Tier label with the mockup glyph prefix. */

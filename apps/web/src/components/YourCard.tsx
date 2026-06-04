@@ -6,6 +6,7 @@ import { ClawdLogo } from "./ClawdLogo";
 import { CardScene } from "./CardScene";
 import { InstallBlock } from "./InstallBlock";
 import { formatUsd, tierLabel } from "../util";
+import { TickerValue } from "./TickerValue";
 
 /** Shown in the side panel when the viewer has no card to display yet. */
 export function EnlistCard() {
@@ -31,7 +32,9 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
   const monogram = (entry.githubLogin[0] ?? "?").toUpperCase();
 
   const shareOnX = () => {
-    const text = `${formatUsd(entry.cost30d)} burned on Claude Code in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\n@claudeai devs — check your rank now:`;
+    // Whole dollars in the tweet — "$1,234.00 burned" reads like machine output.
+    const burned = "$" + Math.round(entry.cost30d).toLocaleString("en-US");
+    const text = `${burned} burned on Claude Code in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\n@claudeai devs — check your rank now:`;
     const url = "https://ccwarriors.xyz";
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
@@ -100,7 +103,13 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
         </div>
         <div className="cs">
           <div className="bn mono">
-            {formatUsd(entry.cost30d)}
+            {/* Live tick on screen; the PNG export must capture the confirmed
+                value, so snap to it (and drop the flash) while exporting. */}
+            {exporting ? (
+              formatUsd(entry.cost30d)
+            ) : (
+              <TickerValue target={entry.cost30d} durationMs={4000} format={formatUsd} />
+            )}
             <small>30D</small>
           </div>
           {/* all-time hidden — local logs only go back ~30 days (see Leaderboard note) */}

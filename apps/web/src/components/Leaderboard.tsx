@@ -5,6 +5,7 @@ import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
+import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { API_HTTP } from "../api";
 
@@ -66,7 +67,8 @@ function Row({
       <div className="tierc">{tierLabel(entry.tier)}</div>
       <Sparkline id={entry.id} />
       <div className="amt mono">
-        {formatUsd(amount)}
+        {/* Slow honest tween — glides toward each confirmed value, flashes green on growth. */}
+        <TickerValue target={amount} durationMs={4000} resetKey={board} format={formatUsd} />
         {delta > 0 && <span className="delta">▲{delta}</span>}
       </div>
     </motion.div>
