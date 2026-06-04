@@ -1,4 +1,28 @@
-import { pgTable, uuid, text, numeric, timestamp } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  numeric,
+  timestamp,
+  jsonb,
+  boolean,
+  bigint,
+  date,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+
+// Per-tool served aggregate, server-computed. Null on rows written by legacy
+// (claude-only) clients — derived as { claude: totals } at read time.
+export type ToolBreakdown = Record<string, { cost30d: number; costAllTime: number }>;
+
+// Per-model token counts inside a usage day (raw ground truth from the client).
+export type ModelTokens = {
+  modelName: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+};
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -13,6 +37,13 @@ export const users = pgTable("users", {
   tier: text("tier").notNull().default("Stone"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Multi-tool (all nullable/defaulted — additive, legacy rows stay valid):
+  toolBreakdown: jsonb("tool_breakdown").$type<ToolBreakdown>(),
+  clientBuildId: text("client_build_id"),
+  hasBreakdown: boolean("has_breakdown").notNull().default(false),
+  // Anti-gaming shadow quarantine: flagged users keep syncing but leave the boards.
+  flaggedAt: timestamp("flagged_at", { withTimezone: true }),
+  flagReason: text("flag_reason"),
 });
 
 export const snapshots = pgTable("snapshots", {
@@ -22,7 +53,36 @@ export const snapshots = pgTable("snapshots", {
   costAllTime: numeric("cost_all_time").notNull(),
   ccusageVersion: text("ccusage_version").notNull().default(""),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  toolBreakdown: jsonb("tool_breakdown").$type<ToolBreakdown>(),
+  clientBuildId: text("client_build_id"),
 });
+
+// Raw per-user/tool/day usage — what the server prices and audits.
+// Costs are server-computed from token counts; client dollars are never trusted.
+export const usageDays = pgTable(
+  "usage_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    // One row per machine: multi-machine users aggregate by sum instead of
+    // last-write-wins flip-flopping (which would also false-trip the
+    // history-immutability gate). Empty string = unidentified client.
+    machineId: text("machine_id").notNull().default(""),
+    tool: text("tool").notNull(),
+    day: date("day").notNull(),
+    inputTokens: bigint("input_tokens", { mode: "number" }).notNull().default(0),
+    outputTokens: bigint("output_tokens", { mode: "number" }).notNull().default(0),
+    cacheCreationTokens: bigint("cache_creation_tokens", { mode: "number" }).notNull().default(0),
+    cacheReadTokens: bigint("cache_read_tokens", { mode: "number" }).notNull().default(0),
+    modelBreakdown: jsonb("model_breakdown").$type<ModelTokens[]>(),
+    cost: numeric("cost").notNull().default("0"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("usage_days_user_machine_tool_day").on(t.userId, t.machineId, t.tool, t.day)],
+);
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type UsageDay = typeof usageDays.$inferSelect;
