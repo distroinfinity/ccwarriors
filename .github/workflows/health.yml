@@ -54,17 +54,29 @@ jobs:
           # Alert when real users' installs are failing (installer beacons land
           # in the server's rolling window at /telemetry/failures). This is how
           # we hear about breakage like the Node 20/21 ESM crash without a DM.
-          fails=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/failures | jq -er '.installFailuresLastHour' || echo ERR)
-          fails="${fails:-ERR}"
-          if [ "$fails" = "ERR" ]; then
+          # node_missing/node_old are the installer's environment gate doing its
+          # job (user's machine lacks Node 20+) — informational, not prod
+          # breakage. They only alert on a spike (≥3/hour), which would suggest
+          # the version gate itself regressed and is rejecting everyone.
+          tel=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/failures || echo ERR)
+          if ! jq -e '.byStepLastHour' >/dev/null 2>&1 <<<"$tel"; then
             echo "- ❌ **install-failure telemetry unreachable** (\`/telemetry/failures\`)" >> "$report"
             failed=1
-          elif [ "$fails" -ge 1 ]; then
-            steps=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/failures | jq -cr '.byStepLastHour' || echo '?')
-            echo "- ❌ **$fails user install failure(s) in the last hour** — by step: \`$steps\`" >> "$report"
-            failed=1
           else
-            echo "- ✅ user install failures (last hour): 0" >> "$report"
+            steps=$(jq -cr '.byStepLastHour' <<<"$tel")
+            env_fails=$(jq -r '[(.byStepLastHour["node_missing"] // 0), (.byStepLastHour["node_old"] // 0)] | add' <<<"$tel")
+            real_fails=$(jq -r '[.byStepLastHour | to_entries[] | select(.key != "node_missing" and .key != "node_old") | .value] | add // 0' <<<"$tel")
+            if [ "$real_fails" -ge 1 ]; then
+              echo "- ❌ **$real_fails user install failure(s) in the last hour** — by step: \`$steps\`" >> "$report"
+              failed=1
+            elif [ "$env_fails" -ge 3 ]; then
+              echo "- ❌ **$env_fails Node-version rejections in the last hour** — possible version-gate regression — by step: \`$steps\`" >> "$report"
+              failed=1
+            elif [ "$env_fails" -ge 1 ]; then
+              echo "- ✅ no install breakage *(ℹ️ $env_fails visitor(s) bounced by the Node 20+ gate: \`$steps\` — expected behavior)*" >> "$report"
+            else
+              echo "- ✅ user install failures (last hour): 0" >> "$report"
+            fi
           fi
 
           # Informational only — the Vercel apex challenge cycles on its own.
