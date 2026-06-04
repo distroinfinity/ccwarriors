@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 // Fallback installer endpoints. The primary host (ccwarriors.xyz, Vercel) can
@@ -28,9 +28,33 @@ const ASSETS = {
   "cli.js": { rel: path.join("packages", "cli", "dist", "cli.js"), type: "application/javascript; charset=utf-8", rewrite: false },
 } as const;
 
+// Build id embedded in the served cli.js bundle (tsup banner: `// ccw-build:<id>`).
+// Drives the CLI's self-update check; cached per mtime so we don't re-read on
+// every poll from the daemon fleet.
+let cachedBuild: { mtimeMs: number; buildId: string } | null = null;
+
+function readBuildId(file: string): string {
+  const stat = statSync(file);
+  if (cachedBuild && cachedBuild.mtimeMs === stat.mtimeMs) return cachedBuild.buildId;
+  const head = readFileSync(file, "utf8").slice(0, 500);
+  const m = head.match(/\/\/ ccw-build:([\w.-]+)/);
+  const buildId = m?.[1] ?? "unknown";
+  cachedBuild = { mtimeMs: stat.mtimeMs, buildId };
+  return buildId;
+}
+
 export function installerRoute() {
   const app = new Hono();
   const root = repoRoot();
+
+  // Self-update version check. CLI_UPDATE_ENABLED=0 is the central kill
+  // switch: stops the whole fleet from updating without needing a deploy.
+  app.get("/cli/version", (c) => {
+    const file = path.join(root, ASSETS["cli.js"].rel);
+    if (!existsSync(file)) return c.json({ error: "asset_unavailable" }, 503);
+    const updateEnabled = !["0", "false"].includes(process.env["CLI_UPDATE_ENABLED"] ?? "");
+    return c.json({ buildId: readBuildId(file), updateEnabled });
+  });
 
   for (const [name, asset] of Object.entries(ASSETS)) {
     app.get(`/${name}`, (c) => {

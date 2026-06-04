@@ -4,8 +4,9 @@
 
 # ccwarriors
 
-**Token burn rate, ranked.** A live leaderboard of [Claude Code](https://claude.ai/code) spend —
-see who's burning the most tokens, claim your rank, flex on the timeline.
+**Token burn rate, ranked.** A live leaderboard of AI coding spend — [Claude Code](https://claude.ai/code),
+Codex, Gemini CLI, Copilot, OpenCode, Amp and every other agent [ccusage](https://github.com/ryoppippi/ccusage)
+can read. See who's burning the most tokens, claim your rank, flex on the timeline.
 
 **Live:** [ccwarriors.xyz](https://ccwarriors.xyz)
 

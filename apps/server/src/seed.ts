@@ -1,5 +1,5 @@
 // Demo seeding + live-spend simulation. Enabled via SEED_DEMO / SIMULATE env flags.
-import { LeaderboardStore } from "./lib/leaderboard-store.js";
+import { LeaderboardStore, type Entry } from "./lib/leaderboard-store.js";
 import { computeTier } from "./lib/tier.js";
 
 const SCENES = [
@@ -17,6 +17,32 @@ const PEOPLE: Array<[string, string]> = [
 
 const SEED_30D = [9847, 8120, 6755, 4980, 4210, 3650, 3110, 2740, 2390, 2050, 1760, 1540, 1180, 1020, 812];
 
+// Deterministic per-tool split so the demo shows realistic multi-tool boards:
+// everyone burns claude; codex/gemini/copilot/opencode show up for subsets.
+const DEMO_TOOLS = ["claude", "codex", "gemini", "copilot", "opencode"] as const;
+
+function demoBreakdown(total: number, i: number): Record<string, number> {
+  const weights: number[] = [
+    0.45 + ((i * 7) % 10) / 40, // claude always dominant
+    i % 2 === 0 ? 0.25 + ((i * 3) % 10) / 50 : 0, // codex for half
+    i % 3 === 0 ? 0.15 : 0, // gemini for a third
+    i % 4 === 1 ? 0.1 : 0, // copilot
+    i % 5 === 2 ? 0.08 : 0, // opencode
+  ];
+  const sum = weights.reduce((s, w) => s + w, 0);
+  const breakdown: Record<string, number> = {};
+  let allocated = 0;
+  DEMO_TOOLS.forEach((tool, t) => {
+    const w = weights[t] ?? 0;
+    if (w <= 0) return;
+    const v = Math.round((total * w) / sum);
+    breakdown[tool] = v;
+    allocated += v;
+  });
+  breakdown["claude"] = (breakdown["claude"] ?? 0) + (total - allocated); // exact total
+  return breakdown;
+}
+
 export function seedDemo(store: LeaderboardStore): void {
   PEOPLE.forEach(([login, x], i) => {
     const c30 = SEED_30D[i] ?? 500;
@@ -30,6 +56,7 @@ export function seedDemo(store: LeaderboardStore): void {
       cardScene: SCENES[i % SCENES.length] ?? "fujiNight",
       cost30d: c30,
       costAllTime: all,
+      breakdown: demoBreakdown(c30, i),
     });
   });
 
@@ -49,11 +76,13 @@ export function seedDemo(store: LeaderboardStore): void {
       cardScene: SCENES[i % SCENES.length] ?? "fujiNight",
       cost30d: c30,
       costAllTime: all,
+      breakdown: demoBreakdown(c30, i + 4),
     });
   }
 }
 
 // Every few seconds, a random warrior burns a bit more — drives live reordering.
+// Bumps land on one of the warrior's tools so filtered boards reorder too.
 export function startSimulation(store: LeaderboardStore, broadcast: () => void): NodeJS.Timeout {
   let tick = 0;
   return setInterval(() => {
@@ -63,7 +92,13 @@ export function startSimulation(store: LeaderboardStore, broadcast: () => void):
     const bump = tick % 7 === 0 ? 300 + Math.random() * 900 : 15 + Math.random() * 120;
     const cost30d = Math.round(victim.cost30d + bump);
     const costAllTime = Math.round(victim.costAllTime + bump);
-    store.upsert({ ...victim, cost30d, costAllTime, tier: computeTier(costAllTime) });
+    const tools = Object.keys(victim.breakdown ?? { claude: 1 });
+    const tool = tools[Math.floor(Math.random() * tools.length)] ?? "claude";
+    const breakdown: Entry["breakdown"] = {
+      ...victim.breakdown,
+      [tool]: Math.round((victim.breakdown?.[tool] ?? 0) + bump),
+    };
+    store.upsert({ ...victim, cost30d, costAllTime, breakdown, tier: computeTier(costAllTime) });
     broadcast();
     tick++;
   }, 2500);

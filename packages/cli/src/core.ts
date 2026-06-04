@@ -1,4 +1,5 @@
 // Shared API plumbing for sync, watch, and the background daemon.
+import type { RawDay } from "./ccusage.js";
 
 export const API_BASE = process.env["CCWARRIORS_API"] ?? "https://api.ccwarriors.xyz";
 export const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
@@ -10,9 +11,18 @@ export interface IngestResponse {
   rankAllTime?: number | null;
 }
 
+// v3 payload: raw per-tool/day/model token counts. The server prices and
+// validates everything — no client-computed dollars are sent.
+export interface IngestPayload {
+  tools: Record<string, RawDay[]>;
+  machineId: string;
+  clientBuildId: string;
+  ccusageVersion?: string;
+}
+
 export async function postIngest(
   token: string,
-  payload: { cost30d: number; costAllTime: number; ccusageVersion?: string },
+  payload: IngestPayload,
 ): Promise<{ status: number; data?: IngestResponse; text: string }> {
   const res = await fetch(`${API_BASE}/ingest`, {
     method: "POST",

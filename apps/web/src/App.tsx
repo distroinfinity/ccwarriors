@@ -19,15 +19,22 @@ if (isHow) document.title = "How it works · CCWarriors";
 type Board = "30d" | "allTime";
 
 export default function App() {
-  const { count, top30d, topAllTime, connected, hasSnapshot } = useLeaderboard();
+  const { count, top30d, topAllTime, byTool, tools, totals, connected, hasSnapshot } =
+    useLeaderboard();
   const { me: session, resolved: meResolved } = useMe();
   const [board, setBoard] = useState<Board>("30d");
+  // Single-select tool filter (null = All). Lives here so the header/marquee
+  // stay pinned to the all-tools view no matter what the board shows.
+  const [tool, setTool] = useState<string | null>(null);
   // "Find me" — seq bump tells the Leaderboard to scroll to this login.
   const [locate, setLocate] = useState<{ seq: number; login: string } | null>(null);
 
+  // Header/Marquee always reflect ALL tools — the filter is a board-only view.
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
-  // 30-day sum — "all-time" is unreliable (local logs are pruned after ~30 days).
-  const totalBurned = entries.reduce((s, e) => s + e.cost30d, 0);
+  // Headline total comes from the server (it sums every warrior, not just the
+  // top-100 we hold). Old servers don't send totals → fall back to the old
+  // client-side reduce over the live window.
+  const totalBurned = totals?.burned30d ?? entries.reduce((s, e) => s + e.cost30d, 0);
 
   // "Your card" — identity claimed via the CLI's personalized link (?u=login),
   // remembered in localStorage. Unknown visitors get the enlist CTA instead.
@@ -62,7 +69,7 @@ export default function App() {
       <SceneDefs />
       <Marquee entries={entries} count={count} loading={!hasSnapshot} />
       <div className="wrap">
-        <Header count={count} totalBurned={totalBurned} loading={!hasSnapshot} />
+        <Header count={totals?.count ?? count} totalBurned={totalBurned} loading={!hasSnapshot} />
         <main className="main">
           {isHow ? (
             <HowItWorks />
@@ -74,6 +81,10 @@ export default function App() {
                   board={board}
                   setBoard={setBoard}
                   entries={entries}
+                  byTool={byTool}
+                  tools={tools}
+                  tool={tool}
+                  setTool={setTool}
                   total={count}
                   connected={connected}
                   hasSnapshot={hasSnapshot}
@@ -85,6 +96,8 @@ export default function App() {
                   <YourCard
                     entry={me}
                     rank={meRank}
+                    outdatedClient={session?.outdatedClient}
+                    underReview={session?.underReview}
                     onLocate={() =>
                       setLocate((s) => ({ seq: (s?.seq ?? 0) + 1, login: me.githubLogin }))
                     }

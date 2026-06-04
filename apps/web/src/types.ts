@@ -5,8 +5,17 @@ export interface Entry {
   xHandle: string | null;
   tier: string;
   cardScene: string;
-  cost30d: number;
+  cost30d: number; // all-tools 30d total
   costAllTime: number;
+  // Per-tool 30d cost (server-computed). Absent on frames from an old server
+  // during deploy overlap — every consumer must tolerate undefined.
+  breakdown?: Partial<Record<string, number>>;
+}
+
+export interface ToolInfo {
+  key: string;
+  label: string;
+  count: number;
 }
 
 export interface Snapshot {
@@ -14,4 +23,9 @@ export interface Snapshot {
   count: number;
   top30d: Entry[];
   topAllTime: Entry[];
+  // Additive fields (new server). Old servers omit them — the UI degrades to
+  // exactly the pre-multi-tool experience.
+  byTool?: Record<string, { top30d: Entry[] }>;
+  tools?: ToolInfo[];
+  totals?: { burned30d: number; count: number };
 }

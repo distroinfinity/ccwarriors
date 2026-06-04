@@ -1,7 +1,7 @@
 {
   "name": "claude-warriors",
   "version": "0.1.0",
-  "description": "CLI for Claude Warriors — sync your Claude Code costs and climb the leaderboard",
+  "description": "CLI for Claude Warriors \u2014 sync your Claude Code costs and climb the leaderboard",
   "type": "module",
   "bin": {
     "ccwarriors": "dist/cli.js"
@@ -17,11 +17,13 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "start": "node dist/cli.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsup": "^8.3.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.9"
   }
 }

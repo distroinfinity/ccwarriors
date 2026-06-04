@@ -14,6 +14,11 @@ const bodySchema = z.object({
     "enlist_failed",
     "sync_failed",
     "health_check",
+    // Multi-tool collection + self-update lifecycle (CLI-reported).
+    "tool_collection_failed",
+    "self_update_failed",
+    "self_update_applied",
+    "self_update_rollback",
   ]),
   distinctId: z.string().min(1).max(64).optional(),
   props: z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()])).optional(),
@@ -70,7 +75,15 @@ export function telemetryRoute() {
   const app = new Hono();
   app.post("/", zValidator("json", bodySchema), (c) => {
     const { event, distinctId, props } = c.req.valid("json");
-    if (event === "install_failed" || event === "enlist_failed" || event === "sync_failed") {
+    const failureEvents = [
+      "install_failed",
+      "enlist_failed",
+      "sync_failed",
+      "tool_collection_failed",
+      "self_update_failed",
+      "self_update_rollback",
+    ];
+    if (failureEvents.includes(event)) {
       recordFailure(event, props ?? {});
     }
     captureEvent(event, distinctId ?? "anonymous", props ?? {});
@@ -84,9 +97,15 @@ export function telemetryRoute() {
     pruneFailures(now);
     const hourAgo = now - 60 * 60 * 1000;
     const lastHour = failures.filter((f) => f.at >= hourAgo);
-    // sync_failed is a background-daemon blip, not a broken install — report
-    // it, but only install/enlist failures should page.
-    const installLastHour = lastHour.filter((f) => f.event !== "sync_failed");
+    // Background-daemon blips (sync, per-tool collection, self-update) are
+    // reported but must not page — only install/enlist failures should.
+    const nonPaging = new Set([
+      "sync_failed",
+      "tool_collection_failed",
+      "self_update_failed",
+      "self_update_rollback",
+    ]);
+    const installLastHour = lastHour.filter((f) => !nonPaging.has(f.event));
     const byStep: Record<string, number> = {};
     for (const f of installLastHour) byStep[f.step] = (byStep[f.step] ?? 0) + 1;
     return c.json({

@@ -5,6 +5,7 @@ import type { Entry } from "../types";
 import { ClawdLogo } from "./ClawdLogo";
 import { CardScene } from "./CardScene";
 import { InstallBlock } from "./InstallBlock";
+import { ToolGlyph } from "./ToolGlyph";
 import { formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 
@@ -25,13 +26,39 @@ export function EnlistCard() {
   );
 }
 
+/** Per-tool spend rows inside the card — top 4, biggest first. Renders
+    nothing for entries without a breakdown (old server / legacy client). */
+function ToolBreakdownRows({ entry }: { entry: Entry }) {
+  const parts = Object.entries(entry.breakdown ?? {})
+    .filter((kv): kv is [string, number] => typeof kv[1] === "number" && kv[1] > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (parts.length < 2) return null; // single-tool: the big number already says it
+  return (
+    <div className="cbreak">
+      {parts.slice(0, 4).map(([tool, cost]) => (
+        <div className="cbrow" key={tool}>
+          <ToolGlyph tool={tool} />
+          <span className="cbk">{tool}</span>
+          <span className="cbv mono">{formatUsd(cost)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function YourCard({
   entry,
   rank,
+  outdatedClient,
+  underReview,
   onLocate,
 }: {
   entry: Entry;
   rank: number;
+  /** True when this user's CLI still syncs Claude-only data (pre-multi-tool). */
+  outdatedClient?: boolean;
+  /** True while plausibility flags keep this user off the boards. */
+  underReview?: boolean;
   /** Scrolls the leaderboard to this warrior's row. */
   onLocate?: () => void;
 }) {
@@ -43,7 +70,7 @@ export function YourCard({
   const shareOnX = () => {
     // Whole dollars in the tweet — "$1,234.00 burned" reads like machine output.
     const burned = "$" + Math.round(entry.cost30d).toLocaleString("en-US");
-    const text = `${burned} burned on Claude Code in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\n@claudeai devs — check your rank now:`;
+    const text = `${burned} burned across my AI coding tools in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\ncheck your rank now:`;
     const url = "https://ccwarriors.xyz";
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
@@ -123,11 +150,25 @@ export function YourCard({
           </div>
           {/* all-time hidden — local logs only go back ~30 days (see Leaderboard note) */}
         </div>
+        <ToolBreakdownRows entry={entry} />
         <div className="cfo">
           <span>ccwarriors.xyz</span>
           <span>RANK #{rank}</span>
         </div>
       </div>
+      {/* Nudges live OUTSIDE cardRef so they never leak into the PNG export. */}
+      {underReview && (
+        <div className="nudge review" role="status">
+          <span className="nudge-glyph">⚖</span>
+          Your stats are under review — they'll return to the board once cleared.
+        </div>
+      )}
+      {!underReview && outdatedClient && (
+        <div className="nudge" role="status">
+          <span className="nudge-glyph">⟳</span>
+          Tracking Claude Code only. Re-run the install command to count all your AI tools.
+        </div>
+      )}
       <button className="btn x" onClick={shareOnX}>
         Share on X
       </button>

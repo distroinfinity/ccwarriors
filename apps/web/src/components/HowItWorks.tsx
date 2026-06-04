@@ -5,8 +5,8 @@ const GH = "https://github.com/distroinfinity/ccwarriors";
 
 const FLOW = `your machine                          api.ccwarriors.xyz                   ccwarriors.xyz
 ────────────                          ──────────────────                   ──────────────
-ccusage prices your local logs        verifies your token                  WebSocket push
-daemon sends two numbers      ──►     stores the numbers, reranks    ──►   your row moves ~1s later`;
+ccusage reads your agents' logs       verifies, prices the tokens          WebSocket push
+daemon sends raw token counts  ──►    sanity-checks, reranks         ──►   your row moves ~1s later`;
 
 export function HowItWorks() {
   return (
@@ -21,9 +21,9 @@ export function HowItWorks() {
       <section className="how-sec">
         <h2>What the number is</h2>
         <p>
-          Your Claude Code usage over the last 30 days, priced in API dollars. Claude Code
-          writes usage logs to <code>~/.claude/projects</code> on your machine. We read them
-          with{" "}
+          Your AI-coding usage over the last 30 days, priced in API dollars. Every agent
+          writes usage logs locally — Claude Code to <code>~/.claude/projects</code>, Codex to{" "}
+          <code>~/.codex</code>, the others to their own folders. We read them with{" "}
           <a href="https://github.com/ryoppippi/ccusage" target="_blank" rel="noopener">
             ccusage
           </a>
@@ -32,11 +32,22 @@ export function HowItWorks() {
       </section>
 
       <section className="how-sec">
+        <h2>Which tools we count</h2>
+        <p>
+          Claude Code, Codex, Gemini CLI, Copilot, OpenCode, Amp, Droid, and every other
+          agent ccusage can read. Your total is the sum across all of them. Filter the board
+          to a single tool with the icons above the leaderboard — new tools light up
+          automatically as support lands.
+        </p>
+      </section>
+
+      <section className="how-sec">
         <h2>What the install does</h2>
         <p>
           The install script downloads the CLI and starts a small daemon. The daemon watches
           your local usage logs. When they change, it syncs. About every 12 seconds while you
-          code. Every 5 minutes when idle. You can read the installer before running it:{" "}
+          code. Every 5 minutes when idle. It also keeps itself up to date. You can read the
+          installer before running it:{" "}
           <code>curl -fsSL https://api.ccwarriors.xyz/install.sh</code>
         </p>
       </section>
@@ -44,16 +55,28 @@ export function HowItWorks() {
       <section className="how-sec">
         <h2>What we send</h2>
         <p>
-          This is the entire payload: <code>{'{"cost30d": 1234.56, "costAllTime": 2345.67}'}</code>
-          . Two numbers and a ccusage version string. No code. No prompts. No file names.
+          Raw token counts per tool, per day, per model — like{" "}
+          <code>{'{"claude": [{"date": "2026-06-04", "models": [{"modelName": "claude-opus-4-8", "inputTokens": 1024, …}]}]}'}</code>
+          . No dollars (the server prices them), no code, no prompts, no file names.
+        </p>
+      </section>
+
+      <section className="how-sec">
+        <h2>Why you can't cheat it</h2>
+        <p>
+          The server prices every token itself and sanity-checks every sync: how fast spend
+          grows, how big a single day can be, whether history quietly rewrites itself.
+          Numbers that can't be real come off the board until a human looks. Estimates stay
+          estimates — but they're honest estimates.
         </p>
       </section>
 
       <section className="how-sec">
         <h2>What we store</h2>
         <p>
-          Your GitHub login and avatar, from OAuth with public profile scope only. Your two
-          cost numbers. That is the whole row.
+          Your GitHub login and avatar, from OAuth with public profile scope only. Your cost
+          totals, a per-tool split, and the daily token counts behind them. That is the whole
+          row.
         </p>
       </section>
 

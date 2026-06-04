@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { Entry } from "../types";
+import type { Entry, ToolInfo } from "../types";
 import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
+import { FilterChips } from "./FilterChips";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { API_HTTP } from "../api";
 
 type Board = "30d" | "allTime";
+
+/** Display cost for an entry under the active filter — a lookup, never math.
+    Entries from an old server lack `breakdown`: their spend is all claude. */
+function toolCost(e: Entry, tool: string | null): number {
+  if (!tool) return e.cost30d;
+  const v = e.breakdown?.[tool];
+  if (v != null) return v;
+  return tool === "claude" ? e.cost30d : 0;
+}
 
 function EmptyBoard() {
   return (
@@ -37,6 +47,7 @@ function Row({
   entry,
   rank,
   board,
+  tool,
   delta,
   live,
   located,
@@ -44,13 +55,14 @@ function Row({
   entry: Entry;
   rank: number;
   board: Board;
+  tool: string | null;
   delta: number;
   /** Live rows (WS top-100) reorder with spring physics; REST tail rows are static. */
   live: boolean;
   located: boolean;
 }) {
   const top = rank <= 3;
-  const amount = board === "30d" ? entry.cost30d : entry.costAllTime;
+  const amount = board === "30d" ? toolCost(entry, tool) : entry.costAllTime;
   return (
     <motion.div
       layout={live}
@@ -74,7 +86,12 @@ function Row({
       <Sparkline id={entry.id} />
       <div className="amt mono">
         {/* Slow honest tween — glides toward each confirmed value, flashes green on growth. */}
-        <TickerValue target={amount} durationMs={4000} resetKey={board} format={formatUsd} />
+        <TickerValue
+          target={amount}
+          durationMs={4000}
+          resetKey={`${board}:${tool ?? "all"}`}
+          format={formatUsd}
+        />
         {delta > 0 && <span className="delta">▲{delta}</span>}
       </div>
     </motion.div>
@@ -87,6 +104,10 @@ export function Leaderboard({
   board,
   setBoard,
   entries,
+  byTool,
+  tools,
+  tool,
+  setTool,
   total,
   connected,
   hasSnapshot,
@@ -95,6 +116,12 @@ export function Leaderboard({
   board: Board;
   setBoard: (b: Board) => void;
   entries: Entry[];
+  /** Per-tool live boards from the WS. {} on old servers. */
+  byTool: Record<string, { top30d: Entry[] }>;
+  /** Tools with data — drives the filter chips. [] on old servers. */
+  tools: ToolInfo[];
+  tool: string | null;
+  setTool: (t: string | null) => void;
   /** Total warriors on the board (beyond what the live socket holds). */
   total: number;
   connected: boolean;
@@ -114,17 +141,28 @@ export function Leaderboard({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
 
+  // The live list: a tool filter swaps in that tool's WS board (still live —
+  // it re-ranks on every update); All uses the totals board.
+  const liveEntries: Entry[] = tool && byTool[tool] ? byTool[tool].top30d : entries;
+
   useEffect(() => {
     setExtra([]);
     setVisibleN(PAGE);
     boardRef.current?.scrollTo({ top: 0 });
-  }, [board]);
+  }, [board, tool]);
+
+  // If the active tool disappears (reconnect to an old server, last warrior of
+  // a tool drops to zero) fall back to All instead of showing a stale board.
+  useEffect(() => {
+    if (!tool || !hasSnapshot) return;
+    if (!tools.some((t) => t.key === tool)) setTool(null);
+  }, [tool, tools, hasSnapshot, setTool]);
 
   // Live entries first, fetched tail after (deduped — order can drift slightly).
   const all = useMemo(() => {
-    const seen = new Set(entries.map((e) => e.id));
-    return [...entries, ...extra.filter((e) => !seen.has(e.id))];
-  }, [entries, extra]);
+    const seen = new Set(liveEntries.map((e) => e.id));
+    return [...liveEntries, ...extra.filter((e) => !seen.has(e.id))];
+  }, [liveEntries, extra]);
 
   const ranked = all.map((e, i) => {
     const prev = prevRanks.current.get(e.id);
@@ -142,12 +180,13 @@ export function Leaderboard({
       setVisibleN((n) => n + PAGE);
       return;
     }
-    if (all.length >= total) return; // everything is on the board
+    if (!tool && all.length >= total) return; // everything is on the board
     loadingRef.current = true;
     setLoadingMore(true);
     try {
+      const toolParam = tool ? `&tool=${encodeURIComponent(tool)}` : "";
       const r = await fetch(
-        `${API_HTTP}/leaderboard?board=${board}&limit=${PAGE}&offset=${all.length}`,
+        `${API_HTTP}/leaderboard?board=${board}&limit=${PAGE}&offset=${all.length}${toolParam}`,
       );
       const d = (await r.json()) as { entries?: Entry[] };
       if (Array.isArray(d.entries) && d.entries.length > 0) {
@@ -178,7 +217,7 @@ export function Leaderboard({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [board, hasSnapshot]);
+  }, [board, tool, hasSnapshot]);
 
   // "Find me": expand the visible window to cover the rank, then smooth-scroll
   // the row to center and pulse it.
@@ -200,10 +239,10 @@ export function Leaderboard({
   }, [locate?.seq]);
 
   const visible = ranked.slice(0, visibleN);
-  const atEnd = visible.length >= total;
+  const atEnd = !tool && visible.length >= total;
   // Genuinely empty only once a snapshot confirms zero entries; otherwise connecting.
-  const isEmpty = entries.length === 0 && hasSnapshot;
-  const isConnecting = entries.length === 0 && !hasSnapshot;
+  const isEmpty = liveEntries.length === 0 && hasSnapshot;
+  const isConnecting = liveEntries.length === 0 && !hasSnapshot;
 
   return (
     <div>
@@ -213,10 +252,11 @@ export function Leaderboard({
           <button className={board === "30d" ? "on" : ""} onClick={() => setBoard("30d")}>
             30 Days
           </button>
-          {/* All Time hidden for now: Claude Code prunes local logs after ~30 days,
-              so ccusage "all-time" ≈ last 30 days. Re-enable once we compute true
-              history server-side from accumulated snapshots. */}
+          {/* All Time hidden for now: local agent logs prune after ~30 days, so
+              ccusage "all-time" ≈ last 30 days. Re-enable once server-side
+              accumulation has aged enough to be meaningful. */}
         </div>
+        <FilterChips tools={tools} active={tool} onSelect={setTool} />
         <div className="live">
           <span className="dot" />
           {connected ? "live" : "reconnecting…"}
@@ -227,7 +267,14 @@ export function Leaderboard({
         {isConnecting ? (
           <BoardSkeleton />
         ) : isEmpty ? (
-          <EmptyBoard />
+          tool ? (
+            <div className="empty">
+              <h3>No warriors on this tool yet.</h3>
+              <p>Burn some tokens and claim the top spot.</p>
+            </div>
+          ) : (
+            <EmptyBoard />
+          )
         ) : (
           <>
             <AnimatePresence initial={false}>
@@ -237,8 +284,9 @@ export function Leaderboard({
                   entry={entry}
                   rank={rank}
                   board={board}
+                  tool={tool}
                   delta={delta}
-                  live={rank <= entries.length}
+                  live={rank <= liveEntries.length}
                   located={locatedLogin === entry.githubLogin}
                 />
               ))}

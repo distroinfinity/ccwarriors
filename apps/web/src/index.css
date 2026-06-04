@@ -80,7 +80,21 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .seg{ display:inline-flex; border:1px solid var(--line); }
 .seg button{ font:inherit; font-size:12.5px; font-weight:600; background:var(--segoff); color:var(--muted); border:0; padding:9px 18px; cursor:pointer; }
 .seg button.on{ background:var(--ink); color:var(--bg); }
-.live{ font-size:12px; color:var(--muted); }
+.live{ font-size:12px; color:var(--muted); margin-left:auto; }
+
+/* Tool filter chips — compact icon squares inline with the board tabs.
+   Rest state mirrors .seg buttons; active inverts to ink like the active tab. */
+.chips{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.chip{ display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
+  font:inherit; font-size:11px; font-weight:700; letter-spacing:.02em;
+  color:var(--muted); background:var(--segoff); border:1px solid var(--line); cursor:pointer;
+  transition:color .15s, border-color .15s, background .15s; }
+.chip .chip-glyph{ flex:none; opacity:.85; }
+.chip:hover{ color:var(--ink); border-color:var(--or); }
+.chip:focus-visible{ outline:2px solid var(--or); outline-offset:2px; }
+.chip.on{ color:var(--bg); background:var(--ink); border-color:var(--ink); }
+.chip.on .chip-glyph{ opacity:1; }
+.chip-all{ width:auto; padding:0 12px; }
 
 /* Empty / connecting states inside the board panel + enlist CTA in side panel. */
 .empty,.enlist{ display:flex; flex-direction:column; align-items:center; text-align:center; padding:48px 24px 52px; }
@@ -176,6 +190,21 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .cs .at{ font-size:10.5px; color:#8b8f96; margin-top:4px; }
 .cfo{ display:flex; justify-content:space-between; padding:10px 13px 11px; border-top:1px solid rgba(255,255,255,.08); margin-top:10px; font-size:9.5px; color:#8b8f96; letter-spacing:.05em; }
 
+/* Per-tool spend rows inside the dark card (bronze glyphs, quiet type). */
+.cbreak{ padding:8px 13px 0; display:flex; flex-direction:column; gap:4px; }
+.cbrow{ display:flex; align-items:center; gap:7px; font-size:10.5px; color:#8b8f96; }
+.cbrow .chip-glyph{ color:#B88A63; flex:none; }
+.cbrow .cbk{ letter-spacing:.04em; }
+.cbrow .cbv{ margin-left:auto; color:#cfc9bd; }
+
+/* Sidebar nudges (outside the exported card): outdated CLI + under review. */
+.nudge{ display:flex; align-items:flex-start; gap:9px; margin-top:12px;
+  padding:10px 12px; font-size:12px; line-height:1.45; color:var(--ink);
+  background:rgba(194,104,62,.07); border:1px solid var(--or); }
+.nudge-glyph{ color:var(--or); font-weight:700; flex:none; }
+.nudge.review{ background:var(--segoff); border-color:var(--line); color:var(--muted); }
+.nudge.review .nudge-glyph{ color:var(--muted); }
+
 .btn{ display:block; width:100%; text-align:center; padding:12px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; border:1px solid var(--line); }
 .btn.x{ background:var(--ink); color:var(--bg); border-color:var(--ink); margin-top:14px; } .btn.x:hover{ opacity:.85; }
 .btn.g{ background:transparent; color:var(--ink); margin-top:9px; } .btn.g:hover{ background:var(--segoff); }
@@ -207,6 +236,12 @@ a{ color:inherit; }
   .install{ display:flex; width:100%; }
   .install code{ flex:1; min-width:0; white-space:pre-wrap; word-break:break-all; }
   footer{ flex-direction:column; align-items:flex-start; gap:18px; }
+  /* Chips become an edge-bleeding horizontal scroll strip — a tall wrap would
+     push the board below the fold. */
+  .chips{ flex-wrap:nowrap; overflow-x:auto; width:100%; order:3;
+    margin:0 -16px; padding:0 16px; scrollbar-width:none; }
+  .chips::-webkit-scrollbar{ display:none; }
+  .chip{ flex:none; }
 }
 
 /* Very narrow: stack the Copy button under the wrapped command. */

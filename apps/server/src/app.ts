@@ -7,6 +7,7 @@ import { leaderboardRoute } from "./routes/leaderboard.js";
 import { authRoute } from "./routes/auth.js";
 import { installerRoute } from "./routes/installer.js";
 import { telemetryRoute, captureEvent } from "./routes/telemetry.js";
+import { adminRoute } from "./routes/admin.js";
 
 export interface AppDeps {
   db: DB;
@@ -49,6 +50,7 @@ export function createApp(deps?: AppDeps) {
   if (deps) {
     app.route("/ingest", ingestRoute(deps.db, deps.store, deps.onIngest));
     app.route("/leaderboard", leaderboardRoute(deps.store));
+    app.route("/admin", adminRoute(deps.db, deps.store, deps.onIngest));
     if (deps.auth) {
       app.route("/", authRoute(deps.db, deps.auth));
     }
