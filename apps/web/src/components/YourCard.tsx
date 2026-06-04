@@ -25,7 +25,16 @@ export function EnlistCard() {
   );
 }
 
-export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
+export function YourCard({
+  entry,
+  rank,
+  onLocate,
+}: {
+  entry: Entry;
+  rank: number;
+  /** Scrolls the leaderboard to this warrior's row. */
+  onLocate?: () => void;
+}) {
   const [portraitFailed, setPortraitFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -125,6 +134,11 @@ export function YourCard({ entry, rank }: { entry: Entry; rank: number }) {
       <button className="btn g" onClick={downloadCard} disabled={exporting}>
         {exporting ? "Exporting…" : "Download card"}
       </button>
+      {onLocate && (
+        <button className="btn g" onClick={onLocate}>
+          Find me on the board ↓
+        </button>
+      )}
     </aside>
   );
 }

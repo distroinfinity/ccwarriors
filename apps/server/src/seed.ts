@@ -32,6 +32,25 @@ export function seedDemo(store: LeaderboardStore): void {
       costAllTime: all,
     });
   });
+
+  // SEED_EXTRA=N adds synthetic warriors past the named ones — lets the web
+  // app's infinite scroll be exercised beyond the live top-100 in dev.
+  const extra = Math.max(0, Math.floor(Number(process.env.SEED_EXTRA ?? 0)));
+  for (let i = 0; i < extra; i++) {
+    const c30 = Math.max(2, Math.round(760 * Math.exp(-i / 45) + ((i * 13) % 9)));
+    const all = Math.round(c30 * 2.6);
+    const login = `warrior_${String(i + 1).padStart(3, "0")}`;
+    store.upsert({
+      id: login,
+      githubLogin: login,
+      avatarUrl: `https://i.pravatar.cc/120?img=${(i * 7 + 11) % 70}`,
+      xHandle: login,
+      tier: computeTier(all),
+      cardScene: SCENES[i % SCENES.length] ?? "fujiNight",
+      cost30d: c30,
+      costAllTime: all,
+    });
+  }
 }
 
 // Every few seconds, a random warrior burns a bit more — drives live reordering.

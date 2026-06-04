@@ -17,6 +17,8 @@ export default function App() {
   const { count, top30d, topAllTime, connected, hasSnapshot } = useLeaderboard();
   const { me: session, resolved: meResolved } = useMe();
   const [board, setBoard] = useState<Board>("30d");
+  // "Find me" — seq bump tells the Leaderboard to scroll to this login.
+  const [locate, setLocate] = useState<{ seq: number; login: string } | null>(null);
 
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
   // 30-day sum — "all-time" is unreliable (local logs are pruned after ~30 days).
@@ -66,11 +68,18 @@ export default function App() {
               total={count}
               connected={connected}
               hasSnapshot={hasSnapshot}
+              locate={locate}
             />
             {!hasSnapshot || !meResolved ? (
               <CardSkeleton />
             ) : me ? (
-              <YourCard entry={me} rank={meRank} />
+              <YourCard
+                entry={me}
+                rank={meRank}
+                onLocate={() =>
+                  setLocate((s) => ({ seq: (s?.seq ?? 0) + 1, login: me.githubLogin }))
+                }
+              />
             ) : (
               <EnlistCard />
             )}
