@@ -1,10 +1,11 @@
 import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
-import { loadConfig, clearConfig } from "./config.js";
+import { loadConfig, clearConfig, ensureMachineId } from "./config.js";
 import { runLoginFlow } from "./auth.js";
-import { readCosts } from "./ccusage.js";
+import { readUsage, formatEstimates } from "./ccusage.js";
 import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
-import { API_BASE, WEB_BASE, postIngest, type IngestResponse } from "./core.js";
+import { API_BASE, WEB_BASE, postIngest } from "./core.js";
+import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
 
 declare const __BUILD_ID__: string;
 
@@ -14,7 +15,8 @@ declare const __BUILD_ID__: string;
 
 function printHelp(): void {
   console.log(`
-${bold("ccwarriors")} — sync your Claude Code costs and climb the leaderboard
+${bold("ccwarriors")} — sync your AI coding costs and climb the leaderboard
+${dim("Counts every agent ccusage can read: Claude Code, Codex, Gemini, Copilot, OpenCode, Amp, and friends.")}
 
 ${bold("INSTALL")}
   macOS/Linux:  curl -fsSL https://api.ccwarriors.xyz/install.sh | bash
@@ -34,8 +36,9 @@ ${bold("USAGE")}
   ccwarriors --help     Show this help
 
 ${bold("ENVIRONMENT")}
-  CCWARRIORS_API   Override API base  (default: https://api.ccwarriors.xyz)
-  CCWARRIORS_WEB   Override web base  (default: https://ccwarriors.xyz)
+  CCWARRIORS_API        Override API base  (default: https://api.ccwarriors.xyz)
+  CCWARRIORS_WEB        Override web base  (default: https://ccwarriors.xyz)
+  CCWARRIORS_NO_UPDATE  Set to 1 to disable self-update
 `);
 }
 
@@ -68,19 +71,20 @@ async function cmdSync(): Promise<void> {
     console.log(yellow("Hey there — first time? Let's get you enlisted."));
     config = await runLoginFlow(API_BASE);
   }
+  const machineId = await ensureMachineId(config);
 
-  console.log(dim("Reading ccusage…"));
-  const { cost30d, costAllTime, ccusageVersion } = await readCosts();
+  console.log(dim("Reading ccusage (all your coding agents)…"));
+  const { tools, estimates, ccusageVersion } = await readUsage();
 
-  console.log(dim(`  30-day cost:   $${cost30d}`));
-  console.log(dim(`  all-time cost: $${costAllTime}`));
+  console.log(dim(`  found: ${formatEstimates(estimates)} ${dim("(local estimates — the server prices the truth)")}`));
   console.log(dim("Syncing with Claude Warriors…"));
 
   let result: Awaited<ReturnType<typeof postIngest>>;
   try {
     result = await postIngest(config.token, {
-      cost30d,
-      costAllTime,
+      tools,
+      machineId,
+      clientBuildId: __BUILD_ID__,
       ...(ccusageVersion ? { ccusageVersion } : {}),
     });
   } catch (err) {
@@ -107,6 +111,7 @@ async function cmdSync(): Promise<void> {
     process.exit(1);
   }
 
+  markUpdateSuccess();
   const data = result.data;
 
   const tier = data.tier ?? "—";
@@ -125,6 +130,12 @@ async function cmdSync(): Promise<void> {
     console.log(dim("   tip: `ccwarriors watch` keeps your rank fresh while it runs"));
   }
   console.log();
+
+  // After a good sync (and after the user has their output): pick up a newer
+  // build if one shipped. Cron/manual runs use it on their next invocation.
+  if ((await maybeSelfUpdate()) === "updated") {
+    console.log(dim("   (ccwarriors updated itself — new version active on the next run)"));
+  }
 }
 
 async function cmdWatch(args: string[]): Promise<void> {
@@ -134,20 +145,23 @@ async function cmdWatch(args: string[]): Promise<void> {
     console.log(yellow("Hey there — first time? Let's get you enlisted."));
     config = await runLoginFlow(API_BASE);
   }
+  const machineId = await ensureMachineId(config);
   console.log(cyan(`⚔️  Watch mode — syncing every ${seconds}s. Ctrl+C to stop.`));
   console.log(dim(`   watch live → ${WEB_BASE}/?u=${encodeURIComponent(config.login)}`));
   for (;;) {
     const t = new Date().toTimeString().slice(0, 8);
     try {
-      const { cost30d, costAllTime, ccusageVersion } = await readCosts();
+      const { tools, estimates, ccusageVersion } = await readUsage();
       const res = await postIngest(config.token, {
-        cost30d,
-        costAllTime,
+        tools,
+        machineId,
+        clientBuildId: __BUILD_ID__,
         ...(ccusageVersion ? { ccusageVersion } : {}),
       });
       if (res.data?.ok) {
+        markUpdateSuccess();
         const rank = res.data.rank30d != null ? `#${res.data.rank30d}` : "—";
-        console.log(`${dim(`[${t}]`)} synced ${green(`$${cost30d}`)} (30d) · rank ${cyan(rank)}`);
+        console.log(`${dim(`[${t}]`)} synced ${green(formatEstimates(estimates))} · rank ${cyan(rank)}`);
       } else if (res.status === 429) {
         console.log(dim(`[${t}] server cooldown (10s minimum) — next cycle`));
       } else if (res.status === 401) {
@@ -171,7 +185,7 @@ function cmdAutosync(args: string[]): void {
     autosyncOn(minutes);
     if (process.platform === "darwin") {
       console.log(green("Autosync on — background daemon streaming your usage in real time."));
-      console.log(`  Syncs the moment Claude Code writes usage (heartbeat every ${Math.max(1, Math.round(minutes))}m).`);
+      console.log(`  Syncs the moment your coding agents write usage (heartbeat every ${Math.max(1, Math.round(minutes))}m).`);
     } else {
       console.log(green(`Autosync on — cron sync every ${Math.max(1, Math.round(minutes))} min.`));
     }
@@ -219,6 +233,7 @@ async function main(): Promise<void> {
   }
 
   if (cmd === "watch") {
+    selfUpdateBootCheck();
     await cmdWatch(args.slice(1));
     return;
   }
@@ -229,11 +244,13 @@ async function main(): Promise<void> {
   }
 
   if (cmd === "daemon") {
+    selfUpdateBootCheck();
     await runDaemon(Number(args[1] ?? 5) || 5);
     return;
   }
 
   if (cmd === "sync" || cmd === undefined) {
+    selfUpdateBootCheck();
     await cmdSync();
     return;
   }
