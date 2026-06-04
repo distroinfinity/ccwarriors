@@ -95,8 +95,11 @@ async function cmdSync(): Promise<void> {
   }
 
   if (result.status === 429) {
-    console.error(yellow("Syncing too fast — try again in ~10 seconds."));
-    process.exit(1);
+    // A sync landed <10s ago (usually the background daemon) — the board is
+    // already fresh. Not a failure: exiting 1 here made re-installs end red
+    // and aborted the installer before it could enable autosync.
+    console.log(yellow("Already synced seconds ago — your numbers are fresh."));
+    return;
   }
 
   if (result.status < 200 || result.status >= 300 || !result.data) {
