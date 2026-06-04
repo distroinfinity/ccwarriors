@@ -9,9 +9,23 @@ export interface Entry {
   cardScene: string;
   cost30d: number;
   costAllTime: number;
+  // Per-tool 30d cost (server-computed). Legacy rows are derived as
+  // { claude: cost30d } when loaded, so consumers can rely on it being set.
+  breakdown?: Record<string, number>;
+  // Shadow-quarantined users stay in the store (their card still works) but
+  // are excluded from every board, count, and total.
+  flagged?: boolean;
 }
 
-const metric = (e: Entry, b: Board) => (b === "30d" ? e.cost30d : e.costAllTime);
+export interface ToolSummary {
+  key: string;
+  count: number;
+}
+
+const metric = (e: Entry, b: Board, tool?: string): number => {
+  if (tool) return e.breakdown?.[tool] ?? 0;
+  return b === "30d" ? e.cost30d : e.costAllTime;
+};
 
 export class LeaderboardStore {
   private entries = new Map<string, Entry>();
@@ -20,20 +34,59 @@ export class LeaderboardStore {
     this.entries.set(e.id, e);
   }
 
+  get(id: string): Entry | undefined {
+    return this.entries.get(id);
+  }
+
+  setFlagged(id: string, flagged: boolean): void {
+    const e = this.entries.get(id);
+    if (e) this.entries.set(id, { ...e, flagged });
+  }
+
+  private visible(): Entry[] {
+    return [...this.entries.values()].filter((e) => !e.flagged);
+  }
+
   count(): number {
-    return this.entries.size;
+    return this.visible().length;
   }
 
-  private sorted(board: Board): Entry[] {
-    return [...this.entries.values()].sort((a, b) => metric(b, board) - metric(a, board));
+  totals(): { burned30d: number; count: number } {
+    let burned30d = 0;
+    let count = 0;
+    for (const e of this.visible()) {
+      burned30d += e.cost30d;
+      count++;
+    }
+    return { burned30d: Math.round(burned30d * 100) / 100, count };
   }
 
-  getTop(board: Board, limit: number, offset = 0): Entry[] {
-    return this.sorted(board).slice(offset, offset + limit);
+  /** Tools that have at least one visible user with nonzero 30d spend. */
+  toolSummaries(): ToolSummary[] {
+    const counts = new Map<string, number>();
+    for (const e of this.visible()) {
+      for (const [tool, cost] of Object.entries(e.breakdown ?? {})) {
+        if (cost > 0) counts.set(tool, (counts.get(tool) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   }
 
-  getRank(board: Board, id: string): number | null {
-    const idx = this.sorted(board).findIndex((e) => e.id === id);
+  private sorted(board: Board, tool?: string): Entry[] {
+    const pool = tool
+      ? this.visible().filter((e) => metric(e, board, tool) > 0)
+      : this.visible();
+    return pool.sort((a, b) => metric(b, board, tool) - metric(a, board, tool));
+  }
+
+  getTop(board: Board, limit: number, offset = 0, tool?: string): Entry[] {
+    return this.sorted(board, tool).slice(offset, offset + limit);
+  }
+
+  getRank(board: Board, id: string, tool?: string): number | null {
+    const idx = this.sorted(board, tool).findIndex((e) => e.id === id);
     return idx === -1 ? null : idx + 1;
   }
 }

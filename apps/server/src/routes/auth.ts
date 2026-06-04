@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { users } from "../db/schema.js";
 import { generateToken, hashToken } from "../lib/token.js";
@@ -142,10 +143,22 @@ export function authRoute(db: DB, cfg: AuthCfg) {
   });
 
   // Who is this browser? (session cookie → identity; null when signed out)
-  app.get("/me", (c) => {
+  // Adds client-state flags so the site can nudge old-CLI users to re-install
+  // and tell quarantined users their stats are under review.
+  app.get("/me", async (c) => {
     const token = getCookie(c, "ccw_session");
     const session = token ? readSessionToken(token, cfg.clientSecret) : null;
-    return c.json(session ?? { login: null });
+    if (!session) return c.json({ login: null });
+    try {
+      const [user] = await db.select().from(users).where(eq(users.githubId, session.githubId));
+      return c.json({
+        ...session,
+        outdatedClient: !!user && !user.hasBreakdown && user.lastSyncedAt !== null,
+        underReview: !!user?.flaggedAt,
+      });
+    } catch {
+      return c.json(session);
+    }
   });
 
   app.get("/logout", (c) => {

@@ -7,6 +7,7 @@ import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { createApp } from "./app.js";
 import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, startSimulation } from "./seed.js";
+import { startPricingRefresh } from "./lib/pricing.js";
 
 async function main() {
   const cfg = parseConfig(process.env);
@@ -16,10 +17,34 @@ async function main() {
   // Local/demo only — never enabled in production.
   if (cfg.seedDemo) seedDemo(store);
 
+  // Dev-only: a DB-backed user with a known CLI token, so the real CLI and
+  // curl can exercise /ingest against a local server (SEED_CLI_TOKEN=devtoken).
+  const devToken = process.env["SEED_CLI_TOKEN"];
+  if (devToken && cfg.seedDemo) {
+    const { hashToken } = await import("./lib/token.js");
+    await db
+      .insert(users)
+      .values({ githubId: "dev-1", githubLogin: "devwarrior", cliTokenHash: hashToken(devToken) })
+      .onConflictDoNothing();
+    console.log("seeded dev user 'devwarrior' with SEED_CLI_TOKEN");
+  }
+
   // Warm the store from Postgres (real users). Tolerate an unmigrated/empty DB.
+  // Legacy rows (no tool_breakdown) derive an all-claude breakdown at load —
+  // no destructive backfill, the next sync overwrites it correctly anyway.
   try {
     const rows = await db.select().from(users);
     for (const u of rows) {
+      const cost30d = Number(u.cost30d);
+      const breakdown = u.toolBreakdown
+        ? Object.fromEntries(
+            Object.entries(u.toolBreakdown)
+              .filter(([, v]) => v.cost30d > 0)
+              .map(([k, v]) => [k, v.cost30d]),
+          )
+        : cost30d > 0
+          ? { claude: cost30d }
+          : {};
       store.upsert({
         id: u.id,
         githubLogin: u.githubLogin,
@@ -27,13 +52,18 @@ async function main() {
         xHandle: u.xHandle,
         tier: u.tier,
         cardScene: u.cardScene,
-        cost30d: Number(u.cost30d),
+        cost30d,
         costAllTime: Number(u.costAllTime),
+        breakdown,
+        flagged: !!u.flaggedAt,
       });
     }
   } catch (err) {
     console.warn("store warm-up skipped:", (err as Error).message);
   }
+
+  // Keep model pricing current (committed snapshot already loaded at import).
+  startPricingRefresh();
 
   const wss = new WebSocketServer({ noServer: true });
   const broadcast = attachBroadcast(wss, store);
