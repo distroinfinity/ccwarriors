@@ -46,12 +46,25 @@ const bodySchema = z
       .optional(),
     clientBuildId: z.string().max(64).optional(),
   })
-  .refine(
-    (b) =>
-      (b.tools !== undefined && Object.keys(b.tools).length <= 24) ||
-      (b.cost30d !== undefined && b.costAllTime !== undefined),
-    { message: "either tools or cost30d+costAllTime required" },
-  );
+  .superRefine((b, ctx) => {
+    if (b.tools !== undefined) {
+      if (Object.keys(b.tools).length > 24) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "too many tools" });
+      }
+      // Raw payloads MUST identify their machine: rows are keyed by
+      // (user, machine, tool, day), so a missing id would collapse every
+      // such client into one shared row — last-write-wins clobbering and a
+      // free pass around the machine-count gate.
+      if (!b.machineId) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "machineId required with tools" });
+      }
+    } else if (b.cost30d === undefined || b.costAllTime === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "either tools+machineId or cost30d+costAllTime required",
+      });
+    }
+  });
 
 export function ingestRoute(db: DB, store: LeaderboardStore, onIngest: () => void) {
   const app = new Hono();
@@ -69,7 +82,7 @@ export function ingestRoute(db: DB, store: LeaderboardStore, onIngest: () => voi
               days.map((d) => ({ date: d.date, models: d.models, costEstimate: d.costEstimate })),
             ]),
           ),
-          machineId: (body.machineId ?? "").toLowerCase(),
+          machineId: body.machineId!.toLowerCase(), // superRefine guarantees presence
           clientBuildId: body.clientBuildId,
           ccusageVersion: body.ccusageVersion,
         }

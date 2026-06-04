@@ -21,7 +21,9 @@ interface ModelPrice {
 
 // Unknown models get a modest mid-tier price (≈ Sonnet) rather than zero —
 // zero would let fabricated model names hide spend, a high default would let
-// them inflate it. Unknown names also raise a plausibility signal upstream.
+// them inflate it. Ingest surfaces unknown names as unknown_model_priced
+// telemetry (non-quarantining — usually just LiteLLM lagging a new release;
+// fabricated names gain nothing since they can't exceed the default rate).
 const DEFAULT_PRICE: ModelPrice = {
   input: 3e-6,
   output: 15e-6,

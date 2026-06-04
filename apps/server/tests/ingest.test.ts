@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
+import { ingestRoute } from "../src/routes/ingest.js";
 import { eq } from "drizzle-orm";
 import { makeDb, seedUser } from "./helpers/db.js";
 import { ingestUsage, type RawIngestPayload } from "../src/services/ingest.js";
@@ -277,27 +279,105 @@ describe("ingest v3 (raw token counts)", () => {
     expect(u!.toolBreakdown!["codex"]!.cost30d).toBeCloseTo(codex, 1);
   });
 
-  it("displays ccusage's day estimate when our token math corroborates it", async () => {
-    const computed = expectedOpusCost(); // our price for the fixture day
-    const ccusageSays = Math.round(computed * 1.04 * 100) / 100; // ~4% drift, like real life
-    const day = { ...opusDay(isoDaysAgo(1)), costEstimate: ccusageSays };
+  it("stores the server-computed price even when a ccusage estimate is sent", async () => {
+    // Estimates are a cross-check signal, never the ranked value — a client
+    // shading every day to 1.24x computed gains exactly nothing.
+    const day = { ...opusDay(isoDaysAgo(1)), costEstimate: expectedOpusCost() * 1.24 };
     await ingestUsage(db, store, TOKEN, raw({ claude: [day] }), NOW);
     const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
-    // The familiar ccusage number is what the board shows…
-    expect(Number(u!.cost30d)).toBeCloseTo(ccusageSays, 2);
+    expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost(), 2);
     expect(u!.flaggedAt).toBeNull();
   });
 
-  it("ignores a tampered estimate our token math can't corroborate", async () => {
-    const day = { ...opusDay(isoDaysAgo(1)), costEstimate: 50_000 }; // tokens say ~$675
-    await ingestUsage(db, store, TOKEN, raw({ claude: [day] }), NOW);
-    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
-    // …but only within the band: a fake $50k estimate falls back to OUR price.
-    expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost(), 2);
+  it("emits estimate_mismatch telemetry when the estimate diverges beyond the band", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const day = { ...opusDay(isoDaysAgo(1)), costEstimate: 50_000 }; // tokens say ~$675
+      await ingestUsage(db, store, TOKEN, raw({ claude: [day] }), NOW);
+      const lines = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes("estimate_mismatch"))).toBe(true);
+      const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+      expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost(), 2); // value untouched
+      expect(u!.flaggedAt).toBeNull(); // signal, not quarantine
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("surfaces unknown model names as unknown_model_priced telemetry", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const day = {
+        date: isoDaysAgo(1),
+        models: [
+          {
+            modelName: "totally-made-up-9000",
+            inputTokens: 1_000_000,
+            outputTokens: 1_000_000,
+            cacheCreationTokens: 0,
+            cacheReadTokens: 0,
+          },
+        ],
+      };
+      await ingestUsage(db, store, TOKEN, raw({ claude: [day] }), NOW);
+      const lines = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes("unknown_model_priced") && l.includes("totally-made-up-9000"))).toBe(true);
+      const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+      expect(Number(u!.cost30d)).toBeCloseTo(18, 1); // default-rate priced, not zero
+      expect(u!.flaggedAt).toBeNull(); // non-quarantining
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it("returns unauthorized for a bad token", async () => {
     const res = await ingestUsage(db, store, "nope", raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
     expect(res).toEqual({ ok: false, error: "unauthorized" });
+  });
+});
+
+describe("POST /ingest route validation", () => {
+  let app: Hono;
+
+  beforeEach(async () => {
+    const db = await makeDb();
+    const store = new LeaderboardStore();
+    await seedUser(db, { login: "modern", token: TOKEN });
+    app = new Hono();
+    app.route("/ingest", ingestRoute(db, store, () => {}));
+  });
+
+  const post = (body: unknown) =>
+    app.request("/ingest", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify(body),
+    });
+
+  // The route runs on real wall-clock time — derive the day from it so the
+  // fixture never ages out of the 40-day ingest window.
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+
+  it("rejects a v3 payload without machineId (no empty-machine collisions)", async () => {
+    const res = await post({ tools: { claude: [opusDay(yesterday)] }, clientBuildId: "x" });
+    expect(res.status).toBe(400);
+  });
+
+  it("accepts a v3 payload with machineId", async () => {
+    const res = await post({
+      tools: { claude: [opusDay(yesterday)] },
+      machineId: "aabbccdd00112233",
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts a v1 payload without machineId (legacy clients)", async () => {
+    const res = await post({ cost30d: 10, costAllTime: 20 });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a payload with neither tools nor totals", async () => {
+    const res = await post({ ccusageVersion: "x" });
+    expect(res.status).toBe(400);
   });
 });

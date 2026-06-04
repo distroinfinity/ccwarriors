@@ -24,22 +24,13 @@ export const GATES = {
   // Days older than this are considered settled — they must not grow.
   settledAfterDays: () => envNum("GATE_SETTLED_AFTER_DAYS", 2),
   settledGrowthTolerance: () => envNum("GATE_SETTLED_TOLERANCE", 0.10),
-  // How far ccusage's own day estimate may diverge from our token math and
-  // still be displayed (keeps the board matching what users see locally).
+  // How far ccusage's client-side estimate may diverge from our token math
+  // before we emit an estimate_mismatch telemetry signal. The estimate NEVER
+  // becomes a stored/ranked value — server-computed dollars are the only
+  // authority. The signal catches both tampered clients and a stale pricing
+  // table on our side (non-quarantining: LiteLLM lag on new models is normal).
   estimateBand: () => envNum("GATE_ESTIMATE_BAND", 0.25),
 } as const;
-
-/**
- * Reconcile ccusage's day estimate with our independently-computed price.
- * Within the band → display ccusage's familiar number (bounded ≤1.25× ours,
- * so a tampered estimate buys nothing). Outside → our math wins.
- */
-export function reconcileDayCost(computed: number, estimate: number | undefined): number {
-  if (estimate === undefined || estimate <= 0) return computed;
-  if (computed <= 0) return computed;
-  const band = GATES.estimateBand();
-  return Math.abs(estimate - computed) / computed <= band ? estimate : computed;
-}
 
 export interface FlagSignal {
   reason: string;
