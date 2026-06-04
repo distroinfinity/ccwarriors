@@ -24,6 +24,11 @@ export interface ModelTokens {
 export interface RawDay {
   date: string; // YYYY-MM-DD
   models: ModelTokens[];
+  // ccusage's own price for this day. The server still computes its own price
+  // from the tokens and only displays this estimate when the two agree within
+  // a band — keeps the board matching what `npx ccusage` shows people locally
+  // without ever trusting a client dollar that our math can't corroborate.
+  costEstimate?: number;
 }
 
 export interface UsageCollection {
@@ -113,14 +118,19 @@ async function collectAgent(agent: string, since: string): Promise<AgentResult> 
   const parsed = (await runCcusage([agent, "daily", "--json", "--since", since])) as {
     daily?: unknown[];
   };
+  // Display estimate covers the BOARD's window (30d), not the full 40d we
+  // ship — so the number printed here matches the number on the site.
+  const board30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const days: RawDay[] = [];
   let estimate = 0;
   for (const raw of parsed.daily ?? []) {
     const entry = raw as Record<string, unknown>;
     const day = normalizeDay(entry);
     if (day) {
+      const est = dayEstimate(entry);
+      if (est > 0) day.costEstimate = Math.round(est * 100) / 100;
       days.push(day);
-      estimate += dayEstimate(entry);
+      if (day.date >= board30) estimate += est;
     }
   }
   return { days, estimate: Math.round(estimate * 100) / 100 };

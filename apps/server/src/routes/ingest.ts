@@ -25,6 +25,9 @@ const modelTokensSchema = z.object({
 const rawDaySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   models: z.array(modelTokensSchema).min(1).max(24),
+  // ccusage's own price for the day — display hint only, never trusted blindly
+  // (the server corroborates it against its own token math).
+  costEstimate: z.number().nonnegative().max(1_000_000).optional(),
 });
 
 const bodySchema = z
@@ -63,7 +66,7 @@ export function ingestRoute(db: DB, store: LeaderboardStore, onIngest: () => voi
           tools: Object.fromEntries(
             Object.entries(body.tools).map(([k, days]) => [
               k,
-              days.map((d) => ({ date: d.date, models: d.models })),
+              days.map((d) => ({ date: d.date, models: d.models, costEstimate: d.costEstimate })),
             ]),
           ),
           machineId: (body.machineId ?? "").toLowerCase(),

@@ -277,6 +277,25 @@ describe("ingest v3 (raw token counts)", () => {
     expect(u!.toolBreakdown!["codex"]!.cost30d).toBeCloseTo(codex, 1);
   });
 
+  it("displays ccusage's day estimate when our token math corroborates it", async () => {
+    const computed = expectedOpusCost(); // our price for the fixture day
+    const ccusageSays = Math.round(computed * 1.04 * 100) / 100; // ~4% drift, like real life
+    const day = { ...opusDay(isoDaysAgo(1)), costEstimate: ccusageSays };
+    await ingestUsage(db, store, TOKEN, raw({ claude: [day] }), NOW);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    // The familiar ccusage number is what the board shows…
+    expect(Number(u!.cost30d)).toBeCloseTo(ccusageSays, 2);
+    expect(u!.flaggedAt).toBeNull();
+  });
+
+  it("ignores a tampered estimate our token math can't corroborate", async () => {
+    const day = { ...opusDay(isoDaysAgo(1)), costEstimate: 50_000 }; // tokens say ~$675
+    await ingestUsage(db, store, TOKEN, raw({ claude: [day] }), NOW);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    // …but only within the band: a fake $50k estimate falls back to OUR price.
+    expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost(), 2);
+  });
+
   it("returns unauthorized for a bad token", async () => {
     const res = await ingestUsage(db, store, "nope", raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
     expect(res).toEqual({ ok: false, error: "unauthorized" });
