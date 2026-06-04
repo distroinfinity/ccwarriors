@@ -46,7 +46,9 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 /* ── How it works — plain one-column mechanics page, centered ───────────── */
 .how{ padding:34px 0 44px; max-width:780px; margin:0 auto; }
 .how-h{ font-size:clamp(24px,4.6vw,34px); line-height:1.1; font-weight:800; letter-spacing:-.02em; margin:6px 0 22px; }
-.how-flow{ font-size:11.5px; line-height:1.75; color:var(--muted); border:1px solid var(--line); background:var(--panel); padding:14px 16px; overflow-x:auto; margin-bottom:26px; }
+/* Centered as a block; the inner code keeps left alignment so columns line up. */
+.how-flow{ font-size:11.5px; line-height:1.8; color:var(--muted); border:1px solid var(--line); background:var(--panel); padding:16px; overflow-x:auto; margin-bottom:26px; text-align:center; }
+.how-flow code{ display:inline-block; text-align:left; }
 .how-sec{ margin-bottom:22px; }
 .how-sec h2{ font-size:14px; font-weight:700; letter-spacing:-.01em; margin-bottom:6px; }
 .how-sec p{ font-size:13.5px; line-height:1.65; color:var(--muted); }

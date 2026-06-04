@@ -3,11 +3,10 @@
 
 const GH = "https://github.com/distroinfinity/ccwarriors";
 
-const FLOW = `your machine                 api.ccwarriors.xyz          ccwarriors.xyz
-────────────                 ──────────────────          ──────────────
-Claude Code writes logs      verifies your token         WebSocket push
-ccusage prices them     ──►  stores the two numbers ──►  your row moves
-daemon sends 2 numbers       recomputes ranks            ~1s later`;
+const FLOW = `your machine                          api.ccwarriors.xyz                   ccwarriors.xyz
+────────────                          ──────────────────                   ──────────────
+ccusage prices your local logs        verifies your token                  WebSocket push
+daemon sends two numbers      ──►     stores the numbers, reranks    ──►   your row moves ~1s later`;
 
 export function HowItWorks() {
   return (
@@ -15,7 +14,9 @@ export function HowItWorks() {
       <div className="seclabel">How it works</div>
       <h1 className="how-h">The whole pipeline, nothing hidden.</h1>
 
-      <pre className="how-flow mono">{FLOW}</pre>
+      <pre className="how-flow mono">
+        <code>{FLOW}</code>
+      </pre>
 
       <section className="how-sec">
         <h2>What the number is</h2>
