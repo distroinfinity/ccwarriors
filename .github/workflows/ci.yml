@@ -1,0 +1,87 @@
+name: ci
+# Pre-merge gates: typecheck/build/test on the oldest supported Node, lint the
+# installer script, and smoke-test the *real* install flow (download → wrapper
+# → execute) across Node versions. The smoke test exists because cli.js is an
+# ES module: Node ≥22.7 auto-detects ESM and hides packaging bugs that crash
+# Node 20/21 (see the `{ "type": "module" }` marker in install.sh).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # oldest supported runtime (engines: >=20)
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r typecheck
+      - run: pnpm -r build
+      - run: pnpm -r test
+      - name: Installer syntax + lint
+        run: |
+          bash -n apps/web/public/install.sh
+          shellcheck apps/web/public/install.sh
+
+  install-smoke:
+    # Runs install.sh against a local server serving the freshly built cli.js,
+    # then EXECUTES the installed CLI. The Node 20 leg fails if the installed
+    # layout doesn't run on Node without ESM syntax detection.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build the CLI bundle
+        run: pnpm --filter claude-warriors build
+      - name: Install via install.sh and run the installed CLI
+        run: |
+          set -euxo pipefail
+
+          # Stage exactly what prod serves: install.sh + the built cli.js
+          stage="$RUNNER_TEMP/serve"
+          mkdir -p "$stage"
+          cp apps/web/public/install.sh "$stage/"
+          cp packages/cli/dist/cli.js "$stage/"
+          python3 -m http.server 8923 --directory "$stage" &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for _ in $(seq 1 20); do
+            curl -fsS -o /dev/null http://127.0.0.1:8923/install.sh && break
+            sleep 0.5
+          done
+
+          # Fresh fake HOME, telemetry off, skip the interactive enlistment
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          env CCWARRIORS_BASE=http://127.0.0.1:8923 \
+              CCWARRIORS_FALLBACK=http://127.0.0.1:8923 \
+              CCWARRIORS_TELEMETRY=0 \
+              CCWARRIORS_NO_RUN=1 \
+              bash "$stage/install.sh"
+
+          # The ESM marker must be part of the installed layout
+          test -f "$HOME/.ccwarriors/package.json"
+
+          # The actual regression test: the installed artifact must RUN
+          "$HOME/.ccwarriors/bin/ccwarriors" --version
+          "$HOME/.ccwarriors/bin/ccwarriors" --help

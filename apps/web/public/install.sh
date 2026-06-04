@@ -21,6 +21,7 @@ beacon() {
     -d "{\"event\":\"$1\",\"distinctId\":\"$TID\",\"props\":{\"os\":\"$(uname -s)\",\"step\":\"$STEP\"}}" \
     >/dev/null 2>&1 || true
 }
+# shellcheck disable=SC2154  # rc is assigned inside the single-quoted trap body
 trap 'rc=$?; if [ "$rc" -ne 0 ]; then beacon install_failed; fi' EXIT
 beacon install_started
 
@@ -48,6 +49,9 @@ if ! curl -fsSL "$BASE/cli.js" -o "$CCW_HOME/cli.js"; then
   say "… primary host unavailable, using fallback"
   curl -fsSL "$FALLBACK/cli.js" -o "$CCW_HOME/cli.js"
 fi
+# cli.js is an ES module; without this marker Node 20/21 parse it as CommonJS
+# and die on `import` (Node ≥22.7 auto-detects, which hides the bug locally).
+printf '{ "type": "module" }\n' > "$CCW_HOME/package.json"
 
 # 3) Wrapper executable
 STEP="wrapper"
