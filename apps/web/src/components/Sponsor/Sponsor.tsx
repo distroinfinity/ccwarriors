@@ -12,9 +12,14 @@ import { GithubSponsorButton } from "./GithubSponsorButton";
 import { RazorpayButton } from "./RazorpayButton";
 import { CHAINS, CryptoPanel } from "./CryptoPanel";
 import { SponsorsWall } from "./SponsorsWall";
+import { detectOrg } from "../../orgs";
 
 type Method = "github" | "razorpay" | "crypto";
 type Frequency = "once" | "monthly";
+
+// Org pages can flip the ordering (NS is a crypto-first crowd); the apex
+// stays Card/UPI first.
+const CRYPTO_FIRST = detectOrg()?.payments === "crypto-first";
 
 const METHODS: { key: Method; label: string }[] = [
   { key: "razorpay", label: "Card / UPI" },
@@ -22,13 +27,16 @@ const METHODS: { key: Method; label: string }[] = [
   // GitHub Sponsors hidden until the profile passes KYC — see issue #9.
   // { key: "github", label: "GitHub Sponsors" },
 ];
+if (CRYPTO_FIRST) METHODS.reverse();
 
 /** "Fuel the board" — the funding section between the main content and the footer. */
 export function Sponsor() {
   const [tierIdx, setTierIdx] = useState(DEFAULT_TIER);
   const [customUsd, setCustomUsd] = useState("");
   const [frequency, setFrequency] = useState<Frequency>("once");
-  const [method, setMethod] = useState<Method>("razorpay");
+  const [method, setMethod] = useState<Method>(
+    CRYPTO_FIRST && CHAINS.length > 0 ? "crypto" : "razorpay",
+  );
   // Bumped after a successful Razorpay donation so the wall refetches.
   const [wallSeq, setWallSeq] = useState(0);
 

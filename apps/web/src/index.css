@@ -230,6 +230,18 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .nudge.review{ background:var(--segoff); border-color:var(--line); color:var(--muted); }
 .nudge.review .nudge-glyph{ color:var(--muted); }
 
+/* Two-step org enlist (1 GitHub, 2 Discord) under the install command. */
+.orgsteps{ margin-top:16px; display:flex; flex-direction:column; gap:8px; width:100%; }
+.orgstep{ display:flex; align-items:center; gap:10px; font-size:12.5px; font-weight:600;
+  color:var(--ink); text-decoration:none; border:1px solid var(--line); padding:9px 12px;
+  transition:border-color .15s; }
+.orgstep:hover{ border-color:var(--or); }
+.orgstep-n{ width:18px; height:18px; flex:none; display:inline-flex; align-items:center;
+  justify-content:center; font-family:'Geist Mono'; font-size:10.5px; line-height:1;
+  border:1px solid var(--or); color:var(--or); }
+.orgstep.done{ color:var(--muted); }
+.orgstep.done .orgstep-n{ border-color:var(--up); color:var(--up); }
+
 /* Discord verify CTA inside the side panel (org pages). */
 .nudge.verify .nudge-glyph{ color:var(--or); }
 .verifybtn{ display:block; margin-top:8px; font-size:12px; font-weight:700; color:var(--or); text-decoration:none; }
