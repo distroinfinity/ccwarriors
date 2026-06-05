@@ -6,7 +6,7 @@ import { users } from "./db/schema.js";
 import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { createApp } from "./app.js";
 import { attachBroadcast } from "./ws/broadcast.js";
-import { seedDemo, startSimulation } from "./seed.js";
+import { seedDemo, seedDemoDonations, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
 
 async function main() {
@@ -15,7 +15,10 @@ async function main() {
   const store = new LeaderboardStore();
 
   // Local/demo only — never enabled in production.
-  if (cfg.seedDemo) seedDemo(store);
+  if (cfg.seedDemo) {
+    seedDemo(store);
+    await seedDemoDonations(db);
+  }
 
   // Dev-only: a DB-backed user with a known CLI token, so the real CLI and
   // curl can exercise /ingest against a local server (SEED_CLI_TOKEN=devtoken).
@@ -82,7 +85,26 @@ async function main() {
     console.log("github oauth: disabled (no credentials)");
   }
 
-  const app = createApp({ db, store, onIngest: broadcast, corsOrigin: cfg.corsOrigin, auth: authDeps });
+  let donateDeps: { keyId: string; keySecret: string; webhookSecret?: string } | undefined;
+  if (cfg.razorpayKeyId && cfg.razorpayKeySecret) {
+    donateDeps = {
+      keyId: cfg.razorpayKeyId,
+      keySecret: cfg.razorpayKeySecret,
+      webhookSecret: cfg.razorpayWebhookSecret,
+    };
+    if (!cfg.razorpayWebhookSecret) console.log("donations: webhook disabled (no secret)");
+  } else {
+    console.log("donations: disabled (no razorpay keys)");
+  }
+
+  const app = createApp({
+    db,
+    store,
+    onIngest: broadcast,
+    corsOrigin: cfg.corsOrigin,
+    auth: authDeps,
+    donate: donateDeps,
+  });
 
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     console.log(

@@ -10,11 +10,16 @@ import { CardSkeleton } from "./components/Skeleton";
 import { SceneDefs } from "./components/CardScene";
 import { PixelHeart } from "./components/PixelHeart";
 import { HowItWorks } from "./components/HowItWorks";
+import { Legal } from "./components/Legal";
+import { Sponsor } from "./components/Sponsor/Sponsor";
 import type { Entry } from "./types";
 
-// One extra route, no router: /how renders the mechanics page in the same shell.
-const isHow = window.location.pathname.replace(/\/+$/, "") === "/how";
+// Extra routes, no router: /how and /legal render in the same shell.
+const path = window.location.pathname.replace(/\/+$/, "");
+const isHow = path === "/how";
+const isLegal = path === "/legal";
 if (isHow) document.title = "How it works · CCWarriors";
+if (isLegal) document.title = "Legal · CCWarriors";
 
 type Board = "30d" | "allTime";
 
@@ -73,6 +78,8 @@ export default function App() {
         <main className="main">
           {isHow ? (
             <HowItWorks />
+          ) : isLegal ? (
+            <Legal />
           ) : (
             <>
               <Hero />
@@ -109,6 +116,7 @@ export default function App() {
             </>
           )}
         </main>
+        {!isHow && !isLegal && <Sponsor />}
         <footer>
           <div className="fleft">
             <div className="fbrand">CCWARRIORS</div>
@@ -128,6 +136,7 @@ export default function App() {
               X
             </a>
             <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
+            <a href="/legal">Legal</a>
           </nav>
         </footer>
       </div>

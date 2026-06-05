@@ -25,6 +25,11 @@ const schema = z.object({
   PUBLIC_BASE_URL: z.string().default("http://localhost:8787"),
   // Base URL of the web frontend (for any future cross-origin redirects).
   WEB_BASE_URL: z.string().default("http://localhost:5173"),
+  // Razorpay checkout keys (optional — donations are disabled when unset).
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  // Webhook secret (optional — set when the payment.captured webhook exists).
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 });
 
 export interface Config {
@@ -37,6 +42,9 @@ export interface Config {
   githubClientSecret?: string;
   publicBaseUrl: string;
   webBaseUrl: string;
+  razorpayKeyId?: string;
+  razorpayKeySecret?: string;
+  razorpayWebhookSecret?: string;
 }
 
 export function parseConfig(env: NodeJS.ProcessEnv): Config {
@@ -51,5 +59,13 @@ export function parseConfig(env: NodeJS.ProcessEnv): Config {
     githubClientSecret: p.GITHUB_CLIENT_SECRET && p.GITHUB_CLIENT_SECRET.length > 0 ? p.GITHUB_CLIENT_SECRET : undefined,
     publicBaseUrl: p.PUBLIC_BASE_URL,
     webBaseUrl: p.WEB_BASE_URL,
+    razorpayKeyId:
+      p.RAZORPAY_KEY_ID && p.RAZORPAY_KEY_ID.length > 0 ? p.RAZORPAY_KEY_ID : undefined,
+    razorpayKeySecret:
+      p.RAZORPAY_KEY_SECRET && p.RAZORPAY_KEY_SECRET.length > 0 ? p.RAZORPAY_KEY_SECRET : undefined,
+    razorpayWebhookSecret:
+      p.RAZORPAY_WEBHOOK_SECRET && p.RAZORPAY_WEBHOOK_SECRET.length > 0
+        ? p.RAZORPAY_WEBHOOK_SECRET
+        : undefined,
   };
 }

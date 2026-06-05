@@ -209,6 +209,75 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .btn.x{ background:var(--ink); color:var(--bg); border-color:var(--ink); margin-top:14px; } .btn.x:hover{ opacity:.85; }
 .btn.g{ background:transparent; color:var(--ink); margin-top:9px; } .btn.g:hover{ background:var(--segoff); }
 
+/* ── Sponsor — "fuel the board" funding section above the footer ─────────── */
+.sponsor{ margin-top:46px; padding:30px 0 8px; border-top:1px solid var(--line); }
+.sponsor-p{ color:var(--muted); font-size:13.5px; margin:-4px 0 18px; }
+.sponsor-p .o{ color:var(--or); font-weight:600; }
+
+.amtgrid{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
+.amtbtn{ font:inherit; text-align:left; display:flex; flex-direction:column; gap:2px; cursor:pointer;
+  padding:12px 13px 11px; background:var(--panel); border:1px solid var(--line); color:var(--ink);
+  transition:border-color .15s, box-shadow .15s; }
+.amtbtn:hover{ border-color:var(--or); }
+.amtbtn:focus-visible{ outline:2px solid var(--or); outline-offset:2px; }
+.amtbtn.on{ border-color:var(--or); box-shadow:inset 0 0 0 1px var(--or); }
+.amt-glyph{ color:var(--muted); margin-bottom:5px; transition:color .15s; }
+.amtbtn:hover .amt-glyph{ color:var(--bronze); }
+.amtbtn.on .amt-glyph{ color:var(--or); }
+.amt-name{ font-family:'Pixelify Sans'; font-size:13px; letter-spacing:.06em; }
+.amtbtn.on .amt-name{ color:var(--or); }
+.amt-val{ font-size:15px; font-weight:700; }
+.amt-copy{ font-size:10px; color:var(--muted); letter-spacing:.02em; }
+
+.sponsor-row{ display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; margin-bottom:14px; }
+.seg-sm button{ font-size:11px; padding:6px 13px; }
+
+.sponsor-action{ margin-bottom:22px; }
+.donate-cta{ display:inline-block; font:inherit; font-size:12.5px; font-weight:600; letter-spacing:.04em;
+  background:var(--ink); color:var(--bg); border:0; padding:12px 22px; cursor:pointer; text-decoration:none; }
+.donate-cta:hover{ opacity:.85; }
+.donate-cta:disabled{ opacity:.55; cursor:default; }
+.donate-rzp{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.donate-name{ font:inherit; font-size:12.5px; padding:11px 13px; width:240px; max-width:100%;
+  background:var(--panel); border:1px solid var(--line); color:var(--ink); }
+.donate-name::placeholder{ color:var(--muted); }
+.donate-name:focus{ outline:none; border-color:var(--or); }
+.donate-err{ flex-basis:100%; font-size:12px; color:var(--or); }
+.donate-thanks{ font-family:'Pixelify Sans'; font-size:14px; letter-spacing:.04em; color:var(--or); padding:12px 0; display:flex; align-items:center; gap:7px; }
+
+.crypto{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.qr{ flex:none; width:132px; height:132px; padding:8px; background:#fff; border:1px solid var(--line); }
+.qr svg{ display:block; width:100%; height:100%; }
+.crypto-meta{ min-width:0; }
+.crypto-seg{ margin-bottom:10px; }
+.crypto-label{ font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:7px; }
+.crypto-addr{ display:inline-flex; align-items:stretch; border:1px solid var(--line); max-width:100%; }
+.crypto-addr code{ font-size:12px; padding:10px 13px; display:flex; align-items:center; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.crypto-addr button{ border:0; border-left:1px solid var(--line); background:var(--ink); color:var(--bg);
+  padding:0 16px; font:inherit; font-weight:600; font-size:12px; cursor:pointer; white-space:nowrap; }
+.crypto-addr button:hover{ opacity:.85; }
+.crypto-hint{ font-size:11.5px; color:var(--muted); margin-top:8px; }
+
+.wall{ display:flex; align-items:center; gap:7px 14px; flex-wrap:wrap; padding-top:16px; border-top:1px solid var(--line); }
+.wall-item{ display:inline-flex; align-items:center; gap:7px; }
+.wall-av{ width:24px; height:24px; font-size:10px; }
+.wall-name{ font-size:12px; color:var(--muted); font-weight:600; }
+.wall-empty{ padding-top:16px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); letter-spacing:.02em; }
+/* The section carries its own bottom rhythm — tighten the footer gap after it. */
+.sponsor + footer{ margin-top:24px; }
+
+@media (max-width:880px){
+  .amtgrid{ grid-template-columns:repeat(3,1fr); }
+}
+@media (max-width:560px){
+  .amtgrid{ grid-template-columns:repeat(2,1fr); }
+  .donate-rzp{ align-items:stretch; flex-direction:column; }
+  .donate-name{ width:100%; }
+  .crypto-addr{ display:flex; width:100%; }
+  .crypto-addr code{ flex:1; }
+}
+
 footer{ margin-top:46px; padding:26px 0 36px; border-top:1px solid var(--line); font-size:12px; color:var(--muted);
   display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
 .fbrand{ font-family:'Pixelify Sans'; font-size:14px; letter-spacing:.22em; color:var(--ink); }

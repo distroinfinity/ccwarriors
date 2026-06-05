@@ -177,9 +177,20 @@ CCWARRIORS_API=http://localhost:8787 CCWARRIORS_WEB=http://localhost:5173 \
 **Backend (`apps/server`)** — see `apps/server/.env.example`:
 `PORT` (Railway-provided), `DATABASE_URL` (Postgres in prod; unset → PGlite locally),
 `SEED_DEMO`/`SIMULATE` (local only), `CORS_ORIGIN`, `GITHUB_CLIENT_ID`,
-`GITHUB_CLIENT_SECRET`, `PUBLIC_BASE_URL`, `WEB_BASE_URL`.
+`GITHUB_CLIENT_SECRET`, `PUBLIC_BASE_URL`, `WEB_BASE_URL`,
+`RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` (donations; `/donate/*` disabled when unset —
+use `rzp_live_*` keys in Railway, `rzp_test_*` locally),
+`RAZORPAY_WEBHOOK_SECRET` (create a webhook in the Razorpay dashboard:
+URL `https://api.ccwarriors.xyz/donate/webhook`, event `payment.captured`,
+and put its secret here — recovers payments whose tab closed before verify).
 
-**Frontend (`apps/web`)** — see `apps/web/.env.example`: `VITE_WS_URL`.
+**Frontend (`apps/web`)** — see `apps/web/.env.example`: `VITE_WS_URL`,
+`VITE_EVM_ADDRESS`/`VITE_SOL_ADDRESS` (crypto donation tab; a chain hides when
+its address is unset, the tab hides when both are — set in Vercel).
+
+**GitHub repo secrets**: `SPONSORKIT_GITHUB_TOKEN` — classic PAT with `read:user` +
+`read:org`, used by `.github/workflows/sponsors.yml` to regenerate the sponsor wall
+weekly once the GitHub Sponsors profile is live.
 
 **CLI (`packages/cli`)**: `CCWARRIORS_API` (default `https://api.ccwarriors.xyz`),
 `CCWARRIORS_WEB` (default `https://ccwarriors.xyz`).

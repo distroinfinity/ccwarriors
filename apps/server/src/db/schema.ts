@@ -83,6 +83,21 @@ export const usageDays = pgTable(
   (t) => [uniqueIndex("usage_days_user_machine_tool_day").on(t.userId, t.machineId, t.tool, t.day)],
 );
 
+// Sponsor donations (Razorpay web checkout). Amounts in whole rupees —
+// paise conversion happens only at the Razorpay API boundary.
+export const donations = pgTable("donations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull().default("razorpay"),
+  razorpayOrderId: text("razorpay_order_id").notNull().unique(),
+  razorpayPaymentId: text("razorpay_payment_id"),
+  name: text("name"),
+  amount: numeric("amount").notNull(),
+  currency: text("currency").notNull().default("INR"),
+  status: text("status").notNull().default("created"), // created | paid
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UsageDay = typeof usageDays.$inferSelect;
+export type Donation = typeof donations.$inferSelect;
