@@ -1,4 +1,4 @@
-import { CUSTOM_TIER, MAX_CUSTOM_USD, MIN_CUSTOM_USD, TIERS } from "../../sponsorTiers";
+import { CUSTOM_COPY, CUSTOM_TIER, MAX_CUSTOM_USD, MIN_CUSTOM_USD, TIERS } from "../../sponsorTiers";
 import { TierGlyph } from "./TierGlyph";
 
 /** 6 tier cards + a custom-amount cell. Everything reads in USD; the INR
@@ -56,7 +56,7 @@ export function AmountGrid({
             aria-label="Custom amount in dollars"
           />
         </span>
-        <span className="amt-copy">name your price</span>
+        <span className="amt-copy">{CUSTOM_COPY}</span>
       </div>
     </div>
   );
