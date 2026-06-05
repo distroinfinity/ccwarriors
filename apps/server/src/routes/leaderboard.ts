@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import type { LeaderboardStore, Board } from "../lib/leaderboard-store.js";
+import type { LeaderboardStore, Board, Entry } from "../lib/leaderboard-store.js";
 import { orgBySlug } from "../lib/orgs.js";
+import { toolLabel } from "../lib/tools.js";
 
 const TOOL_RE = /^[a-z0-9_-]{1,32}$/;
 
@@ -19,6 +20,19 @@ export function leaderboardRoute(store: LeaderboardStore) {
     const orgParam = c.req.query("org");
     if (orgParam && !orgBySlug(orgParam)) return c.json({ error: "unknown org" }, 400);
     const org = orgParam || undefined;
+    // Org pages poll this endpoint as their live feed (the WS is global-only),
+    // so org responses also carry the chip data the WS sends: org-scoped tool
+    // summaries + per-tool boards. Plain paginated requests skip the expense.
+    let tools: Array<{ key: string; label: string; count: number }> | undefined;
+    let byTool: Record<string, { top30d: Entry[] }> | undefined;
+    if (org) {
+      const summaries = store.toolSummaries(org);
+      tools = summaries.map((t) => ({ key: t.key, label: toolLabel(t.key), count: t.count }));
+      byTool = {};
+      for (const t of summaries) {
+        byTool[t.key] = { top30d: store.getTop("30d", 100, 0, t.key, org) };
+      }
+    }
     return c.json({
       board,
       tool: tool ?? null,
@@ -28,6 +42,7 @@ export function leaderboardRoute(store: LeaderboardStore) {
       offset,
       limit,
       entries: store.getTop(board, limit, offset, tool, org),
+      ...(tools ? { tools, byTool } : {}),
     });
   });
   return app;
