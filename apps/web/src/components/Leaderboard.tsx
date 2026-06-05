@@ -8,6 +8,7 @@ import { FilterChips } from "./FilterChips";
 import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
+import { PixelGlyph } from "./PixelGlyph";
 import { API_HTTP } from "../api";
 import { WEB_ORGS, type WebOrg } from "../orgs";
 
@@ -330,7 +331,8 @@ export function Leaderboard({
             {loadingMore && <div className="rowload" />}
             {atEnd && total > PAGE && (
               <div className="board-end">
-                ⚔ end of the board · {total} {org ? `${org.name} warriors` : "warriors"}
+                <PixelGlyph name="sword" size={11} className="endglyph" /> end of the board ·{" "}
+                {total} {org ? `${org.name} warriors` : "warriors"}
               </div>
             )}
           </>
