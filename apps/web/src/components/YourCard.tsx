@@ -37,6 +37,8 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
         <ClawdLogo className="empty-clawd" />
         <h3>{org ? `Enlist to join the ${org.name} board.` : "Enlist to pull your card."}</h3>
         <InstallBlock />
+        {/* Mobile only (CSS): replaces the hidden install block. */}
+        <p className="enlist-hint">Enlist from your desktop terminal.</p>
         {org ? (
           <div className="orgsteps">
             <a
