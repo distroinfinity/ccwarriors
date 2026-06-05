@@ -62,7 +62,7 @@ export default function App() {
   // Global page rides the WS; org pages poll their REST slice instead.
   const globalBoard = useLeaderboard(!ORG);
   const orgBoard = useOrgBoard(ORG?.slug ?? null);
-  const { count, top30d, topAllTime, byTool, tools, totals, connected, hasSnapshot } = ORG
+  const { count, top30d, topAllTime, byTool, tools, totals, connected, hasSnapshot, hasCompleteData } = ORG
     ? orgBoard
     : globalBoard;
   const { me: session, resolved: meResolved } = useMe();
@@ -109,6 +109,7 @@ export default function App() {
   const meIndex = identity ? entries.findIndex((e) => e.githubLogin === identity) : -1;
   const me = meIndex >= 0 ? entries[meIndex] : undefined;
   const meRank = meIndex + 1;
+  const identityMayBeBeyondSeed = !!identity && !me && !hasCompleteData;
 
   // Org verify CTA: signed-in visitors on an org page who aren't verified yet.
   const needsVerify = !!ORG && !!session && !(session.orgs ?? []).includes(ORG.slug);
@@ -155,10 +156,11 @@ export default function App() {
                   total={count}
                   connected={connected}
                   hasSnapshot={hasSnapshot}
+                  hasCompleteData={hasCompleteData}
                   locate={locate}
                   org={ORG}
                 />
-                {!hasSnapshot || !meResolved ? (
+                {!hasSnapshot || !meResolved || identityMayBeBeyondSeed ? (
                   <CardSkeleton />
                 ) : me ? (
                   <YourCard

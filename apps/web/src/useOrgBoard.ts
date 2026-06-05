@@ -15,6 +15,7 @@ const EMPTY: BoardState = {
   totals: null,
   connected: false,
   hasSnapshot: false,
+  hasCompleteData: false,
 };
 
 /**
@@ -35,6 +36,7 @@ export function useOrgBoard(slug: string | null): BoardState {
         const r = await fetch(
           `${API_HTTP}/leaderboard?board=30d&limit=${TOP_N}&org=${encodeURIComponent(slug!)}`,
         );
+        if (!r.ok) throw new Error(`org leaderboard failed: ${r.status}`);
         const d = (await r.json()) as {
           count?: number;
           entries?: Entry[];
@@ -53,6 +55,7 @@ export function useOrgBoard(slug: string | null): BoardState {
           totals: d.totals ?? null,
           connected: true,
           hasSnapshot: true,
+          hasCompleteData: true,
         });
       } catch {
         if (!stop) setState((s) => ({ ...s, connected: false }));

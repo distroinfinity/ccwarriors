@@ -15,8 +15,10 @@ export interface BoardState {
   /** Server-computed totals — the headline numbers are never summed client-side. */
   totals: { burned30d: number; count: number } | null;
   connected: boolean;
-  /** True once the first snapshot has been received from the backend. */
+  /** True once any server response can render the board. */
   hasSnapshot: boolean;
+  /** True once state includes the full board metadata, not just the REST seed. */
+  hasCompleteData: boolean;
 }
 
 const EMPTY: BoardState = {
@@ -28,6 +30,7 @@ const EMPTY: BoardState = {
   totals: null,
   connected: false,
   hasSnapshot: false,
+  hasCompleteData: false,
 };
 
 /**
@@ -44,20 +47,23 @@ export function useLeaderboard(enabled = true): BoardState {
   const [state, setState] = useState<BoardState>(EMPTY);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closedRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
-    closedRef.current = false;
+    const seedAbort = new AbortController();
+    let stopped = false;
     let gotSnapshot = false;
 
-    fetch(`${API_HTTP}/leaderboard?board=30d&limit=20`)
-      .then((r) => r.json())
+    fetch(`${API_HTTP}/leaderboard?board=30d&limit=20`, { signal: seedAbort.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`leaderboard seed failed: ${r.status}`);
+        return r.json();
+      })
       .then((d: { count?: number; entries?: Entry[]; totals?: BoardState["totals"] }) => {
-        if (gotSnapshot || closedRef.current) return;
+        if (gotSnapshot || stopped) return;
         const entries = Array.isArray(d.entries) ? d.entries : [];
         setState((s) =>
-          s.hasSnapshot
+          s.hasCompleteData
             ? s
             : {
                 count: d.count ?? entries.length,
@@ -68,10 +74,12 @@ export function useLeaderboard(enabled = true): BoardState {
                 totals: d.totals ?? null,
                 connected: false,
                 hasSnapshot: true,
+                hasCompleteData: false,
               },
         );
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
         /* WS path still loads the board */
       });
 
@@ -79,8 +87,11 @@ export function useLeaderboard(enabled = true): BoardState {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
-      ws.onopen = () => setState((s) => ({ ...s, connected: true }));
+      ws.onopen = () => {
+        if (!stopped) setState((s) => ({ ...s, connected: true }));
+      };
       ws.onmessage = (ev) => {
+        if (stopped) return;
         try {
           const msg: Snapshot = JSON.parse(ev.data);
           gotSnapshot = true;
@@ -93,22 +104,27 @@ export function useLeaderboard(enabled = true): BoardState {
             totals: msg.totals ?? null,
             connected: true,
             hasSnapshot: true,
+            hasCompleteData: true,
           });
         } catch {
           /* ignore malformed frames */
         }
       };
       ws.onclose = () => {
+        if (stopped) return;
         setState((s) => ({ ...s, connected: false }));
-        if (!closedRef.current) retryRef.current = setTimeout(connect, 1500);
+        retryRef.current = setTimeout(connect, 1500);
       };
-      ws.onerror = () => ws.close();
+      ws.onerror = () => {
+        if (!stopped) ws.close();
+      };
     }
 
     connect();
 
     return () => {
-      closedRef.current = true;
+      stopped = true;
+      seedAbort.abort();
       if (retryRef.current) clearTimeout(retryRef.current);
       wsRef.current?.close();
     };
