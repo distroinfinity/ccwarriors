@@ -23,14 +23,6 @@ body:
     validations:
       required: true
   - type: input
-    id: discord
-    attributes:
-      label: Discord server
-      description: Membership verification runs on your Discord — an invite link, or just confirm you can supply the server ID (right-click the server with Developer Mode on).
-      placeholder: https://discord.gg/… or "can supply server ID"
-    validations:
-      required: true
-  - type: input
     id: logo
     attributes:
       label: Logo / brand asset
