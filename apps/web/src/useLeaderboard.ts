@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { Snapshot, ToolInfo } from "./types";
+import { API_HTTP } from "./api";
+import type { Entry, Snapshot, ToolInfo } from "./types";
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:8787";
 
@@ -33,6 +34,11 @@ const EMPTY: BoardState = {
  * Connects to the live backend WebSocket, replacing state on every
  * snapshot/update message. Auto-reconnects on close via setTimeout.
  * `enabled:false` skips the socket entirely (org pages poll REST instead).
+ *
+ * First paint doesn't wait for the socket: a REST fetch of the top page fires
+ * in parallel and seeds the board (empty tools/byTool — the same degraded
+ * shape old servers send, so chips just stay hidden until the snapshot lands).
+ * The WS snapshot replaces the seed; if the seed loses the race it's a no-op.
  */
 export function useLeaderboard(enabled = true): BoardState {
   const [state, setState] = useState<BoardState>(EMPTY);
@@ -43,6 +49,31 @@ export function useLeaderboard(enabled = true): BoardState {
   useEffect(() => {
     if (!enabled) return;
     closedRef.current = false;
+    let gotSnapshot = false;
+
+    fetch(`${API_HTTP}/leaderboard?board=30d&limit=20`)
+      .then((r) => r.json())
+      .then((d: { count?: number; entries?: Entry[]; totals?: BoardState["totals"] }) => {
+        if (gotSnapshot || closedRef.current) return;
+        const entries = Array.isArray(d.entries) ? d.entries : [];
+        setState((s) =>
+          s.hasSnapshot
+            ? s
+            : {
+                count: d.count ?? entries.length,
+                top30d: entries,
+                topAllTime: [],
+                byTool: {},
+                tools: [],
+                totals: d.totals ?? null,
+                connected: false,
+                hasSnapshot: true,
+              },
+        );
+      })
+      .catch(() => {
+        /* WS path still loads the board */
+      });
 
     function connect() {
       const ws = new WebSocket(WS_URL);
@@ -52,6 +83,7 @@ export function useLeaderboard(enabled = true): BoardState {
       ws.onmessage = (ev) => {
         try {
           const msg: Snapshot = JSON.parse(ev.data);
+          gotSnapshot = true;
           setState({
             count: msg.count,
             top30d: msg.top30d ?? [],

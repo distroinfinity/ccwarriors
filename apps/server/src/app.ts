@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import type { DB } from "./db/index.js";
 import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { ingestRoute } from "./routes/ingest.js";
@@ -61,6 +62,22 @@ export function createApp(deps?: AppDeps) {
       credentials: corsOrigin !== "*",
     }),
   );
+
+  // Conditional requests for the public read endpoints: org pages poll
+  // /leaderboard every few seconds, so unchanged payloads become 304s.
+  // Scoped per-route (never /me — cookie-gated) and the CORS headers must be
+  // retained explicitly: hono's etag rebuilds the response on 304 and would
+  // otherwise strip Access-Control-Allow-* — breaking cross-origin org polls.
+  const cacheEtag = etag({
+    retainedHeaders: [
+      ...RETAINED_304_HEADERS,
+      "access-control-allow-origin",
+      "access-control-allow-credentials",
+      "access-control-expose-headers",
+    ],
+  });
+  app.use("/leaderboard", cacheEtag);
+  app.use("/sponsors", cacheEtag);
 
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.route("/", installerRoute());

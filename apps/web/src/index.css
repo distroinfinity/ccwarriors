@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;700&family=Pixelify+Sans:wght@400&display=swap');
-
 html[data-theme="light"]{
   --bg:#FAFAF8; --panel:#FFFFFF; --line:#E7E4DC; --ink:#16140F; --muted:#857F73;
   --or:#C2683E; --bronze:#9A6B3F; --grid:rgba(0,0,0,.035); --spark:#cdc9c0; --avbg:#dad6cd; --segoff:#F1EEE7; --shimmer:rgba(255,255,255,.65);

@@ -30,6 +30,8 @@ export function Avatar({
       className={className}
       src={src}
       alt={name}
+      loading="lazy"
+      decoding="async"
       style={{ background: bg }}
       onError={() => setFailed(true)}
     />

@@ -33,6 +33,9 @@ export function leaderboardRoute(store: LeaderboardStore) {
         byTool[t.key] = { top30d: store.getTop("30d", 100, 0, t.key, org) };
       }
     }
+    // Short browser cache matched to the org poll cadence; pairs with the
+    // etag middleware in app.ts so unchanged polls collapse to 304s.
+    c.header("Cache-Control", "public, max-age=5");
     return c.json({
       board,
       tool: tool ?? null,

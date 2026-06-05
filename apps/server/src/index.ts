@@ -78,7 +78,10 @@ async function main() {
   // Keep the donation USD→INR rate current (fallback constant until first fetch).
   startFxRefresh();
 
-  const wss = new WebSocketServer({ noServer: true });
+  // permessage-deflate: the snapshot repeats each user across boards (top30d /
+  // topAllTime / byTool) and compresses ~6×. Negotiated per client, so old
+  // web clients keep working unchanged.
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: true });
   const broadcast = attachBroadcast(wss, store);
 
   let authDeps:
