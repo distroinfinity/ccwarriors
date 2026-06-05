@@ -1,0 +1,44 @@
+name: sponsors
+# Weekly sponsorkit run: regenerates the GitHub Sponsors wall
+# (apps/web/public/sponsors.{svg,json} + root sponsors.svg for the README).
+# The generate step tolerates failure — the Sponsors profile may not be live
+# yet (KYC pending), and a dormant profile must never fail the workflow.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sponsorkit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate sponsor wall
+        id: generate
+        continue-on-error: true
+        env:
+          SPONSORKIT_GITHUB_TOKEN: ${{ secrets.SPONSORKIT_GITHUB_TOKEN }}
+          SPONSORKIT_GITHUB_LOGIN: distroinfinity
+        run: npx sponsorkit --outputDir apps/web/public --formats svg,json --name sponsors
+
+      - name: Mirror SVG for README
+        if: steps.generate.outcome == 'success'
+        run: cp apps/web/public/sponsors.svg sponsors.svg
+
+      - name: Commit wall
+        if: steps.generate.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apps/web/public/sponsors.svg apps/web/public/sponsors.json sponsors.svg
+          git diff --cached --quiet || git commit -m "chore(sponsors): refresh sponsor wall"
+          git push

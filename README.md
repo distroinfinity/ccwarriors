@@ -42,6 +42,22 @@ GitHub loopback OAuth                tiers, ranks, rate limits   ──►  live
   leaderboard that re-sorts live, collectible warrior cards (15 muted
   anime-nature scenes), pixel Clawd branding.
 
+## Sponsors
+
+CCWarriors is free and open source — sponsorships keep the servers burning.
+
+- **[GitHub Sponsors](https://github.com/sponsors/distroinfinity)** — one-time or monthly
+- **UPI / card (India)** — [ccwarriors.xyz/#sponsor](https://ccwarriors.xyz/#sponsor) (Razorpay)
+- **Crypto** — EVM address on [ccwarriors.xyz/#sponsor](https://ccwarriors.xyz/#sponsor)
+
+Tiers run Wood 🪵 → Netherite 🔥, just like the board.
+
+<p align="center">
+  <a href="https://ccwarriors.xyz/#sponsor">
+    <img src="./sponsors.svg" alt="Sponsors" />
+  </a>
+</p>
+
 ## Local development
 
 ```bash

@@ -82,7 +82,21 @@ async function main() {
     console.log("github oauth: disabled (no credentials)");
   }
 
-  const app = createApp({ db, store, onIngest: broadcast, corsOrigin: cfg.corsOrigin, auth: authDeps });
+  let donateDeps: { keyId: string; keySecret: string } | undefined;
+  if (cfg.razorpayKeyId && cfg.razorpayKeySecret) {
+    donateDeps = { keyId: cfg.razorpayKeyId, keySecret: cfg.razorpayKeySecret };
+  } else {
+    console.log("donations: disabled (no razorpay keys)");
+  }
+
+  const app = createApp({
+    db,
+    store,
+    onIngest: broadcast,
+    corsOrigin: cfg.corsOrigin,
+    auth: authDeps,
+    donate: donateDeps,
+  });
 
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
     console.log(

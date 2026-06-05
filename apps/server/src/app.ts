@@ -8,6 +8,8 @@ import { authRoute } from "./routes/auth.js";
 import { installerRoute } from "./routes/installer.js";
 import { telemetryRoute, captureEvent } from "./routes/telemetry.js";
 import { adminRoute } from "./routes/admin.js";
+import { donateRoute } from "./routes/donate.js";
+import { sponsorsRoute } from "./routes/sponsors.js";
 
 export interface AppDeps {
   db: DB;
@@ -19,6 +21,10 @@ export interface AppDeps {
     clientSecret: string;
     publicBaseUrl: string;
     webBaseUrl: string;
+  };
+  donate?: {
+    keyId: string;
+    keySecret: string;
   };
 }
 
@@ -51,8 +57,12 @@ export function createApp(deps?: AppDeps) {
     app.route("/ingest", ingestRoute(deps.db, deps.store, deps.onIngest));
     app.route("/leaderboard", leaderboardRoute(deps.store));
     app.route("/admin", adminRoute(deps.db, deps.store, deps.onIngest));
+    app.route("/sponsors", sponsorsRoute(deps.db));
     if (deps.auth) {
       app.route("/", authRoute(deps.db, deps.auth));
+    }
+    if (deps.donate) {
+      app.route("/donate", donateRoute(deps.db, deps.donate));
     }
   }
   return app;

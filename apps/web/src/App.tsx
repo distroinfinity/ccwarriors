@@ -10,6 +10,7 @@ import { CardSkeleton } from "./components/Skeleton";
 import { SceneDefs } from "./components/CardScene";
 import { PixelHeart } from "./components/PixelHeart";
 import { HowItWorks } from "./components/HowItWorks";
+import { Sponsor } from "./components/Sponsor/Sponsor";
 import type { Entry } from "./types";
 
 // One extra route, no router: /how renders the mechanics page in the same shell.
@@ -109,6 +110,7 @@ export default function App() {
             </>
           )}
         </main>
+        {!isHow && <Sponsor />}
         <footer>
           <div className="fleft">
             <div className="fbrand">CCWARRIORS</div>
