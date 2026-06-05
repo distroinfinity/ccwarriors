@@ -395,7 +395,7 @@ describe("sponsors route", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toEqual([
-      { name: "Anonymous warrior", amount: 6400, currency: "INR" },
+      { name: "anon warrior", amount: 6400, currency: "INR" },
       { name: "Alice", amount: 400, currency: "INR" },
     ]);
   });
