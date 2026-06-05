@@ -9,7 +9,10 @@ const schema = z.object({
   // Postgres connection. Optional: when unset we fall back to in-memory PGlite
   // (great for local dev and a zero-setup demo).
   DATABASE_URL: z.string().optional(),
-  PORT: z.coerce.number().default(8080),
+  // 8787 is the documented local default (web falls back to ws://localhost:8787).
+  // Worktrees override via .env PORT (written by .superset/setup.sh); prod
+  // platforms set PORT explicitly.
+  PORT: z.coerce.number().default(8787),
   // Seed the board with demo warriors + simulate live spend (the dummy-data demo).
   SEED_DEMO: bool,
   SIMULATE: bool,
