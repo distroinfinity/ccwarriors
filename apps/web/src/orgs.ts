@@ -12,6 +12,8 @@ export interface WebOrg {
   tagline: string;
   /** Org homepage — the header lockup links here. */
   url: string;
+  /** Payment-method ordering in the sponsor section. Default: card/UPI first. */
+  payments?: "crypto-first";
 }
 
 export const WEB_ORGS: Record<string, WebOrg> = {
@@ -23,6 +25,8 @@ export const WEB_ORGS: Record<string, WebOrg> = {
     title: "CCWarriors × Network School",
     tagline: "Who's burning the most at Network School.",
     url: "https://ns.com",
+    // Network-state crowd pays in crypto first.
+    payments: "crypto-first",
   },
 };
 

@@ -27,6 +27,8 @@ function VerifyNudge({ org }: { org: WebOrg }) {
 
 /** Shown in the side panel when the viewer has no card to display yet. */
 export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?: WebOrg | null }) {
+  // verifyOrg implies an existing GitHub session — step 1 is done.
+  const signedIn = !!verifyOrg;
   return (
     <aside className="side">
       <div className="seclabel">Your card</div>
@@ -34,14 +36,26 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
         <ClawdLogo className="empty-clawd" />
         <h3>{org ? `Enlist to join the ${org.name} board.` : "Enlist to pull your card."}</h3>
         <InstallBlock />
-        {/* verifyOrg implies an existing GitHub session — the sign-in link is noise then. */}
-        {!verifyOrg && (
-          <a className="ghsign" href={`${API_HTTP}/auth/web${org ? `?org=${org.slug}` : ""}`}>
+        {org ? (
+          <div className="orgsteps">
+            <a
+              className={"orgstep" + (signedIn ? " done" : "")}
+              href={`${API_HTTP}/auth/web?org=${org.slug}`}
+            >
+              <span className="orgstep-n">{signedIn ? "✓" : "1"}</span>
+              Sign in with GitHub
+            </a>
+            <a className="orgstep" href={`${API_HTTP}/orgs/${org.slug}/verify/start`}>
+              <span className="orgstep-n">2</span>
+              Verify with Discord
+            </a>
+          </div>
+        ) : (
+          <a className="ghsign" href={`${API_HTTP}/auth/web`}>
             Already enlisted? Sign in with GitHub →
           </a>
         )}
       </div>
-      {verifyOrg && <VerifyNudge org={verifyOrg} />}
     </aside>
   );
 }
