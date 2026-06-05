@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { API_HTTP } from "../../api";
 import { Avatar } from "../Avatar";
+import { PixelSword } from "./PixelSword";
+
+// The server's fallback for nameless donors — gets the pixel sword treatment.
+const ANON_NAME = "anon warrior";
 
 interface WallEntry {
   name: string;
@@ -57,7 +61,13 @@ export function SponsorsWall({ refreshKey }: { refreshKey: number }) {
     <div className="wall" aria-label="Sponsors">
       {entries.map((e, i) => (
         <div className="wall-item" key={`${e.name}-${i}`} title={e.name}>
-          <Avatar src={e.avatarUrl} name={e.name} index={i} className="av wall-av" />
+          {e.name === ANON_NAME ? (
+            <span className="av wall-av wall-anon">
+              <PixelSword />
+            </span>
+          ) : (
+            <Avatar src={e.avatarUrl} name={e.name} index={i} className="av wall-av" />
+          )}
           <span className="wall-name">{e.name}</span>
         </div>
       ))}

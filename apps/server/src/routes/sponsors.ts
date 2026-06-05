@@ -17,7 +17,7 @@ export function sponsorsRoute(db: DB) {
       .limit(100);
     return c.json(
       rows.map((r) => ({
-        name: r.name ?? "Anonymous warrior",
+        name: r.name ?? "anon warrior",
         amount: Number(r.amount),
         currency: r.currency,
       })),
