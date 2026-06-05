@@ -3,6 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_WS_URL?: string;
   readonly VITE_EVM_ADDRESS?: string;
+  readonly VITE_SOL_ADDRESS?: string;
 }
 interface ImportMeta {
   readonly env: ImportMetaEnv;

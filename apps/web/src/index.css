@@ -211,10 +211,8 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 
 /* ── Sponsor — "fuel the board" funding section above the footer ─────────── */
 .sponsor{ margin-top:46px; padding:30px 0 8px; border-top:1px solid var(--line); }
-.sponsor-head{ margin-bottom:20px; }
-.sponsor-h{ font-size:clamp(20px,3.4vw,26px); font-weight:800; letter-spacing:-.02em; line-height:1.1; }
-.sponsor-h .o{ color:var(--or); }
-.sponsor-p{ color:var(--muted); font-size:13.5px; margin-top:8px; max-width:560px; }
+.sponsor-p{ color:var(--muted); font-size:13.5px; margin:-4px 0 18px; }
+.sponsor-p .o{ color:var(--or); font-weight:600; }
 
 .amtgrid{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
 .amtbtn{ font:inherit; text-align:left; display:flex; flex-direction:column; gap:2px; cursor:pointer;
@@ -223,7 +221,9 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .amtbtn:hover{ border-color:var(--or); }
 .amtbtn:focus-visible{ outline:2px solid var(--or); outline-offset:2px; }
 .amtbtn.on{ border-color:var(--or); box-shadow:inset 0 0 0 1px var(--or); }
-.amt-emoji{ font-size:17px; line-height:1; margin-bottom:4px; }
+.amt-glyph{ color:var(--muted); margin-bottom:5px; transition:color .15s; }
+.amtbtn:hover .amt-glyph{ color:var(--bronze); }
+.amtbtn.on .amt-glyph{ color:var(--or); }
 .amt-name{ font-family:'Pixelify Sans'; font-size:13px; letter-spacing:.06em; }
 .amtbtn.on .amt-name{ color:var(--or); }
 .amt-val{ font-size:15px; font-weight:700; }
@@ -243,12 +243,13 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .donate-name::placeholder{ color:var(--muted); }
 .donate-name:focus{ outline:none; border-color:var(--or); }
 .donate-err{ flex-basis:100%; font-size:12px; color:var(--or); }
-.donate-thanks{ font-family:'Pixelify Sans'; font-size:14px; letter-spacing:.04em; color:var(--or); padding:12px 0; }
+.donate-thanks{ font-family:'Pixelify Sans'; font-size:14px; letter-spacing:.04em; color:var(--or); padding:12px 0; display:flex; align-items:center; gap:7px; }
 
 .crypto{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
 .qr{ flex:none; width:132px; height:132px; padding:8px; background:#fff; border:1px solid var(--line); }
 .qr svg{ display:block; width:100%; height:100%; }
 .crypto-meta{ min-width:0; }
+.crypto-seg{ margin-bottom:10px; }
 .crypto-label{ font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:600; margin-bottom:7px; }
 .crypto-addr{ display:inline-flex; align-items:stretch; border:1px solid var(--line); max-width:100%; }
 .crypto-addr code{ font-size:12px; padding:10px 13px; display:flex; align-items:center; min-width:0;

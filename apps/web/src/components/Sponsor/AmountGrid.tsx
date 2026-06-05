@@ -1,4 +1,5 @@
 import { TIERS } from "../../sponsorTiers";
+import { TierGlyph } from "./TierGlyph";
 
 /** 6 tier cards, 3×2 (2-col on mobile). Shows ₹ when the Razorpay tab is active. */
 export function AmountGrid({
@@ -20,9 +21,7 @@ export function AmountGrid({
           className={`amtbtn${i === tierIdx ? " on" : ""}`}
           onClick={() => setTierIdx(i)}
         >
-          <span className="amt-emoji" aria-hidden>
-            {t.emoji}
-          </span>
+          <TierGlyph tier={t.glyph} />
           <span className="amt-name">{t.name}</span>
           <span className="amt-val mono">{showInr ? `₹${t.inr.toLocaleString("en-IN")}` : `$${t.usd}`}</span>
           <span className="amt-copy">{t.copy}</span>

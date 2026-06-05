@@ -1,6 +1,8 @@
 // Demo seeding + live-spend simulation. Enabled via SEED_DEMO / SIMULATE env flags.
 import { LeaderboardStore, type Entry } from "./lib/leaderboard-store.js";
 import { computeTier } from "./lib/tier.js";
+import type { DB } from "./db/index.js";
+import { donations } from "./db/schema.js";
 
 const SCENES = [
   "crane", "wave", "fujiDawn", "sakura", "temple",
@@ -79,6 +81,34 @@ export function seedDemo(store: LeaderboardStore): void {
       breakdown: demoBreakdown(c30, i + 4),
     });
   }
+}
+
+// Demo donors so the sponsor wall isn't empty in dev. Mixed tiers, one
+// anonymous, one unpaid (must stay invisible — proves /sponsors filters).
+export async function seedDemoDonations(db: DB): Promise<void> {
+  const day = 86_400_000;
+  const base = Date.now();
+  const rows: Array<[string, number, string | null, "paid" | "created", number]> = [
+    ["order_demo_1", 6400, "shipfast", "paid", 1],
+    ["order_demo_2", 1600, "laurakdev", "paid", 3],
+    ["order_demo_3", 400, null, "paid", 5], // → "Anonymous warrior"
+    ["order_demo_4", 25600, "torvaldsjr", "paid", 8],
+    ["order_demo_5", 800, "rubberduck", "paid", 12],
+    ["order_demo_6", 3200, "ghost_donor", "created", 0], // never on the wall
+  ];
+  await db
+    .insert(donations)
+    .values(
+      rows.map(([razorpayOrderId, amount, name, status, daysAgo]) => ({
+        razorpayOrderId,
+        amount: String(amount),
+        name,
+        status,
+        razorpayPaymentId: status === "paid" ? `pay_${razorpayOrderId}` : null,
+        createdAt: new Date(base - daysAgo * day),
+      })),
+    )
+    .onConflictDoNothing();
 }
 
 // Every few seconds, a random warrior burns a bit more — drives live reordering.

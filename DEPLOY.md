@@ -182,7 +182,8 @@ CCWARRIORS_API=http://localhost:8787 CCWARRIORS_WEB=http://localhost:5173 \
 use `rzp_live_*` keys in Railway, `rzp_test_*` locally).
 
 **Frontend (`apps/web`)** — see `apps/web/.env.example`: `VITE_WS_URL`,
-`VITE_EVM_ADDRESS` (crypto donation tab; hides when unset — set in Vercel).
+`VITE_EVM_ADDRESS`/`VITE_SOL_ADDRESS` (crypto donation tab; a chain hides when
+its address is unset, the tab hides when both are — set in Vercel).
 
 **GitHub repo secrets**: `SPONSORKIT_GITHUB_TOKEN` — classic PAT with `read:user` +
 `read:org`, used by `.github/workflows/sponsors.yml` to regenerate the sponsor wall

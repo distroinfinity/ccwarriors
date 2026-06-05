@@ -4,17 +4,17 @@ export interface Tier {
   usd: number;
   inr: number;
   name: string;
-  emoji: string;
+  glyph: string;
   copy: string;
 }
 
 export const TIERS: Tier[] = [
-  { usd: 4, inr: 400, name: "Wood", emoji: "🪵", copy: "buys the planks" },
-  { usd: 8, inr: 800, name: "Stone", emoji: "🪨", copy: "cobblestone crew" },
-  { usd: 16, inr: 1600, name: "Iron", emoji: "⛏️", copy: "iron-clad backer" },
-  { usd: 32, inr: 3200, name: "Gold", emoji: "🪙", copy: "gilded patron" },
-  { usd: 64, inr: 6400, name: "Diamond", emoji: "💎", copy: "diamond hands" },
-  { usd: 256, inr: 25600, name: "Netherite", emoji: "🔥", copy: "netherite legend" },
+  { usd: 4, inr: 400, name: "Wood", glyph: "wood", copy: "buys the planks" },
+  { usd: 8, inr: 800, name: "Stone", glyph: "stone", copy: "cobblestone crew" },
+  { usd: 16, inr: 1600, name: "Iron", glyph: "iron", copy: "ironclad backer" },
+  { usd: 32, inr: 3200, name: "Gold", glyph: "gold", copy: "gilded patron" },
+  { usd: 64, inr: 6400, name: "Diamond", glyph: "diamond", copy: "diamond hands" },
+  { usd: 256, inr: 25600, name: "Netherite", glyph: "netherite", copy: "netherite legend" },
 ];
 
 export const DEFAULT_TIER = 2; // Iron / $16
@@ -26,5 +26,7 @@ export function tierAt(i: number): Tier {
 
 export const GH_SPONSOR = "distroinfinity";
 
-// Self-custody EVM wallet for the crypto tab; the tab hides when unset.
+// Self-custody wallets for the crypto tab. A chain hides when its address is
+// unset; the whole tab hides when both are.
 export const EVM_ADDRESS = import.meta.env.VITE_EVM_ADDRESS ?? "";
+export const SOL_ADDRESS = import.meta.env.VITE_SOL_ADDRESS ?? "";

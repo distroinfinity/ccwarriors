@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { API_HTTP } from "../../api";
 import { tierAt } from "../../sponsorTiers";
+import { PixelHeart } from "../PixelHeart";
 
 type Phase = "idle" | "loading" | "paid";
 
@@ -57,7 +58,7 @@ export function RazorpayButton({
         amount: order.amount * 100,
         currency: order.currency,
         name: "CCWarriors",
-        description: `${tier.name} tier — ${tier.copy}`,
+        description: `${tier.name} tier · ${tier.copy}`,
         handler: async (resp: {
           razorpay_order_id: string;
           razorpay_payment_id: string;
@@ -95,7 +96,11 @@ export function RazorpayButton({
   };
 
   if (phase === "paid") {
-    return <div className="donate-thanks">⛏️ Thank you, warrior. You're on the wall.</div>;
+    return (
+      <div className="donate-thanks">
+        <PixelHeart /> Thank you, warrior. You're on the wall.
+      </div>
+    );
   }
 
   return (
