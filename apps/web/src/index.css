@@ -270,7 +270,8 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .btn.g{ background:transparent; color:var(--ink); margin-top:9px; } .btn.g:hover{ background:var(--segoff); }
 
 /* ── Sponsor — "fuel the board" funding section above the footer ─────────── */
-.sponsor{ margin-top:46px; padding:0 0 8px; }
+/* Generous top gap (no rule) so the funding section sits clearly below the board. */
+.sponsor{ margin-top:110px; padding:0 0 8px; }
 .sponsor-p{ color:var(--muted); font-size:13.5px; margin:-4px 0 18px; }
 .sponsor-p .o{ color:var(--or); font-weight:600; }
 
