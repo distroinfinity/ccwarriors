@@ -129,7 +129,6 @@ export default function App() {
           </div>
           <nav className="flinks" aria-label="Footer">
             <a href="/how">How it works</a>
-            <a href="/legal">Legal</a>
             <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
               GitHub
             </a>
@@ -137,6 +136,7 @@ export default function App() {
               X
             </a>
             <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
+            <a href="/legal">Legal</a>
           </nav>
         </footer>
       </div>
