@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
 import { parseConfig } from "./config.js";
 import { createDbFromEnv } from "./db/index.js";
-import { users } from "./db/schema.js";
+import { users, orgMembers } from "./db/schema.js";
 import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { createApp } from "./app.js";
 import { attachBroadcast } from "./ws/broadcast.js";
@@ -38,6 +38,12 @@ async function main() {
   // no destructive backfill, the next sync overwrites it correctly anyway.
   try {
     const rows = await db.select().from(users);
+    // Verified org memberships ride along into the store (org boards + badges).
+    const orgRows = await db.select().from(orgMembers);
+    const orgsByUser = new Map<string, string[]>();
+    for (const m of orgRows) {
+      orgsByUser.set(m.userId, [...(orgsByUser.get(m.userId) ?? []), m.orgSlug]);
+    }
     for (const u of rows) {
       const cost30d = Number(u.cost30d);
       const breakdown = u.toolBreakdown
@@ -60,6 +66,7 @@ async function main() {
         costAllTime: Number(u.costAllTime),
         breakdown,
         flagged: !!u.flaggedAt,
+        orgs: orgsByUser.get(u.id) ?? [],
       });
     }
   } catch (err) {
@@ -100,6 +107,22 @@ async function main() {
     console.log("donations: disabled (no razorpay keys)");
   }
 
+  // Org verification needs Discord creds plus the session secret (GitHub's).
+  let discordDeps:
+    | { clientId: string; clientSecret: string; sessionSecret: string; publicBaseUrl: string; webBaseUrl: string }
+    | undefined;
+  if (cfg.discordClientId && cfg.discordClientSecret && cfg.githubClientSecret) {
+    discordDeps = {
+      clientId: cfg.discordClientId,
+      clientSecret: cfg.discordClientSecret,
+      sessionSecret: cfg.githubClientSecret,
+      publicBaseUrl: cfg.publicBaseUrl,
+      webBaseUrl: cfg.webBaseUrl,
+    };
+  } else {
+    console.log("discord oauth: disabled (no credentials)");
+  }
+
   const app = createApp({
     db,
     store,
@@ -107,6 +130,7 @@ async function main() {
     corsOrigin: cfg.corsOrigin,
     auth: authDeps,
     donate: donateDeps,
+    discord: discordDeps,
   });
 
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {

@@ -8,20 +8,37 @@ import { InstallBlock } from "./InstallBlock";
 import { ToolGlyph } from "./ToolGlyph";
 import { formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
+import type { WebOrg } from "../orgs";
+
+/** Discord verify CTA — shown to signed-in visitors not yet on the org board. */
+function VerifyNudge({ org }: { org: WebOrg }) {
+  return (
+    <div className="nudge verify" role="status">
+      <span className="nudge-glyph">◈</span>
+      <span>
+        {org.name} member? Verify with Discord to join the board.
+        <a className="verifybtn" href={`${API_HTTP}/orgs/${org.slug}/verify/start`}>
+          Verify with Discord →
+        </a>
+      </span>
+    </div>
+  );
+}
 
 /** Shown in the side panel when the viewer has no card to display yet. */
-export function EnlistCard() {
+export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?: WebOrg | null }) {
   return (
     <aside className="side">
       <div className="seclabel">Your card</div>
       <div className="enlist">
         <ClawdLogo className="empty-clawd" />
-        <h3>Enlist to pull your card.</h3>
+        <h3>{org ? `Enlist to join the ${org.name} board.` : "Enlist to pull your card."}</h3>
         <InstallBlock />
-        <a className="ghsign" href={`${API_HTTP}/auth/web`}>
+        <a className="ghsign" href={`${API_HTTP}/auth/web${org ? `?org=${org.slug}` : ""}`}>
           Already enlisted? Sign in with GitHub →
         </a>
       </div>
+      {verifyOrg && <VerifyNudge org={verifyOrg} />}
     </aside>
   );
 }
@@ -51,6 +68,7 @@ export function YourCard({
   rank,
   outdatedClient,
   underReview,
+  verifyOrg,
   onLocate,
 }: {
   entry: Entry;
@@ -59,6 +77,8 @@ export function YourCard({
   outdatedClient?: boolean;
   /** True while plausibility flags keep this user off the boards. */
   underReview?: boolean;
+  /** Set on org pages when the viewer hasn't verified membership yet. */
+  verifyOrg?: WebOrg | null;
   /** Scrolls the leaderboard to this warrior's row. */
   onLocate?: () => void;
 }) {
@@ -157,6 +177,7 @@ export function YourCard({
         </div>
       </div>
       {/* Nudges live OUTSIDE cardRef so they never leak into the PNG export. */}
+      {verifyOrg && <VerifyNudge org={verifyOrg} />}
       {underReview && (
         <div className="nudge review" role="status">
           <span className="nudge-glyph">⚖</span>

@@ -97,7 +97,24 @@ export const donations = pgTable("donations", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Verified org memberships (e.g. Network School). The org itself lives in the
+// code registry (lib/orgs.ts) keyed by slug — only membership is data.
+export const orgMembers = pgTable(
+  "org_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    orgSlug: text("org_slug").notNull(),
+    discordUserId: text("discord_user_id").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("org_members_user_org").on(t.userId, t.orgSlug)],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UsageDay = typeof usageDays.$inferSelect;
 export type Donation = typeof donations.$inferSelect;
+export type OrgMember = typeof orgMembers.$inferSelect;

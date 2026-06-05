@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { makeDb, seedUser } from "./helpers/db.js";
 import { ingestUsage, type RawIngestPayload } from "../src/services/ingest.js";
 import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
-import { users, usageDays, snapshots } from "../src/db/schema.js";
+import { users, usageDays, snapshots, orgMembers } from "../src/db/schema.js";
 import { lookupModelPrice } from "../src/lib/pricing.js";
 
 const TOKEN = "tok_test";
@@ -152,6 +152,31 @@ describe("ingest v3 (raw token counts)", () => {
     expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost(), 2);
     // All-time must not double count an unchanged re-synced day.
     expect(Number(u!.costAllTime)).toBeCloseTo(expectedOpusCost(), 2);
+  });
+
+  it("a sync preserves org membership already in the store", async () => {
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    store.upsert({
+      id: u!.id,
+      githubLogin: "modern",
+      avatarUrl: "",
+      xHandle: null,
+      tier: "Stone",
+      cardScene: "fujiNight",
+      cost30d: 1,
+      costAllTime: 1,
+      orgs: ["ns"],
+    });
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    expect(store.get(u!.id)?.orgs).toEqual(["ns"]);
+  });
+
+  it("first sync after boot loads org membership from the DB", async () => {
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    await db.insert(orgMembers).values({ userId: u!.id, orgSlug: "ns", discordUserId: "d1" });
+    // Store is cold: user verified via web before ever syncing.
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    expect(store.get(u!.id)?.orgs).toEqual(["ns"]);
   });
 
   it("unknown tool keys fold into 'other' instead of being dropped", async () => {

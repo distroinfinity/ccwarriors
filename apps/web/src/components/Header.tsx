@@ -3,9 +3,10 @@ import { ClawdLogo } from "./ClawdLogo";
 import { TickerValue } from "./TickerValue";
 import { formatUsd } from "../util";
 import { Sk } from "./Skeleton";
+import type { WebOrg } from "../orgs";
 
-function ThemeToggle() {
-  const [dark, setDark] = useState(false);
+function ThemeToggle({ initialDark }: { initialDark: boolean }) {
+  const [dark, setDark] = useState(initialDark);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
   }, [dark]);
@@ -16,12 +17,33 @@ function ThemeToggle() {
   );
 }
 
-export function Header({ count, totalBurned, loading }: { count: number; totalBurned: number; loading: boolean }) {
+export function Header({
+  count,
+  totalBurned,
+  loading,
+  org,
+}: {
+  count: number;
+  totalBurned: number;
+  loading: boolean;
+  /** Org co-brand: Clawd × org wordmark, org-default theme. */
+  org?: WebOrg | null;
+}) {
   return (
     <header>
-      <a className="brand" href="/" aria-label="CCWarriors home">
-        <ClawdLogo />
-      </a>
+      <div className="brand">
+        <a href="/" aria-label="CCWarriors home">
+          <ClawdLogo />
+        </a>
+        {org && (
+          <span className="orglock">
+            <span className="orgx">×</span>
+            <a className="orgname" href={org.url} target="_blank" rel="noopener" title={org.url}>
+              {org.name}
+            </a>
+          </span>
+        )}
+      </div>
       <div className="right">
         <div className="hstats">
           <div>
@@ -50,7 +72,7 @@ export function Header({ count, totalBurned, loading }: { count: number; totalBu
             <div className="l">burned · 30d</div>
           </div>
         </div>
-        <ThemeToggle />
+        <ThemeToggle initialDark={org?.themeDefault === "dark"} />
       </div>
     </header>
   );

@@ -1,6 +1,6 @@
 import { and, eq, gte } from "drizzle-orm";
 import type { DB } from "../db/index.js";
-import { users, snapshots, usageDays, type ModelTokens, type ToolBreakdown, type User } from "../db/schema.js";
+import { users, snapshots, usageDays, orgMembers, type ModelTokens, type ToolBreakdown, type User } from "../db/schema.js";
 import { hashToken } from "../lib/token.js";
 import { computeTier } from "../lib/tier.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
@@ -439,6 +439,17 @@ async function finalize(
   await flagUser(db, store, user, args.signals);
   const flagged = !!user.flaggedAt || args.signals.length > 0;
 
+  // Org membership lives in org_members, not on the sync path — carry the
+  // store's view forward; on a cold entry (first sync since boot) load it.
+  let orgs = store.get(user.id)?.orgs;
+  if (orgs === undefined) {
+    const rows = await db
+      .select({ orgSlug: orgMembers.orgSlug })
+      .from(orgMembers)
+      .where(eq(orgMembers.userId, user.id));
+    orgs = rows.map((r) => r.orgSlug);
+  }
+
   store.upsert({
     id: user.id,
     githubLogin: user.githubLogin,
@@ -452,6 +463,7 @@ async function finalize(
       ? breakdown30d(args.breakdown)
       : { claude: args.totals.cost30d },
     flagged,
+    orgs,
   });
 
   return {
