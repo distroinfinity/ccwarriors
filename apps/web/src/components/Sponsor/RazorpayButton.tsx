@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { API_HTTP } from "../../api";
-import { tierAt } from "../../sponsorTiers";
 import { PixelHeart } from "../PixelHeart";
 
 type Phase = "idle" | "loading" | "paid";
@@ -24,20 +23,25 @@ function loadCheckout(): Promise<void> {
   return scriptPromise;
 }
 
-/** Order → modal → verify. UPI/cards/netbanking via Razorpay Standard Checkout. */
+/** Order → modal → verify. The site reads in USD; Razorpay charges INR —
+ *  conversion already happened in Sponsor (usd × USD_TO_INR). */
 export function RazorpayButton({
-  tierIdx,
+  usd,
+  inr,
+  desc,
   onPaid,
 }: {
-  tierIdx: number;
+  usd: number | null;
+  inr: number | null;
+  desc: string;
   onPaid: () => void;
 }) {
-  const tier = tierAt(tierIdx);
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const donate = async () => {
+    if (inr === null) return;
     setError(null);
     setPhase("loading");
     try {
@@ -45,7 +49,7 @@ export function RazorpayButton({
       const orderRes = await fetch(`${API_HTTP}/donate/order`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount: tier.inr }),
+        body: JSON.stringify({ amount: inr }),
       });
       if (!orderRes.ok) throw new Error(`order failed (${orderRes.status})`);
       const order: { orderId: string; amount: number; currency: string; keyId: string } =
@@ -58,7 +62,7 @@ export function RazorpayButton({
         amount: order.amount * 100,
         currency: order.currency,
         name: "CCWarriors",
-        description: `${tier.name} tier · ${tier.copy}`,
+        description: `$${usd} · ${desc}`,
         handler: async (resp: {
           razorpay_order_id: string;
           razorpay_payment_id: string;
@@ -113,8 +117,12 @@ export function RazorpayButton({
         placeholder="Name on the wall (optional)"
         aria-label="Name shown on the sponsor wall"
       />
-      <button className="donate-cta" onClick={donate} disabled={phase === "loading"}>
-        {phase === "loading" ? "Opening checkout…" : `Donate ₹${tier.inr.toLocaleString("en-IN")} · UPI / card`}
+      <button className="donate-cta" onClick={donate} disabled={phase === "loading" || inr === null}>
+        {phase === "loading"
+          ? "Opening checkout…"
+          : inr === null
+            ? "Enter an amount"
+            : `Donate $${usd} (₹${inr.toLocaleString("en-IN")})`}
       </button>
       {error && <div className="donate-err">{error}</div>}
     </div>

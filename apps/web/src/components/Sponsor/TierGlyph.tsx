@@ -51,6 +51,14 @@ const GLYPHS: Record<string, ReactNode> = {
       <path d="M7 7.2 C7.9 8.1 8.4 8.8 8.4 9.5 A1.4 1.4 0 0 1 5.6 9.5 C5.6 8.8 6.1 8.1 7 7.2 Z" />
     </>
   ),
+  // Custom — plus in a dashed slot.
+  custom: (
+    <>
+      <rect x="1.6" y="1.6" width="10.8" height="10.8" rx="2" strokeDasharray="2.4 2" />
+      <line x1="7" y1="4.6" x2="7" y2="9.4" />
+      <line x1="4.6" y1="7" x2="9.4" y2="7" />
+    </>
+  ),
 };
 
 export function TierGlyph({ tier }: { tier: string }) {

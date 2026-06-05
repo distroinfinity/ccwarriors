@@ -19,6 +19,13 @@ export const TIERS: Tier[] = [
 
 export const DEFAULT_TIER = 2; // Iron / $16
 
+// Everything displays in USD; Razorpay charges INR. Flat rate keeps the
+// ladder numbers clean — the server enforces ₹100–₹100,000 bounds.
+export const USD_TO_INR = 100;
+export const MIN_CUSTOM_USD = 1;
+export const MAX_CUSTOM_USD = 1000;
+export const CUSTOM_TIER = -1; // tierIdx sentinel for the custom cell
+
 // Index-safe accessor (noUncheckedIndexedAccess): out-of-range falls back to Wood.
 export function tierAt(i: number): Tier {
   return TIERS[i] ?? (TIERS[0] as Tier);
