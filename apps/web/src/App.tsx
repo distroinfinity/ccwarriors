@@ -11,6 +11,7 @@ import { YourCard, EnlistCard } from "./components/YourCard";
 import { CardSkeleton } from "./components/Skeleton";
 import { SceneDefs } from "./components/CardScene";
 import { PixelHeart } from "./components/PixelHeart";
+import { PixelGlyph } from "./components/PixelGlyph";
 import { HowItWorks } from "./components/HowItWorks";
 import { Legal } from "./components/Legal";
 import { Sponsor } from "./components/Sponsor/Sponsor";
@@ -130,7 +131,7 @@ export default function App() {
           <div className={"orgnote" + (verifiedNote === "1" ? " ok" : "")} role="status">
             <span>{noteCopy[verifiedNote]}</span>
             <button onClick={() => setVerifiedNote(null)} aria-label="Dismiss">
-              ✕
+              <PixelGlyph name="x" size={9} />
             </button>
           </div>
         )}

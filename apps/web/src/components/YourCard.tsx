@@ -6,6 +6,7 @@ import { ClawdLogo } from "./ClawdLogo";
 import { CardScene } from "./CardScene";
 import { InstallBlock } from "./InstallBlock";
 import { ToolGlyph } from "./ToolGlyph";
+import { PixelGlyph } from "./PixelGlyph";
 import { formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import type { WebOrg } from "../orgs";
@@ -14,7 +15,7 @@ import type { WebOrg } from "../orgs";
 function VerifyNudge({ org }: { org: WebOrg }) {
   return (
     <div className="nudge verify" role="status">
-      <span className="nudge-glyph">◈</span>
+      <span className="nudge-glyph"><PixelGlyph name="diamond" size={13} /></span>
       <span>
         {org.name} member? Verify with Discord to join the board.
         <a className="verifybtn" href={`${API_HTTP}/orgs/${org.slug}/verify/start`}>
@@ -42,7 +43,7 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
               className={"orgstep" + (signedIn ? " done" : "")}
               href={`${API_HTTP}/auth/web?org=${org.slug}`}
             >
-              <span className="orgstep-n">{signedIn ? "✓" : "1"}</span>
+              <span className="orgstep-n">{signedIn ? <PixelGlyph name="check" size={9} /> : "1"}</span>
               Sign in with GitHub
             </a>
             <a className="orgstep" href={`${API_HTTP}/orgs/${org.slug}/verify/start`}>
@@ -197,13 +198,13 @@ export function YourCard({
       {verifyOrg && <VerifyNudge org={verifyOrg} />}
       {underReview && (
         <div className="nudge review" role="status">
-          <span className="nudge-glyph">⚖</span>
+          <span className="nudge-glyph"><PixelGlyph name="scale" size={13} /></span>
           Your stats are under review — they'll return to the board once cleared.
         </div>
       )}
       {!underReview && outdatedClient && (
         <div className="nudge" role="status">
-          <span className="nudge-glyph">⟳</span>
+          <span className="nudge-glyph"><PixelGlyph name="refresh" size={13} /></span>
           Tracking Claude Code only. Re-run the install command to count all your AI tools.
         </div>
       )}

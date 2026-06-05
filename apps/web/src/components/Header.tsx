@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ClawdLogo } from "./ClawdLogo";
+import { PixelGlyph } from "./PixelGlyph";
 import { TickerValue } from "./TickerValue";
 import { formatUsd } from "../util";
 import { Sk } from "./Skeleton";
@@ -12,7 +13,7 @@ function ThemeToggle({ initialDark }: { initialDark: boolean }) {
   }, [dark]);
   return (
     <button className="toggle" title="Toggle theme" onClick={() => setDark((d) => !d)}>
-      {dark ? "☀" : "☾"}
+      <PixelGlyph name={dark ? "sun" : "moon"} size={15} />
     </button>
   );
 }
