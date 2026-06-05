@@ -26,6 +26,8 @@ export interface AppDeps {
     keyId: string;
     keySecret: string;
     webhookSecret?: string;
+    // USD→INR rate source; tests inject a fixed rate (default: live fx).
+    usdInr?: () => number;
   };
 }
 

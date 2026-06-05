@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { API_HTTP } from "../../api";
 import { PixelHeart } from "../PixelHeart";
 
@@ -23,25 +23,38 @@ function loadCheckout(): Promise<void> {
   return scriptPromise;
 }
 
-/** Order → modal → verify. The site reads in USD; Razorpay charges INR —
- *  conversion already happened in Sponsor (usd × USD_TO_INR). */
+/** Order → modal → verify. The page reads in USD; the server converts at the
+ *  live rate and Razorpay charges INR. GET /donate/rate powers the ₹ preview;
+ *  the modal shows the server's exact amount either way. */
 export function RazorpayButton({
   usd,
-  inr,
   desc,
   onPaid,
 }: {
   usd: number | null;
-  inr: number | null;
   desc: string;
   onPaid: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [rate, setRate] = useState<number | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_HTTP}/donate/rate`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { usdInr?: number } | null) => {
+        if (alive && typeof d?.usdInr === "number") setRate(d.usdInr);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const donate = async () => {
-    if (inr === null) return;
+    if (usd === null) return;
     setError(null);
     setPhase("loading");
     try {
@@ -49,10 +62,10 @@ export function RazorpayButton({
       const orderRes = await fetch(`${API_HTTP}/donate/order`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount: inr }),
+        body: JSON.stringify({ usd }),
       });
       if (!orderRes.ok) throw new Error(`order failed (${orderRes.status})`);
-      const order: { orderId: string; amount: number; currency: string; keyId: string } =
+      const order: { orderId: string; amount: number; usd: number; currency: string; keyId: string } =
         await orderRes.json();
 
       const name = nameRef.current?.value.trim().slice(0, 60) || undefined;
@@ -107,6 +120,9 @@ export function RazorpayButton({
     );
   }
 
+  const inrPreview =
+    usd !== null && rate !== null ? ` (≈ ₹${Math.round(usd * rate).toLocaleString("en-IN")})` : "";
+
   return (
     <div className="donate-rzp">
       <input
@@ -117,12 +133,12 @@ export function RazorpayButton({
         placeholder="Name on the wall (optional)"
         aria-label="Name shown on the sponsor wall"
       />
-      <button className="donate-cta" onClick={donate} disabled={phase === "loading" || inr === null}>
+      <button className="donate-cta" onClick={donate} disabled={phase === "loading" || usd === null}>
         {phase === "loading"
           ? "Opening checkout…"
-          : inr === null
+          : usd === null
             ? "Enter an amount"
-            : `Donate $${usd} (₹${inr.toLocaleString("en-IN")})`}
+            : `Donate $${usd}${inrPreview}`}
       </button>
       {error && <div className="donate-err">{error}</div>}
     </div>

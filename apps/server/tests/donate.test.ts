@@ -9,6 +9,7 @@ import { donations } from "../src/db/schema.js";
 const KEY_ID = "rzp_test_key";
 const KEY_SECRET = "rzp_test_secret";
 const WEBHOOK_SECRET = "whsec_test";
+const TEST_RATE = 88; // injected USD→INR so tests don't depend on live FX
 
 function makeApp(db: Awaited<ReturnType<typeof makeDb>>, withKeys = true) {
   return createApp({
@@ -16,7 +17,7 @@ function makeApp(db: Awaited<ReturnType<typeof makeDb>>, withKeys = true) {
     store: new LeaderboardStore(),
     onIngest: () => {},
     donate: withKeys
-      ? { keyId: KEY_ID, keySecret: KEY_SECRET, webhookSecret: WEBHOOK_SECRET }
+      ? { keyId: KEY_ID, keySecret: KEY_SECRET, webhookSecret: WEBHOOK_SECRET, usdInr: () => TEST_RATE }
       : undefined,
   });
 }
@@ -52,20 +53,21 @@ describe("donate routes", () => {
     vi.unstubAllGlobals();
   });
 
-  it("POST /donate/order creates a Razorpay order in paise and a created row in rupees", async () => {
+  it("POST /donate/order takes USD, converts at the server rate, charges paise", async () => {
     const fetchMock = stubRazorpayFetch();
     const app = makeApp(db);
 
     const res = await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 1600 }),
+      body: JSON.stringify({ usd: 16 }),
     });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       orderId: "order_test123",
-      amount: 1600,
+      amount: 16 * TEST_RATE, // 1408 rupees
+      usd: 16,
       currency: "INR",
       keyId: KEY_ID,
     });
@@ -73,7 +75,10 @@ describe("donate routes", () => {
     // Razorpay got paise + Basic auth.
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toBe("https://api.razorpay.com/v1/orders");
-    expect(JSON.parse(String(init!.body))).toMatchObject({ amount: 160000, currency: "INR" });
+    expect(JSON.parse(String(init!.body))).toMatchObject({
+      amount: 16 * TEST_RATE * 100,
+      currency: "INR",
+    });
     expect((init!.headers as Record<string, string>).Authorization).toBe(
       `Basic ${Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64")}`,
     );
@@ -83,40 +88,47 @@ describe("donate routes", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       razorpayOrderId: "order_test123",
-      amount: "1600",
+      amount: String(16 * TEST_RATE),
       currency: "INR",
       status: "created",
     });
   });
 
-  it("POST /donate/order accepts custom (non-tier) amounts within bounds", async () => {
+  it("POST /donate/order accepts custom (non-tier) dollar amounts", async () => {
     stubRazorpayFetch();
     const app = makeApp(db);
 
     const res = await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 999 }),
+      body: JSON.stringify({ usd: 9 }),
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ amount: 999 });
+    expect(await res.json()).toMatchObject({ usd: 9, amount: 9 * TEST_RATE });
   });
 
-  it("POST /donate/order rejects amounts outside ₹100–₹100,000 with 422", async () => {
+  it("POST /donate/order rejects amounts outside $1–$1,000 with 422", async () => {
     const fetchMock = stubRazorpayFetch();
     const app = makeApp(db);
 
-    for (const amount of [0, 50, 100_001]) {
+    for (const usd of [0, -4, 1001]) {
       const res = await app.request("/donate/order", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ usd }),
       });
       expect(res.status).toBe(422);
     }
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await db.select().from(donations)).toHaveLength(0);
+  });
+
+  it("GET /donate/rate exposes the current USD→INR rate for client previews", async () => {
+    const app = makeApp(db);
+    const res = await app.request("/donate/rate");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ usdInr: TEST_RATE });
   });
 
   it("POST /donate/order surfaces Razorpay API failure as 502 without inserting", async () => {
@@ -129,7 +141,7 @@ describe("donate routes", () => {
     const res = await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 400 }),
+      body: JSON.stringify({ usd: 4 }),
     });
 
     expect(res.status).toBe(502);
@@ -142,7 +154,7 @@ describe("donate routes", () => {
     await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 3200 }),
+      body: JSON.stringify({ usd: 32 }),
     });
 
     const res = await app.request("/donate/verify", {
@@ -167,7 +179,7 @@ describe("donate routes", () => {
     await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 400 }),
+      body: JSON.stringify({ usd: 4 }),
     });
 
     const res = await app.request("/donate/verify", {
@@ -200,7 +212,7 @@ describe("donate routes", () => {
     const res = await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 1600 }),
+      body: JSON.stringify({ usd: 16 }),
     });
     expect(res.status).toBe(404);
   });
@@ -233,7 +245,7 @@ describe("donate webhook", () => {
     await app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ amount: 1600 }),
+      body: JSON.stringify({ usd: 16 }),
     });
   }
 
@@ -325,7 +337,7 @@ describe("donate order rate limit", () => {
     return app.request("/donate/order", {
       method: "POST",
       headers: { "content-type": "application/json", "x-forwarded-for": ip },
-      body: JSON.stringify({ amount: 400 }),
+      body: JSON.stringify({ usd: 4 }),
     });
   }
 

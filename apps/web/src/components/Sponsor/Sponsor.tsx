@@ -1,10 +1,10 @@
 import { useState } from "react";
 import {
+  CUSTOM_COPY,
   CUSTOM_TIER,
   DEFAULT_TIER,
   MAX_CUSTOM_USD,
   MIN_CUSTOM_USD,
-  USD_TO_INR,
   tierAt,
 } from "../../sponsorTiers";
 import { AmountGrid } from "./AmountGrid";
@@ -42,7 +42,7 @@ export function Sponsor() {
       ? parsed
       : null
     : tierAt(tierIdx).usd;
-  const copy = isCustom ? "name your price" : tierAt(tierIdx).copy;
+  const copy = isCustom ? CUSTOM_COPY : tierAt(tierIdx).copy;
 
   return (
     <section className="sponsor" id="sponsor">
@@ -89,12 +89,7 @@ export function Sponsor() {
       <div className="sponsor-action">
         {method === "github" && <GithubSponsorButton tierIdx={tierIdx} frequency={frequency} />}
         {method === "razorpay" && (
-          <RazorpayButton
-            usd={usd}
-            inr={usd === null ? null : usd * USD_TO_INR}
-            desc={copy}
-            onPaid={() => setWallSeq((s) => s + 1)}
-          />
+          <RazorpayButton usd={usd} desc={copy} onPaid={() => setWallSeq((s) => s + 1)} />
         )}
         {method === "crypto" && <CryptoPanel />}
       </div>

@@ -12,23 +12,26 @@ import {
   type RazorpayKeys,
 } from "../lib/razorpay.js";
 import { createRateLimiter } from "../lib/ratelimit.js";
+import { getUsdInr } from "../lib/fx.js";
 
 export interface DonateDeps extends RazorpayKeys {
   // Set when a payment.captured webhook is configured in the dashboard —
   // catches donors whose tab died before the browser verify call.
   webhookSecret?: string;
+  // USD→INR rate source; tests inject a fixed rate.
+  usdInr?: () => number;
 }
 
-// The web's tier ladder (apps/web/src/sponsorTiers.ts) runs ₹400–₹25,600,
-// plus a free-form custom cell — the server only enforces sane bounds.
-export const MIN_INR = 100;
-export const MAX_INR = 100_000;
+// Tiers display in dollars ($4–$256 plus a custom cell); the server converts
+// to rupees at the live rate and Razorpay charges INR.
+export const MIN_USD = 1;
+export const MAX_USD = 1000;
 
 // Order creation is anonymous and costs a Razorpay API call + a DB row.
 const ORDERS_PER_MINUTE = 5;
 
 const orderSchema = z.object({
-  amount: z.number().int(),
+  usd: z.number().int(),
 });
 
 const verifySchema = z.object({
@@ -41,16 +44,21 @@ const verifySchema = z.object({
 export function donateRoute(db: DB, keys: DonateDeps) {
   const app = new Hono();
   const allowOrder = createRateLimiter(ORDERS_PER_MINUTE, 60_000);
+  const rate = keys.usdInr ?? getUsdInr;
+
+  // Current rate so the client can preview the ₹ amount before checkout.
+  app.get("/rate", (c) => c.json({ usdInr: rate() }));
 
   app.post("/order", zValidator("json", orderSchema), async (c) => {
     const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
     if (!allowOrder(ip)) {
       return c.json({ error: "too many orders, slow down" }, 429);
     }
-    const { amount } = c.req.valid("json");
-    if (amount < MIN_INR || amount > MAX_INR) {
-      return c.json({ error: `amount must be ₹${MIN_INR}–₹${MAX_INR}` }, 422);
+    const { usd } = c.req.valid("json");
+    if (usd < MIN_USD || usd > MAX_USD) {
+      return c.json({ error: `amount must be $${MIN_USD}–$${MAX_USD}` }, 422);
     }
+    const amount = Math.round(usd * rate()); // whole rupees
     let order: { id: string };
     try {
       order = await createOrder(keys, amount, randomUUID());
@@ -59,7 +67,7 @@ export function donateRoute(db: DB, keys: DonateDeps) {
       return c.json({ error: "payment provider unavailable" }, 502);
     }
     await db.insert(donations).values({ razorpayOrderId: order.id, amount: String(amount) });
-    return c.json({ orderId: order.id, amount, currency: "INR", keyId: keys.keyId });
+    return c.json({ orderId: order.id, amount, usd, currency: "INR", keyId: keys.keyId });
   });
 
   app.post(

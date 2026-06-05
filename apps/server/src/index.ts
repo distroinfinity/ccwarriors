@@ -8,6 +8,7 @@ import { createApp } from "./app.js";
 import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
+import { startFxRefresh } from "./lib/fx.js";
 
 async function main() {
   const cfg = parseConfig(process.env);
@@ -67,6 +68,8 @@ async function main() {
 
   // Keep model pricing current (committed snapshot already loaded at import).
   startPricingRefresh();
+  // Keep the donation USD→INR rate current (fallback constant until first fetch).
+  startFxRefresh();
 
   const wss = new WebSocketServer({ noServer: true });
   const broadcast = attachBroadcast(wss, store);
