@@ -13,9 +13,11 @@ import { WEB_ORGS, type WebOrg } from "../orgs";
 
 type Board = "30d" | "allTime";
 
-/** Verified-org pill(s) after a warrior's name — org accent, both boards. */
-function OrgBadges({ entry }: { entry: Entry }) {
-  const orgs = (entry.orgs ?? []).filter((s) => WEB_ORGS[s]);
+/** Verified-org pill(s) after a warrior's name — org accent. On a dedicated
+    org board that org's own pill is noise (everyone there has it), so it's
+    suppressed; pills for *other* orgs still show. */
+function OrgBadges({ entry, hide }: { entry: Entry; hide?: string }) {
+  const orgs = (entry.orgs ?? []).filter((s) => WEB_ORGS[s] && s !== hide);
   if (orgs.length === 0) return null;
   return (
     <>
@@ -72,6 +74,7 @@ function Row({
   delta,
   live,
   located,
+  hideOrgBadge,
 }: {
   entry: Entry;
   rank: number;
@@ -81,6 +84,8 @@ function Row({
   /** Live rows (WS top-100) reorder with spring physics; REST tail rows are static. */
   live: boolean;
   located: boolean;
+  /** Org slug whose pill is redundant on this board (the dedicated org page). */
+  hideOrgBadge?: string;
 }) {
   const top = rank <= 3;
   const amount = board === "30d" ? toolCost(entry, tool) : entry.costAllTime;
@@ -102,7 +107,7 @@ function Row({
       >
         <div className="h">
           <span className="hname">{entry.githubLogin}</span>
-          <OrgBadges entry={entry} />
+          <OrgBadges entry={entry} hide={hideOrgBadge} />
         </div>
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </a>
@@ -316,6 +321,7 @@ export function Leaderboard({
                   delta={delta}
                   live={rank <= liveEntries.length}
                   located={locatedLogin === entry.githubLogin}
+                  hideOrgBadge={org?.slug}
                 />
               ))}
             </AnimatePresence>
