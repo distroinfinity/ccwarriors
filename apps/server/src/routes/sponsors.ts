@@ -15,6 +15,8 @@ export function sponsorsRoute(db: DB) {
       .where(eq(donations.status, "paid"))
       .orderBy(desc(donations.createdAt))
       .limit(100);
+    // Sponsor wall changes rarely — cheap browser cache + etag 304s.
+    c.header("Cache-Control", "public, max-age=30");
     return c.json(
       rows.map((r) => ({
         name: r.name ?? "anon warrior",

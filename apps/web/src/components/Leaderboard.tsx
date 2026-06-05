@@ -141,6 +141,7 @@ export function Leaderboard({
   total,
   connected,
   hasSnapshot,
+  hasCompleteData,
   locate,
   org,
 }: {
@@ -158,6 +159,8 @@ export function Leaderboard({
   connected: boolean;
   /** True once a snapshot has arrived — distinguishes "connecting" from "empty". */
   hasSnapshot: boolean;
+  /** True once tool metadata is complete enough to invalidate active filters. */
+  hasCompleteData: boolean;
   /** Bumped by the "find me" button — scroll the board to this login. */
   locate?: { seq: number; login: string } | null;
   /** Org page: the tail fetch and footer copy scope to this org. */
@@ -187,9 +190,9 @@ export function Leaderboard({
   // If the active tool disappears (reconnect to an old server, last warrior of
   // a tool drops to zero) fall back to All instead of showing a stale board.
   useEffect(() => {
-    if (!tool || !hasSnapshot) return;
+    if (!tool || !hasCompleteData) return;
     if (!tools.some((t) => t.key === tool)) setTool(null);
-  }, [tool, tools, hasSnapshot, setTool]);
+  }, [tool, tools, hasCompleteData, setTool]);
 
   // Live entries first, fetched tail after (deduped — order can drift slightly).
   const all = useMemo(() => {
