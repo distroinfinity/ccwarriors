@@ -15,9 +15,12 @@ import { Sponsor } from "./components/Sponsor/Sponsor";
 import type { Entry } from "./types";
 
 // Extra routes, no router: /how and /legal render in the same shell.
+// /legal is built but hidden until the Razorpay international activation
+// needs it (issue #8) — flip HIDE_LEGAL to false to bring it back.
+const HIDE_LEGAL = true;
 const path = window.location.pathname.replace(/\/+$/, "");
 const isHow = path === "/how";
-const isLegal = path === "/legal";
+const isLegal = !HIDE_LEGAL && path === "/legal";
 if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
 
@@ -136,7 +139,7 @@ export default function App() {
               X
             </a>
             <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
-            <a href="/legal">Legal</a>
+            {!HIDE_LEGAL && <a href="/legal">Legal</a>}
           </nav>
         </footer>
       </div>
