@@ -72,9 +72,9 @@ export class LeaderboardStore {
   }
 
   /** Tools that have at least one visible user with nonzero 30d spend. */
-  toolSummaries(): ToolSummary[] {
+  toolSummaries(org?: string): ToolSummary[] {
     const counts = new Map<string, number>();
-    for (const e of this.visible()) {
+    for (const e of this.visible(org)) {
       for (const [tool, cost] of Object.entries(e.breakdown ?? {})) {
         if (cost > 0) counts.set(tool, (counts.get(tool) ?? 0) + 1);
       }

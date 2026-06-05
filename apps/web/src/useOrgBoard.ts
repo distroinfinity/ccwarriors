@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { API_HTTP } from "./api";
 import type { BoardState } from "./useLeaderboard";
-import type { Entry } from "./types";
+import type { Entry, ToolInfo } from "./types";
 
 const POLL_MS = 5_000;
 const TOP_N = 100;
@@ -39,6 +39,8 @@ export function useOrgBoard(slug: string | null): BoardState {
           count?: number;
           entries?: Entry[];
           totals?: { burned30d: number; count: number };
+          tools?: ToolInfo[];
+          byTool?: Record<string, { top30d: Entry[] }>;
         };
         if (stop) return;
         const entries = Array.isArray(d.entries) ? d.entries : [];
@@ -46,8 +48,8 @@ export function useOrgBoard(slug: string | null): BoardState {
           count: d.count ?? entries.length,
           top30d: entries,
           topAllTime: entries, // all-time board is hidden in the UI anyway
-          byTool: {},
-          tools: [], // v1: no per-tool chips on org boards
+          byTool: d.byTool ?? {},
+          tools: Array.isArray(d.tools) ? d.tools : [],
           totals: d.totals ?? null,
           connected: true,
           hasSnapshot: true,
