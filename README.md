@@ -8,7 +8,7 @@
 Codex, Gemini CLI, Copilot, OpenCode, Amp and every other agent [ccusage](https://github.com/ryoppippi/ccusage)
 can read. See who's burning the most tokens, claim your rank, flex on the timeline.
 
-**Live:** [ccwarriors.xyz](https://ccwarriors.xyz)
+**Live:** [ccwarriors.xyz](https://ccwarriors.xyz) · first org board: [ns.ccwarriors.xyz](https://ns.ccwarriors.xyz) (Network School)
 
 ## Enlist (one command)
 
@@ -40,7 +40,24 @@ GitHub loopback OAuth                tiers, ranks, rate limits   ──►  live
   Minecraft-style tiers (Stone → Netherite), debounced WebSocket broadcasts.
 - **Web** (`apps/web`) — Vite + React on Vercel. Light/dark, Framer Motion
   leaderboard that re-sorts live, collectible warrior cards (15 muted
-  anime-nature scenes), pixel Clawd branding.
+  anime-nature scenes), pixel Clawd branding (every UI glyph is hand-drawn
+  pixel art — no emojis).
+
+## Org boards
+
+Communities get their own co-branded board on a subdomain — same warriors,
+same data, scoped view. First up: **[Network School](https://ns.com)** at
+[ns.ccwarriors.xyz](https://ns.ccwarriors.xyz).
+
+- **Verify with Discord** — members link Discord once; the server checks the
+  org's guild and they're on the org board. No bot, no org-admin setup.
+- **Still on the global board** — org members keep their global rank and wear
+  a small org pill there.
+- **One codebase** — an org is a registry entry (slug, accent, theme, guild
+  id) + DNS. No forks, every fix ships to every board.
+
+Want one for your org?
+[Open an org board request](https://github.com/distroinfinity/ccwarriors/issues/new?template=org-board-request.yml).
 
 ## Sponsors
 

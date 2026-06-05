@@ -1,0 +1,56 @@
+name: Org board request
+description: Get a co-branded leaderboard for your org at <slug>.ccwarriors.xyz
+title: "[org] "
+labels: ["org-board"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Your community gets its own board (like [ns.ccwarriors.xyz](https://ns.ccwarriors.xyz)) — members verify via Discord, stay on the global board, and wear your org's pill. Setup on our side is a config entry + DNS.
+  - type: input
+    id: org-name
+    attributes:
+      label: Org name
+      placeholder: Network School
+    validations:
+      required: true
+  - type: input
+    id: org-link
+    attributes:
+      label: Org website
+      description: The header lockup links here.
+      placeholder: https://ns.com
+    validations:
+      required: true
+  - type: input
+    id: discord
+    attributes:
+      label: Discord server
+      description: Membership verification runs on your Discord — an invite link, or just confirm you can supply the server ID (right-click the server with Developer Mode on).
+      placeholder: https://discord.gg/… or "can supply server ID"
+    validations:
+      required: true
+  - type: input
+    id: logo
+    attributes:
+      label: Logo / brand asset
+      description: Link to your logo (SVG preferred) or a brand page. Used for the co-brand lockup next to Clawd.
+      placeholder: https://assets.ns.com/static/logos/logo.svg
+    validations:
+      required: true
+  - type: input
+    id: accent
+    attributes:
+      label: Accent color
+      description: Hex code, optional — we'll pull it from your site otherwise.
+      placeholder: "#006DFF"
+  - type: input
+    id: size
+    attributes:
+      label: Rough community size
+      placeholder: ~500 members
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Preferred slug, dark/light preference, launch timing.
