@@ -46,9 +46,10 @@ GitHub loopback OAuth                tiers, ranks, rate limits   ──►  live
 
 CCWarriors is free and open source — sponsorships keep the servers burning.
 
-- **[GitHub Sponsors](https://github.com/sponsors/distroinfinity)** — one-time or monthly
-- **UPI / card (India)** — [ccwarriors.xyz/#sponsor](https://ccwarriors.xyz/#sponsor) (Razorpay)
-- **Crypto** — EVM address on [ccwarriors.xyz/#sponsor](https://ccwarriors.xyz/#sponsor)
+<!-- GitHub Sponsors pending KYC — re-add when live (issue #9):
+- **[GitHub Sponsors](https://github.com/sponsors/distroinfinity)** — one-time or monthly -->
+- **UPI / card** — [ccwarriors.xyz/#sponsor](https://ccwarriors.xyz/#sponsor) (Razorpay)
+- **Crypto** — ETH and Solana addresses on [ccwarriors.xyz/#sponsor](https://ccwarriors.xyz/#sponsor)
 
 Tiers run Wood 🪵 → Netherite 🔥, just like the board.
 

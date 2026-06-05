@@ -12,7 +12,8 @@ type Frequency = "once" | "monthly";
 const METHODS: { key: Method; label: string }[] = [
   { key: "razorpay", label: "UPI / Card" },
   { key: "crypto", label: "Crypto" },
-  { key: "github", label: "GitHub Sponsors" },
+  // GitHub Sponsors hidden until the profile passes KYC — see issue #9.
+  // { key: "github", label: "GitHub Sponsors" },
 ];
 
 /** "Fuel the board" — the funding section between the main content and the footer. */
