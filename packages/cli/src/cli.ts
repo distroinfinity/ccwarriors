@@ -93,9 +93,28 @@ async function cmdSync(): Promise<void> {
   }
 
   if (result.status === 401) {
-    await clearConfig();
-    console.error(red("Token invalid or expired. Run `ccwarriors login` to re-authenticate."));
-    process.exit(1);
+    // Stale token (rotated by a login on another machine, or a reinstall over
+    // an old config) — re-enlist right here instead of bouncing the user to a
+    // second command, then retry the sync once. machineId survives the
+    // re-login (auth.ts merges it) so history stays under the same key.
+    console.log(yellow("Your token expired — re-enlisting…"));
+    config = await runLoginFlow(API_BASE);
+    try {
+      result = await postIngest(config.token, {
+        tools,
+        machineId,
+        clientBuildId: __BUILD_ID__,
+        ...(ccusageVersion ? { ccusageVersion } : {}),
+      });
+    } catch (err) {
+      console.error(red("Network error — could not reach the API."), err);
+      process.exit(1);
+    }
+    if (result.status === 401) {
+      await clearConfig();
+      console.error(red("Still unauthorized after a fresh login — run `ccwarriors login` or report this."));
+      process.exit(1);
+    }
   }
 
   if (result.status === 429) {

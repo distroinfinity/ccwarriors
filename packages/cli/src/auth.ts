@@ -1,7 +1,7 @@
 import http from "node:http";
 import { URL } from "node:url";
 import { bold, cyan, dim, green, yellow, openBrowser } from "./ui.js";
-import { saveConfig, type Config } from "./config.js";
+import { loadConfig, saveConfig, type Config } from "./config.js";
 import { WEB_BASE } from "./core.js";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -131,8 +131,13 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
     // Don't keep the process alive just for the timer
     timer.unref();
   }).then(async (config) => {
-    await saveConfig(config);
-    console.log(green(`\n⚔️  Enlisted as ${bold(config.login)}!\n`));
-    return config;
+    // Keep this machine's id across re-logins: the server aggregates usage by
+    // (user, machineId, day) — a fresh id would re-count the same local
+    // history as a second machine and trip the plausibility gates.
+    const prior = await loadConfig();
+    const merged = prior?.machineId ? { ...config, machineId: prior.machineId } : config;
+    await saveConfig(merged);
+    console.log(green(`\n⚔️  Enlisted as ${bold(merged.login)}!\n`));
+    return merged;
   });
 }
