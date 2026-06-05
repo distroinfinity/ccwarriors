@@ -8,13 +8,16 @@ import { donations } from "../src/db/schema.js";
 
 const KEY_ID = "rzp_test_key";
 const KEY_SECRET = "rzp_test_secret";
+const WEBHOOK_SECRET = "whsec_test";
 
 function makeApp(db: Awaited<ReturnType<typeof makeDb>>, withKeys = true) {
   return createApp({
     db,
     store: new LeaderboardStore(),
     onIngest: () => {},
-    donate: withKeys ? { keyId: KEY_ID, keySecret: KEY_SECRET } : undefined,
+    donate: withKeys
+      ? { keyId: KEY_ID, keySecret: KEY_SECRET, webhookSecret: WEBHOOK_SECRET }
+      : undefined,
   });
 }
 
@@ -22,14 +25,17 @@ function sign(orderId: string, paymentId: string, secret = KEY_SECRET): string {
   return createHmac("sha256", secret).update(`${orderId}|${paymentId}`).digest("hex");
 }
 
-// Razorpay orders API stub: echoes back a fake order for whatever amount it got.
-function stubRazorpayFetch() {
+// Razorpay orders API stub: echoes back a fake order for whatever amount it
+// got. Real Razorpay issues a unique id per order; `unique` mimics that for
+// tests that create several orders.
+function stubRazorpayFetch(unique = false) {
+  let n = 0;
   const mock = vi.fn(async (_url: unknown, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body));
-    return new Response(
-      JSON.stringify({ id: "order_test123", amount: body.amount, currency: body.currency }),
-      { status: 200 },
-    );
+    const id = unique ? `order_test${++n}` : "order_test123";
+    return new Response(JSON.stringify({ id, amount: body.amount, currency: body.currency }), {
+      status: 200,
+    });
   });
   vi.stubGlobal("fetch", mock);
   return mock;
@@ -182,6 +188,146 @@ describe("donate routes", () => {
       body: JSON.stringify({ amount: 1600 }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("donate webhook", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+
+  beforeEach(async () => {
+    db = await makeDb();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function webhookBody(orderId: string, paymentId: string) {
+    return JSON.stringify({
+      event: "payment.captured",
+      payload: { payment: { entity: { id: paymentId, order_id: orderId } } },
+    });
+  }
+
+  function webhookSig(body: string, secret = WEBHOOK_SECRET) {
+    return createHmac("sha256", secret).update(body).digest("hex");
+  }
+
+  async function createOrder(app: ReturnType<typeof makeApp>) {
+    stubRazorpayFetch();
+    await app.request("/donate/order", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ amount: 1600 }),
+    });
+  }
+
+  it("payment.captured with a valid signature marks the created row paid", async () => {
+    const app = makeApp(db);
+    await createOrder(app);
+
+    const body = webhookBody("order_test123", "pay_hook");
+    const res = await app.request("/donate/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-razorpay-signature": webhookSig(body) },
+      body,
+    });
+
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(donations).where(eq(donations.razorpayOrderId, "order_test123"));
+    expect(row).toMatchObject({ status: "paid", razorpayPaymentId: "pay_hook" });
+  });
+
+  it("rejects a bad signature with 400 and leaves the row untouched", async () => {
+    const app = makeApp(db);
+    await createOrder(app);
+
+    const body = webhookBody("order_test123", "pay_hook");
+    const res = await app.request("/donate/webhook", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-razorpay-signature": webhookSig(body, "wrong_secret"),
+      },
+      body,
+    });
+
+    expect(res.status).toBe(400);
+    const [row] = await db.select().from(donations).where(eq(donations.razorpayOrderId, "order_test123"));
+    expect(row!.status).toBe("created");
+  });
+
+  it("does not clobber a row already marked paid by browser verify", async () => {
+    const app = makeApp(db);
+    await createOrder(app);
+    await app.request("/donate/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        razorpay_order_id: "order_test123",
+        razorpay_payment_id: "pay_browser",
+        razorpay_signature: sign("order_test123", "pay_browser"),
+        name: "Steve",
+      }),
+    });
+
+    const body = webhookBody("order_test123", "pay_hook_late");
+    const res = await app.request("/donate/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-razorpay-signature": webhookSig(body) },
+      body,
+    });
+
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(donations).where(eq(donations.razorpayOrderId, "order_test123"));
+    expect(row).toMatchObject({ status: "paid", razorpayPaymentId: "pay_browser", name: "Steve" });
+  });
+
+  it("acks unknown orders with 200 so Razorpay stops retrying", async () => {
+    const app = makeApp(db);
+    const body = webhookBody("order_never_seen", "pay_x");
+    const res = await app.request("/donate/webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-razorpay-signature": webhookSig(body) },
+      body,
+    });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("donate order rate limit", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+
+  beforeEach(async () => {
+    db = await makeDb();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function postOrder(app: ReturnType<typeof makeApp>, ip: string) {
+    return app.request("/donate/order", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-forwarded-for": ip },
+      body: JSON.stringify({ amount: 400 }),
+    });
+  }
+
+  it("allows 5 orders per minute per IP, then 429s the 6th", async () => {
+    stubRazorpayFetch(true);
+    const app = makeApp(db);
+    for (let i = 0; i < 5; i++) {
+      expect((await postOrder(app, "1.2.3.4")).status).toBe(200);
+    }
+    expect((await postOrder(app, "1.2.3.4")).status).toBe(429);
+  });
+
+  it("does not throttle a different IP", async () => {
+    stubRazorpayFetch(true);
+    const app = makeApp(db);
+    for (let i = 0; i < 5; i++) await postOrder(app, "1.2.3.4");
+    expect((await postOrder(app, "5.6.7.8")).status).toBe(200);
   });
 });
 

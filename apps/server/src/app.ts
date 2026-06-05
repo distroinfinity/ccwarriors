@@ -25,6 +25,7 @@ export interface AppDeps {
   donate?: {
     keyId: string;
     keySecret: string;
+    webhookSecret?: string;
   };
 }
 

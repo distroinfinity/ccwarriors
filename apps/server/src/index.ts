@@ -85,9 +85,14 @@ async function main() {
     console.log("github oauth: disabled (no credentials)");
   }
 
-  let donateDeps: { keyId: string; keySecret: string } | undefined;
+  let donateDeps: { keyId: string; keySecret: string; webhookSecret?: string } | undefined;
   if (cfg.razorpayKeyId && cfg.razorpayKeySecret) {
-    donateDeps = { keyId: cfg.razorpayKeyId, keySecret: cfg.razorpayKeySecret };
+    donateDeps = {
+      keyId: cfg.razorpayKeyId,
+      keySecret: cfg.razorpayKeySecret,
+      webhookSecret: cfg.razorpayWebhookSecret,
+    };
+    if (!cfg.razorpayWebhookSecret) console.log("donations: webhook disabled (no secret)");
   } else {
     console.log("donations: disabled (no razorpay keys)");
   }

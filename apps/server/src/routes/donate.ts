@@ -2,14 +2,29 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { donations } from "../db/schema.js";
-import { createOrder, verifySignature, type RazorpayKeys } from "../lib/razorpay.js";
+import {
+  createOrder,
+  verifySignature,
+  verifyWebhookSignature,
+  type RazorpayKeys,
+} from "../lib/razorpay.js";
+import { createRateLimiter } from "../lib/ratelimit.js";
+
+export interface DonateDeps extends RazorpayKeys {
+  // Set when a payment.captured webhook is configured in the dashboard —
+  // catches donors whose tab died before the browser verify call.
+  webhookSecret?: string;
+}
 
 // Must equal TIERS.map(t => t.inr) in apps/web/src/sponsorTiers.ts —
 // the Minecraft tier ladder (wood → netherite), rupees.
 export const ALLOWED_INR = [400, 800, 1600, 3200, 6400, 25600];
+
+// Order creation is anonymous and costs a Razorpay API call + a DB row.
+const ORDERS_PER_MINUTE = 5;
 
 const orderSchema = z.object({
   amount: z.number().int(),
@@ -22,10 +37,15 @@ const verifySchema = z.object({
   name: z.string().trim().max(60).optional(),
 });
 
-export function donateRoute(db: DB, keys: RazorpayKeys) {
+export function donateRoute(db: DB, keys: DonateDeps) {
   const app = new Hono();
+  const allowOrder = createRateLimiter(ORDERS_PER_MINUTE, 60_000);
 
   app.post("/order", zValidator("json", orderSchema), async (c) => {
+    const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+    if (!allowOrder(ip)) {
+      return c.json({ error: "too many orders, slow down" }, 429);
+    }
     const { amount } = c.req.valid("json");
     if (!ALLOWED_INR.includes(amount)) {
       return c.json({ error: "amount not in tier list" }, 422);
@@ -68,6 +88,38 @@ export function donateRoute(db: DB, keys: RazorpayKeys) {
       return c.json({ status: "paid" });
     },
   );
+
+  // Server-to-server safety net: payment.captured fires even when the donor's
+  // tab died before the browser verify call. Signature covers the raw body.
+  if (keys.webhookSecret) {
+    const webhookSecret = keys.webhookSecret;
+    app.post("/webhook", async (c) => {
+      const raw = await c.req.text();
+      const signature = c.req.header("x-razorpay-signature") ?? "";
+      if (!verifyWebhookSignature(webhookSecret, raw, signature)) {
+        return c.json({ error: "signature mismatch" }, 400);
+      }
+      let event: { event?: string; payload?: { payment?: { entity?: { id?: string; order_id?: string } } } };
+      try {
+        event = JSON.parse(raw);
+      } catch {
+        return c.json({ error: "bad payload" }, 400);
+      }
+      if (event.event === "payment.captured") {
+        const entity = event.payload?.payment?.entity;
+        if (entity?.order_id && entity.id) {
+          // Only lift created → paid; a row the browser already verified
+          // keeps its payment id and donor name.
+          await db
+            .update(donations)
+            .set({ status: "paid", razorpayPaymentId: entity.id })
+            .where(and(eq(donations.razorpayOrderId, entity.order_id), eq(donations.status, "created")));
+        }
+      }
+      // Always ack known-good signatures so Razorpay stops retrying.
+      return c.json({ status: "ok" });
+    });
+  }
 
   return app;
 }

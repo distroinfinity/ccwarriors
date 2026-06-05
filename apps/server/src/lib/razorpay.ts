@@ -41,7 +41,20 @@ export function verifySignature(
   paymentId: string,
   signature: string,
 ): boolean {
-  const expected = createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest();
+  return hmacEquals(createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest(), signature);
+}
+
+// Webhooks sign the raw request body with the webhook secret (a separate
+// secret set when creating the webhook in the dashboard).
+export function verifyWebhookSignature(
+  webhookSecret: string,
+  rawBody: string,
+  signature: string,
+): boolean {
+  return hmacEquals(createHmac("sha256", webhookSecret).update(rawBody).digest(), signature);
+}
+
+function hmacEquals(expected: Buffer, signature: string): boolean {
   let actual: Buffer;
   try {
     actual = Buffer.from(signature, "hex");
