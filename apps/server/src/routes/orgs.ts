@@ -47,7 +47,13 @@ export function orgsRoute(db: DB, store: LeaderboardStore, cfg: DiscordCfg, onCh
     if (!session) return c.redirect(`${cfg.publicBaseUrl}/auth/web?org=${slug}`, 302);
 
     const state = sign(
-      { slug, githubId: session.githubId, nonce: randomBytes(16).toString("hex") },
+      {
+        slug,
+        githubId: session.githubId,
+        nonce: randomBytes(16).toString("hex"),
+        // Short-lived: a leaked state token shouldn't be replayable forever.
+        exp: Math.floor(Date.now() / 1000) + 600,
+      },
       cfg.sessionSecret,
     );
     const url = new URL("https://discord.com/api/oauth2/authorize");
@@ -67,8 +73,12 @@ export function orgsRoute(db: DB, store: LeaderboardStore, cfg: DiscordCfg, onCh
     const payload = verify(state, cfg.sessionSecret);
     const slug = payload?.["slug"];
     const githubId = payload?.["githubId"];
+    const exp = payload?.["exp"];
     if (typeof slug !== "string" || typeof githubId !== "string") {
       return c.text("Invalid state", 400);
+    }
+    if (typeof exp !== "number" || exp * 1000 < Date.now()) {
+      return c.text("Expired state — start verification again", 400);
     }
     const org = orgBySlug(slug);
     if (!org) return c.text("Unknown org", 400);
@@ -90,17 +100,20 @@ export function orgsRoute(db: DB, store: LeaderboardStore, cfg: DiscordCfg, onCh
           redirect_uri: redirectUri,
         }),
       });
+      if (!tokenRes.ok) return back("failed");
       const tokenData = (await tokenRes.json()) as Record<string, unknown>;
       const accessToken = tokenData["access_token"];
       if (typeof accessToken !== "string" || !accessToken) return back("failed");
 
       const auth = { Authorization: `Bearer ${accessToken}` };
       const meRes = await fetch("https://discord.com/api/users/@me", { headers: auth });
+      if (!meRes.ok) return back("failed");
       const me = (await meRes.json()) as Record<string, unknown>;
       const discordUserId = me["id"];
       if (typeof discordUserId !== "string" || !discordUserId) return back("failed");
 
       const guildsRes = await fetch("https://discord.com/api/users/@me/guilds", { headers: auth });
+      if (!guildsRes.ok) return back("failed");
       const guilds = (await guildsRes.json()) as Array<{ id?: unknown }>;
       const guildId = guildIdFor(org);
       const isMember =
@@ -115,7 +128,7 @@ export function orgsRoute(db: DB, store: LeaderboardStore, cfg: DiscordCfg, onCh
         .values({ userId: user.id, orgSlug: slug, discordUserId })
         .onConflictDoUpdate({
           target: [orgMembers.userId, orgMembers.orgSlug],
-          set: { discordUserId },
+          set: { discordUserId, verifiedAt: new Date() },
         });
 
       // Live store update so the member shows up without waiting for a restart.

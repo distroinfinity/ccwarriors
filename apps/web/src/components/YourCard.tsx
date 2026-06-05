@@ -34,9 +34,12 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
         <ClawdLogo className="empty-clawd" />
         <h3>{org ? `Enlist to join the ${org.name} board.` : "Enlist to pull your card."}</h3>
         <InstallBlock />
-        <a className="ghsign" href={`${API_HTTP}/auth/web${org ? `?org=${org.slug}` : ""}`}>
-          Already enlisted? Sign in with GitHub →
-        </a>
+        {/* verifyOrg implies an existing GitHub session — the sign-in link is noise then. */}
+        {!verifyOrg && (
+          <a className="ghsign" href={`${API_HTTP}/auth/web${org ? `?org=${org.slug}` : ""}`}>
+            Already enlisted? Sign in with GitHub →
+          </a>
+        )}
       </div>
       {verifyOrg && <VerifyNudge org={verifyOrg} />}
     </aside>
