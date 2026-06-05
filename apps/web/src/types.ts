@@ -10,6 +10,8 @@ export interface Entry {
   // Per-tool 30d cost (server-computed). Absent on frames from an old server
   // during deploy overlap — every consumer must tolerate undefined.
   breakdown?: Partial<Record<string, number>>;
+  // Verified org memberships (slugs) — drives the org badge on rows.
+  orgs?: string[];
 }
 
 export interface ToolInfo {

@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { useLeaderboard } from "./useLeaderboard";
+import { useOrgBoard } from "./useOrgBoard";
 import { useMe } from "./useMe";
+import { detectOrg } from "./orgs";
 import { Marquee } from "./components/Marquee";
 import { Header } from "./components/Header";
 import { Hero } from "./components/Hero";
@@ -24,11 +26,44 @@ const isLegal = !HIDE_LEGAL && path === "/legal";
 if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
 
+// Org co-brand (ns.ccwarriors.xyz / ?org=ns): applied before first paint so
+// the page doesn't flash the default accent or light theme.
+const ORG = detectOrg();
+if (ORG) {
+  document.documentElement.setAttribute("data-org", ORG.slug);
+  document.documentElement.setAttribute(
+    "data-theme",
+    ORG.themeDefault === "dark" ? "dark" : "light",
+  );
+  if (!isHow && !isLegal) document.title = ORG.title;
+}
+
 type Board = "30d" | "allTime";
+type Verified = "1" | "notmember" | "failed";
+
+// Discord verify outcome (?verified=1|notmember|failed) — read once at module
+// scope (StrictMode double-invokes state initializers, and stripping the URL
+// param is a side effect that must run exactly once).
+const VERIFIED_PARAM: Verified | null = (() => {
+  try {
+    const url = new URL(window.location.href);
+    const v = url.searchParams.get("verified");
+    if (!v) return null;
+    url.searchParams.delete("verified");
+    window.history.replaceState({}, "", url.toString());
+    return v === "1" || v === "notmember" || v === "failed" ? v : null;
+  } catch {
+    return null;
+  }
+})();
 
 export default function App() {
-  const { count, top30d, topAllTime, byTool, tools, totals, connected, hasSnapshot } =
-    useLeaderboard();
+  // Global page rides the WS; org pages poll their REST slice instead.
+  const globalBoard = useLeaderboard(!ORG);
+  const orgBoard = useOrgBoard(ORG?.slug ?? null);
+  const { count, top30d, topAllTime, byTool, tools, totals, connected, hasSnapshot } = ORG
+    ? orgBoard
+    : globalBoard;
   const { me: session, resolved: meResolved } = useMe();
   const [board, setBoard] = useState<Board>("30d");
   // Single-select tool filter (null = All). Lives here so the header/marquee
@@ -36,6 +71,8 @@ export default function App() {
   const [tool, setTool] = useState<string | null>(null);
   // "Find me" — seq bump tells the Leaderboard to scroll to this login.
   const [locate, setLocate] = useState<{ seq: number; login: string } | null>(null);
+  // Discord verify outcome strip — dismissible, shown once per redirect.
+  const [verifiedNote, setVerifiedNote] = useState<Verified | null>(VERIFIED_PARAM);
 
   // Header/Marquee always reflect ALL tools — the filter is a board-only view.
   const entries: Entry[] = board === "30d" ? top30d : topAllTime;
@@ -72,12 +109,31 @@ export default function App() {
   const me = meIndex >= 0 ? entries[meIndex] : undefined;
   const meRank = meIndex + 1;
 
+  // Org verify CTA: signed-in visitors on an org page who aren't verified yet.
+  const needsVerify = !!ORG && !!session && !(session.orgs ?? []).includes(ORG.slug);
+
+  const noteCopy: Record<Verified, string> = ORG
+    ? {
+        "1": `${ORG.name} verified. You're on the board.`,
+        notmember: `That Discord account isn't in the ${ORG.name} server.`,
+        failed: "Verification didn't complete. Try again.",
+      }
+    : { "1": "", notmember: "", failed: "" };
+
   return (
     <>
       <SceneDefs />
       <Marquee entries={entries} count={count} loading={!hasSnapshot} />
       <div className="wrap">
-        <Header count={totals?.count ?? count} totalBurned={totalBurned} loading={!hasSnapshot} />
+        <Header count={totals?.count ?? count} totalBurned={totalBurned} loading={!hasSnapshot} org={ORG} />
+        {ORG && verifiedNote && (
+          <div className={"orgnote" + (verifiedNote === "1" ? " ok" : "")} role="status">
+            <span>{noteCopy[verifiedNote]}</span>
+            <button onClick={() => setVerifiedNote(null)} aria-label="Dismiss">
+              ✕
+            </button>
+          </div>
+        )}
         <main className="main">
           {isHow ? (
             <HowItWorks />
@@ -85,7 +141,7 @@ export default function App() {
             <Legal />
           ) : (
             <>
-              <Hero />
+              <Hero org={ORG} />
               <div className="layout">
                 <Leaderboard
                   board={board}
@@ -99,6 +155,7 @@ export default function App() {
                   connected={connected}
                   hasSnapshot={hasSnapshot}
                   locate={locate}
+                  org={ORG}
                 />
                 {!hasSnapshot || !meResolved ? (
                   <CardSkeleton />
@@ -108,12 +165,13 @@ export default function App() {
                     rank={meRank}
                     outdatedClient={session?.outdatedClient}
                     underReview={session?.underReview}
+                    verifyOrg={needsVerify ? ORG : null}
                     onLocate={() =>
                       setLocate((s) => ({ seq: (s?.seq ?? 0) + 1, login: me.githubLogin }))
                     }
                   />
                 ) : (
-                  <EnlistCard />
+                  <EnlistCard org={ORG} verifyOrg={needsVerify ? ORG : null} />
                 )}
               </div>
             </>
@@ -122,7 +180,9 @@ export default function App() {
         {!isHow && !isLegal && <Sponsor />}
         <footer>
           <div className="fleft">
-            <div className="fbrand">CCWARRIORS</div>
+            <div className="fbrand">
+              CCWARRIORS{ORG ? <span className="fborg"> × {ORG.name.toUpperCase()}</span> : null}
+            </div>
             <div className="fcredit">
               Built with <PixelHeart /> by{" "}
               <a href="https://x.com/distroinfinity" target="_blank" rel="noopener">
@@ -131,6 +191,7 @@ export default function App() {
             </div>
           </div>
           <nav className="flinks" aria-label="Footer">
+            {ORG && <a href="https://ccwarriors.xyz">Global board</a>}
             <a href="/how">How it works</a>
             <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
               GitHub

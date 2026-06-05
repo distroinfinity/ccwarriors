@@ -9,8 +9,29 @@ import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { API_HTTP } from "../api";
+import { WEB_ORGS, type WebOrg } from "../orgs";
 
 type Board = "30d" | "allTime";
+
+/** Verified-org pill(s) after a warrior's name — org accent, both boards. */
+function OrgBadges({ entry }: { entry: Entry }) {
+  const orgs = (entry.orgs ?? []).filter((s) => WEB_ORGS[s]);
+  if (orgs.length === 0) return null;
+  return (
+    <>
+      {orgs.map((s) => (
+        <span
+          key={s}
+          className="orgbadge mono"
+          style={{ color: WEB_ORGS[s]!.accent }}
+          title={`${WEB_ORGS[s]!.name} verified`}
+        >
+          {s.toUpperCase()}
+        </span>
+      ))}
+    </>
+  );
+}
 
 /** Display cost for an entry under the active filter — a lookup, never math.
     Entries from an old server lack `breakdown`: their spend is all claude. */
@@ -79,7 +100,10 @@ function Row({
         rel="noopener"
         title={`${entry.githubLogin} on GitHub`}
       >
-        <div className="h">{entry.githubLogin}</div>
+        <div className="h">
+          <span className="hname">{entry.githubLogin}</span>
+          <OrgBadges entry={entry} />
+        </div>
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </a>
       <div className="tierc">{tierLabel(entry.tier)}</div>
@@ -112,6 +136,7 @@ export function Leaderboard({
   connected,
   hasSnapshot,
   locate,
+  org,
 }: {
   board: Board;
   setBoard: (b: Board) => void;
@@ -129,6 +154,8 @@ export function Leaderboard({
   hasSnapshot: boolean;
   /** Bumped by the "find me" button — scroll the board to this login. */
   locate?: { seq: number; login: string } | null;
+  /** Org page: the tail fetch and footer copy scope to this org. */
+  org?: WebOrg | null;
 }) {
   const [visibleN, setVisibleN] = useState(PAGE);
   // Ranks beyond the live top-100 are paged in via the REST API (static rows).
@@ -185,8 +212,9 @@ export function Leaderboard({
     setLoadingMore(true);
     try {
       const toolParam = tool ? `&tool=${encodeURIComponent(tool)}` : "";
+      const orgParam = org ? `&org=${encodeURIComponent(org.slug)}` : "";
       const r = await fetch(
-        `${API_HTTP}/leaderboard?board=${board}&limit=${PAGE}&offset=${all.length}${toolParam}`,
+        `${API_HTTP}/leaderboard?board=${board}&limit=${PAGE}&offset=${all.length}${toolParam}${orgParam}`,
       );
       const d = (await r.json()) as { entries?: Entry[] };
       if (Array.isArray(d.entries) && d.entries.length > 0) {
@@ -295,7 +323,9 @@ export function Leaderboard({
             <div ref={sentinelRef} aria-hidden="true" />
             {loadingMore && <div className="rowload" />}
             {atEnd && total > PAGE && (
-              <div className="board-end">⚔ end of the board · {total} warriors</div>
+              <div className="board-end">
+                ⚔ end of the board · {total} {org ? `${org.name} warriors` : "warriors"}
+              </div>
             )}
           </>
         )}

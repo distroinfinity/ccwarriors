@@ -10,6 +10,15 @@ html[data-theme="dark"]{
   --or:#CC785C; --bronze:#B88A63; --grid:rgba(204,120,92,.06); --spark:#454a51; --avbg:#33363b; --segoff:#1a1b1e; --shimmer:rgba(255,255,255,.07);
   --up:#3FB97A; --up-glow:rgba(63,185,122,.12);
 }
+
+/* ── Org co-brands — same shell, the org's accent. NS = Network School. ──── */
+html[data-org="ns"][data-theme="light"]{
+  --or:#0062E6; --bronze:#4A6B96; --grid:rgba(0,109,255,.045);
+}
+html[data-org="ns"][data-theme="dark"]{
+  --bg:#131316; --panel:#1A1A1E; --line:rgba(255,255,255,.08);
+  --or:#3D8BFF; --bronze:#6B86A8; --grid:rgba(0,109,255,.07); --segoff:#1E1E23; --avbg:#2E3138;
+}
 *{box-sizing:border-box;margin:0;padding:0;}
 html,body{ overflow-x:hidden; }
 body{ background:var(--bg); color:var(--ink); font-family:'Geist',system-ui,sans-serif; -webkit-font-smoothing:antialiased; transition:background .25s,color .25s; }
@@ -33,12 +42,22 @@ body::before{ content:""; position:fixed; inset:auto -40% -34% -40%; height:64%;
 header{ display:flex; align-items:center; justify-content:space-between; padding:20px 0 18px; }
 .brand{ display:flex; align-items:center; }
 .brand svg{ width:56px; height:42px; image-rendering:pixelated; display:block; }
+
+/* Org co-brand lockup: Clawd × org name (pixel face meets pixel type — the
+   name links out to the org's site, sized to carry equal visual weight). */
+.orglock{ display:inline-flex; align-items:center; gap:13px; margin-left:14px; }
+.orgx{ font-size:14px; font-weight:600; color:var(--muted); }
+.orgname{ font-family:'Pixelify Sans'; font-size:21px; letter-spacing:.06em; color:var(--ink);
+  text-decoration:none; line-height:1; padding-bottom:2px; border-bottom:1px solid transparent;
+  transition:color .15s, border-color .15s; }
+.orgname:hover{ color:var(--or); border-bottom-color:var(--or); }
 .right{ display:flex; align-items:center; gap:28px; }
 .hstats{ display:flex; gap:26px; }
 .hstats > div{ text-align:right; }
 .hstats .v{ font-size:18px; font-weight:700; } .hstats .l{ font-size:10px; color:var(--muted); letter-spacing:.14em; text-transform:uppercase; margin-top:3px; }
 .dot{ width:7px; height:7px; background:var(--or); border-radius:50%; display:inline-block; margin-right:7px; vertical-align:middle; animation:pulse 2s infinite; }
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(194,104,62,.5)}70%{box-shadow:0 0 0 7px rgba(194,104,62,0)}100%{box-shadow:0 0 0 0 rgba(194,104,62,0)}}
+/* Glow derives from the accent so org co-brands recolor it for free. */
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--or) 50%, transparent)}70%{box-shadow:0 0 0 7px transparent}100%{box-shadow:0 0 0 0 transparent}}
 .toggle{ background:transparent; border:1px solid var(--line); color:var(--ink); width:34px; height:34px; cursor:pointer; font-size:15px; }
 
 /* ── How it works — plain one-column mechanics page, centered ───────────── */
@@ -142,14 +161,20 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .board-end{ text-align:center; padding:16px; font-size:11.5px; color:var(--muted); letter-spacing:.08em; }
 .row{ position:relative; display:grid; grid-template-columns:38px 32px 1fr 92px 88px 118px; align-items:center; gap:13px; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); }
 .row:last-child{ border-bottom:0; }
-.row.top{ background:linear-gradient(90deg, rgba(194,104,62,.05), transparent 55%); }
+.row.top{ background:linear-gradient(90deg, color-mix(in srgb, var(--or) 5%, transparent), transparent 55%); }
 .rank{ font-size:14px; font-weight:700; color:var(--muted); }
 .row.top .rank{ color:var(--or); }
 .av{ width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--bg); object-fit:cover; }
 .row.top .av{ box-shadow:0 0 0 1.5px var(--or); }
 .who{ min-width:0; color:inherit; text-decoration:none; display:block; }
-.who:hover .h{ text-decoration:underline; text-underline-offset:3px; }
-.who .h{ font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.who:hover .hname{ text-decoration:underline; text-underline-offset:3px; }
+.who .h{ font-size:14px; font-weight:600; display:flex; align-items:center; gap:7px; min-width:0; }
+.who .hname{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+
+/* Verified-org pill — colored inline from the org registry accent. */
+.orgbadge{ flex:none; font-size:8.5px; font-weight:700; letter-spacing:.09em; line-height:1;
+  padding:2.5px 5px 2px; border:1px solid color-mix(in srgb, currentColor 45%, transparent);
+  background:color-mix(in srgb, currentColor 8%, transparent); }
 .who .x{ font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tierc{ font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
 .spark{ font-family:'Geist Mono'; font-size:13px; color:var(--spark); letter-spacing:-1px; }
@@ -168,7 +193,7 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 @keyframes rowglow{ 0%{ opacity:1; } 100%{ opacity:0; } }
 /* "Find me" pulse — declared after the up-glow so it wins the shared ::after. */
 .row.located::after{ content:""; position:absolute; inset:0; pointer-events:none;
-  background:rgba(194,104,62,.16); animation:rowglow 1.9s ease-out forwards; }
+  background:color-mix(in srgb, var(--or) 16%, transparent); animation:rowglow 1.9s ease-out forwards; }
 
 .side{ position:sticky; top:18px; }
 @keyframes cardin{ from{ opacity:0; transform:translateY(5px); } to{ opacity:1; transform:none; } }
@@ -200,10 +225,23 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 /* Sidebar nudges (outside the exported card): outdated CLI + under review. */
 .nudge{ display:flex; align-items:flex-start; gap:9px; margin-top:12px;
   padding:10px 12px; font-size:12px; line-height:1.45; color:var(--ink);
-  background:rgba(194,104,62,.07); border:1px solid var(--or); }
+  background:color-mix(in srgb, var(--or) 7%, transparent); border:1px solid var(--or); }
 .nudge-glyph{ color:var(--or); font-weight:700; flex:none; }
 .nudge.review{ background:var(--segoff); border-color:var(--line); color:var(--muted); }
 .nudge.review .nudge-glyph{ color:var(--muted); }
+
+/* Discord verify CTA inside the side panel (org pages). */
+.nudge.verify .nudge-glyph{ color:var(--or); }
+.verifybtn{ display:block; margin-top:8px; font-size:12px; font-weight:700; color:var(--or); text-decoration:none; }
+.verifybtn:hover{ text-decoration:underline; text-underline-offset:3px; }
+
+/* Verify-outcome strip under the header (?verified=1|notmember|failed). */
+.orgnote{ display:flex; align-items:center; justify-content:space-between; gap:14px;
+  margin-bottom:2px; padding:10px 14px; font-size:12.5px; color:var(--muted);
+  border:1px solid var(--line); background:var(--segoff); }
+.orgnote.ok{ color:var(--ink); border-color:var(--or); background:color-mix(in srgb, var(--or) 7%, transparent); }
+.orgnote button{ background:none; border:0; color:var(--muted); cursor:pointer; font:inherit; font-size:11px; padding:2px 4px; }
+.orgnote button:hover{ color:var(--ink); }
 
 .btn{ display:block; width:100%; text-align:center; padding:12px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; border:1px solid var(--line); }
 .btn.x{ background:var(--ink); color:var(--bg); border-color:var(--ink); margin-top:14px; } .btn.x:hover{ opacity:.85; }
@@ -288,6 +326,7 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 footer{ margin-top:46px; padding:26px 0 36px; border-top:1px solid var(--line); font-size:12px; color:var(--muted);
   display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
 .fbrand{ font-family:'Pixelify Sans'; font-size:14px; letter-spacing:.22em; color:var(--ink); }
+.fborg{ color:var(--muted); }
 .fcredit{ margin-top:7px; }
 .fcredit a{ color:var(--bronze); text-decoration:underline; text-underline-offset:3px; font-weight:600; }
 .flinks{ display:flex; align-items:baseline; gap:24px; }
@@ -326,6 +365,8 @@ a{ color:inherit; }
   .install button{ border-left:0; border-top:1px solid var(--line); padding:11px 18px; }
   .right{ gap:12px; }
   .brand svg{ width:48px; height:36px; }
+  .orglock{ margin-left:10px; gap:9px; }
+  .orgname{ font-size:16px; }
   .hstats{ gap:12px; } .hstats .v{ font-size:13px; }
   .hstats .l{ font-size:9px; letter-spacing:.1em; }
   .dot{ width:6px; height:6px; margin-right:5px; }

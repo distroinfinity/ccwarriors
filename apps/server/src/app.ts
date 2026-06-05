@@ -5,6 +5,7 @@ import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { ingestRoute } from "./routes/ingest.js";
 import { leaderboardRoute } from "./routes/leaderboard.js";
 import { authRoute } from "./routes/auth.js";
+import { orgsRoute, type DiscordCfg } from "./routes/orgs.js";
 import { installerRoute } from "./routes/installer.js";
 import { telemetryRoute, captureEvent } from "./routes/telemetry.js";
 import { adminRoute } from "./routes/admin.js";
@@ -29,6 +30,7 @@ export interface AppDeps {
     // USD→INR rate source; tests inject a fixed rate (default: live fx).
     usdInr?: () => number;
   };
+  discord?: DiscordCfg;
 }
 
 export function createApp(deps?: AppDeps) {
@@ -45,10 +47,17 @@ export function createApp(deps?: AppDeps) {
   });
 
   const corsOrigin = deps?.corsOrigin ?? "*";
+  // Org boards live on subdomains (ns.ccwarriors.xyz, ...) — Hono's array
+  // origin is exact-match only, so a function allows the whole family.
+  const allowed = corsOrigin.split(",").map((s) => s.trim());
+  const SUBDOMAIN_RE = /^https:\/\/[a-z0-9-]+\.ccwarriors\.xyz$/;
   app.use(
     "*",
     cors({
-      origin: corsOrigin === "*" ? "*" : corsOrigin.split(",").map((s) => s.trim()),
+      origin:
+        corsOrigin === "*"
+          ? "*"
+          : (origin) => (allowed.includes(origin) || SUBDOMAIN_RE.test(origin) ? origin : null),
       credentials: corsOrigin !== "*",
     }),
   );
@@ -66,6 +75,9 @@ export function createApp(deps?: AppDeps) {
     }
     if (deps.donate) {
       app.route("/donate", donateRoute(deps.db, deps.donate));
+    }
+    if (deps.discord) {
+      app.route("/", orgsRoute(deps.db, deps.store, deps.discord, deps.onIngest));
     }
   }
   return app;

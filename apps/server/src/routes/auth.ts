@@ -3,10 +3,12 @@ import { getCookie } from "hono/cookie";
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
-import { users } from "../db/schema.js";
+import { users, orgMembers } from "../db/schema.js";
 import { generateToken, hashToken } from "../lib/token.js";
 import { randomScene } from "../lib/scenes.js";
 import { createSessionToken, readSessionToken, sessionCookie, sign, verify } from "../lib/session.js";
+import { orgBySlug } from "../lib/orgs.js";
+import { orgWebUrl } from "./orgs.js";
 
 interface AuthCfg {
   clientId: string;
@@ -45,9 +47,13 @@ export function authRoute(db: DB, cfg: AuthCfg) {
   });
 
   // Web flow: opens GitHub, ends back on the landing page with a session.
+  // ?org=ns rides through the OAuth state so org-page sign-ins land back on
+  // the org subdomain instead of the apex.
   app.get("/auth/web", (c) => {
     const nonce = randomBytes(16).toString("hex");
-    return c.redirect(githubAuthorizeUrl({ mode: "web", nonce }), 302);
+    const orgParam = c.req.query("org");
+    const org = orgParam && orgBySlug(orgParam) ? orgParam : undefined;
+    return c.redirect(githubAuthorizeUrl({ mode: "web", nonce, ...(org ? { org } : {}) }), 302);
   });
 
   // Shared GitHub callback (the OAuth app's single registered redirect URI).
@@ -113,7 +119,14 @@ export function authRoute(db: DB, cfg: AuthCfg) {
             cardScene: randomScene(),
           })
           .onConflictDoUpdate({ target: users.githubId, set: { githubLogin: login, avatarUrl } });
-        return c.redirect(`${cfg.webBaseUrl}/?u=${encodeURIComponent(login)}`, 302);
+        const orgSlug =
+          typeof payload["org"] === "string" && orgBySlug(payload["org"]) ? payload["org"] : null;
+        return c.redirect(
+          orgSlug
+            ? orgWebUrl(cfg.webBaseUrl, orgSlug, { u: login })
+            : `${cfg.webBaseUrl}/?u=${encodeURIComponent(login)}`,
+          302,
+        );
       }
 
       // CLI mode: rotate the CLI token and hand it to the loopback server.
@@ -151,10 +164,18 @@ export function authRoute(db: DB, cfg: AuthCfg) {
     if (!session) return c.json({ login: null });
     try {
       const [user] = await db.select().from(users).where(eq(users.githubId, session.githubId));
+      // Verified org slugs — the site uses these to hide the org verify CTA.
+      const memberships = user
+        ? await db
+            .select({ orgSlug: orgMembers.orgSlug })
+            .from(orgMembers)
+            .where(eq(orgMembers.userId, user.id))
+        : [];
       return c.json({
         ...session,
         outdatedClient: !!user && !user.hasBreakdown && user.lastSyncedAt !== null,
         underReview: !!user?.flaggedAt,
+        orgs: memberships.map((m) => m.orgSlug),
       });
     } catch {
       return c.json(session);

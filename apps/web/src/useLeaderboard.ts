@@ -32,14 +32,16 @@ const EMPTY: BoardState = {
 /**
  * Connects to the live backend WebSocket, replacing state on every
  * snapshot/update message. Auto-reconnects on close via setTimeout.
+ * `enabled:false` skips the socket entirely (org pages poll REST instead).
  */
-export function useLeaderboard(): BoardState {
+export function useLeaderboard(enabled = true): BoardState {
   const [state, setState] = useState<BoardState>(EMPTY);
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closedRef = useRef(false);
 
   useEffect(() => {
+    if (!enabled) return;
     closedRef.current = false;
 
     function connect() {
@@ -78,7 +80,7 @@ export function useLeaderboard(): BoardState {
       if (retryRef.current) clearTimeout(retryRef.current);
       wsRef.current?.close();
     };
-  }, []);
+  }, [enabled]);
 
   return state;
 }

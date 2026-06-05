@@ -21,6 +21,10 @@ const schema = z.object({
   // GitHub OAuth app credentials (optional — OAuth is disabled when unset).
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
+  // Discord OAuth app credentials (optional — org verification is disabled
+  // when unset). Per-org guild IDs come from their own env vars (NS_GUILD_ID).
+  DISCORD_CLIENT_ID: z.string().optional(),
+  DISCORD_CLIENT_SECRET: z.string().optional(),
   // Base URL this server is reachable at (used to build the GitHub redirect_uri).
   PUBLIC_BASE_URL: z.string().default("http://localhost:8787"),
   // Base URL of the web frontend (for any future cross-origin redirects).
@@ -40,6 +44,8 @@ export interface Config {
   corsOrigin: string;
   githubClientId?: string;
   githubClientSecret?: string;
+  discordClientId?: string;
+  discordClientSecret?: string;
   publicBaseUrl: string;
   webBaseUrl: string;
   razorpayKeyId?: string;
@@ -57,6 +63,8 @@ export function parseConfig(env: NodeJS.ProcessEnv): Config {
     corsOrigin: p.CORS_ORIGIN,
     githubClientId: p.GITHUB_CLIENT_ID && p.GITHUB_CLIENT_ID.length > 0 ? p.GITHUB_CLIENT_ID : undefined,
     githubClientSecret: p.GITHUB_CLIENT_SECRET && p.GITHUB_CLIENT_SECRET.length > 0 ? p.GITHUB_CLIENT_SECRET : undefined,
+    discordClientId: p.DISCORD_CLIENT_ID && p.DISCORD_CLIENT_ID.length > 0 ? p.DISCORD_CLIENT_ID : undefined,
+    discordClientSecret: p.DISCORD_CLIENT_SECRET && p.DISCORD_CLIENT_SECRET.length > 0 ? p.DISCORD_CLIENT_SECRET : undefined,
     publicBaseUrl: p.PUBLIC_BASE_URL,
     webBaseUrl: p.WEB_BASE_URL,
     razorpayKeyId:

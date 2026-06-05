@@ -59,6 +59,9 @@ export function seedDemo(store: LeaderboardStore): void {
       cost30d: c30,
       costAllTime: all,
       breakdown: demoBreakdown(c30, i),
+      // A third of the demo roster is "NS verified" so org boards and the
+      // global badge have something to show locally (?org=ns).
+      orgs: i % 3 === 0 ? ["ns"] : [],
     });
   });
 

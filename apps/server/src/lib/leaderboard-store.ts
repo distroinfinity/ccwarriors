@@ -15,6 +15,9 @@ export interface Entry {
   // Shadow-quarantined users stay in the store (their card still works) but
   // are excluded from every board, count, and total.
   flagged?: boolean;
+  // Verified org memberships (slugs from the org registry). Drives org-scoped
+  // boards and the org badge on the global board.
+  orgs?: string[];
 }
 
 export interface ToolSummary {
@@ -43,18 +46,25 @@ export class LeaderboardStore {
     if (e) this.entries.set(id, { ...e, flagged });
   }
 
-  private visible(): Entry[] {
-    return [...this.entries.values()].filter((e) => !e.flagged);
+  setOrgs(id: string, orgs: string[]): void {
+    const e = this.entries.get(id);
+    if (e) this.entries.set(id, { ...e, orgs });
   }
 
-  count(): number {
-    return this.visible().length;
+  private visible(org?: string): Entry[] {
+    return [...this.entries.values()].filter(
+      (e) => !e.flagged && (!org || e.orgs?.includes(org)),
+    );
   }
 
-  totals(): { burned30d: number; count: number } {
+  count(org?: string): number {
+    return this.visible(org).length;
+  }
+
+  totals(org?: string): { burned30d: number; count: number } {
     let burned30d = 0;
     let count = 0;
-    for (const e of this.visible()) {
+    for (const e of this.visible(org)) {
       burned30d += e.cost30d;
       count++;
     }
@@ -74,19 +84,19 @@ export class LeaderboardStore {
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   }
 
-  private sorted(board: Board, tool?: string): Entry[] {
+  private sorted(board: Board, tool?: string, org?: string): Entry[] {
     const pool = tool
-      ? this.visible().filter((e) => metric(e, board, tool) > 0)
-      : this.visible();
+      ? this.visible(org).filter((e) => metric(e, board, tool) > 0)
+      : this.visible(org);
     return pool.sort((a, b) => metric(b, board, tool) - metric(a, board, tool));
   }
 
-  getTop(board: Board, limit: number, offset = 0, tool?: string): Entry[] {
-    return this.sorted(board, tool).slice(offset, offset + limit);
+  getTop(board: Board, limit: number, offset = 0, tool?: string, org?: string): Entry[] {
+    return this.sorted(board, tool, org).slice(offset, offset + limit);
   }
 
-  getRank(board: Board, id: string, tool?: string): number | null {
-    const idx = this.sorted(board, tool).findIndex((e) => e.id === id);
+  getRank(board: Board, id: string, tool?: string, org?: string): number | null {
+    const idx = this.sorted(board, tool, org).findIndex((e) => e.id === id);
     return idx === -1 ? null : idx + 1;
   }
 }
