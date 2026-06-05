@@ -89,8 +89,8 @@ describe("donate routes", () => {
     });
   });
 
-  it("POST /donate/order rejects amounts outside the tier allow-list with 422", async () => {
-    const fetchMock = stubRazorpayFetch();
+  it("POST /donate/order accepts custom (non-tier) amounts within bounds", async () => {
+    stubRazorpayFetch();
     const app = makeApp(db);
 
     const res = await app.request("/donate/order", {
@@ -99,7 +99,22 @@ describe("donate routes", () => {
       body: JSON.stringify({ amount: 999 }),
     });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ amount: 999 });
+  });
+
+  it("POST /donate/order rejects amounts outside ₹100–₹100,000 with 422", async () => {
+    const fetchMock = stubRazorpayFetch();
+    const app = makeApp(db);
+
+    for (const amount of [0, 50, 100_001]) {
+      const res = await app.request("/donate/order", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      expect(res.status).toBe(422);
+    }
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await db.select().from(donations)).toHaveLength(0);
   });

@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { DEFAULT_TIER, tierAt } from "../../sponsorTiers";
+import {
+  CUSTOM_TIER,
+  DEFAULT_TIER,
+  MAX_CUSTOM_USD,
+  MIN_CUSTOM_USD,
+  USD_TO_INR,
+  tierAt,
+} from "../../sponsorTiers";
 import { AmountGrid } from "./AmountGrid";
 import { GithubSponsorButton } from "./GithubSponsorButton";
 import { RazorpayButton } from "./RazorpayButton";
@@ -10,7 +17,7 @@ type Method = "github" | "razorpay" | "crypto";
 type Frequency = "once" | "monthly";
 
 const METHODS: { key: Method; label: string }[] = [
-  { key: "razorpay", label: "UPI / Card" },
+  { key: "razorpay", label: "Card / UPI" },
   { key: "crypto", label: "Crypto" },
   // GitHub Sponsors hidden until the profile passes KYC — see issue #9.
   // { key: "github", label: "GitHub Sponsors" },
@@ -19,6 +26,7 @@ const METHODS: { key: Method; label: string }[] = [
 /** "Fuel the board" — the funding section between the main content and the footer. */
 export function Sponsor() {
   const [tierIdx, setTierIdx] = useState(DEFAULT_TIER);
+  const [customUsd, setCustomUsd] = useState("");
   const [frequency, setFrequency] = useState<Frequency>("once");
   const [method, setMethod] = useState<Method>("razorpay");
   // Bumped after a successful Razorpay donation so the wall refetches.
@@ -26,15 +34,30 @@ export function Sponsor() {
 
   const methods = CHAINS.length > 0 ? METHODS : METHODS.filter((m) => m.key !== "crypto");
 
+  // Selected amount in USD; null while the custom cell is empty/invalid.
+  const isCustom = tierIdx === CUSTOM_TIER;
+  const parsed = Math.floor(Number(customUsd));
+  const usd = isCustom
+    ? Number.isFinite(parsed) && parsed >= MIN_CUSTOM_USD && parsed <= MAX_CUSTOM_USD
+      ? parsed
+      : null
+    : tierAt(tierIdx).usd;
+  const copy = isCustom ? "name your price" : tierAt(tierIdx).copy;
+
   return (
     <section className="sponsor" id="sponsor">
       <div className="seclabel">Fuel the board</div>
       <p className="sponsor-p">
         CCWarriors is free and open source. Servers aren't. Back the board and claim your tier,{" "}
-        <span className="o">{tierAt(tierIdx).copy}</span>.
+        <span className="o">{copy}</span>.
       </p>
 
-      <AmountGrid tierIdx={tierIdx} setTierIdx={setTierIdx} showInr={method === "razorpay"} />
+      <AmountGrid
+        tierIdx={tierIdx}
+        setTierIdx={setTierIdx}
+        customUsd={customUsd}
+        setCustomUsd={setCustomUsd}
+      />
 
       <div className="sponsor-row">
         <div className="ostabs">
@@ -66,7 +89,12 @@ export function Sponsor() {
       <div className="sponsor-action">
         {method === "github" && <GithubSponsorButton tierIdx={tierIdx} frequency={frequency} />}
         {method === "razorpay" && (
-          <RazorpayButton tierIdx={tierIdx} onPaid={() => setWallSeq((s) => s + 1)} />
+          <RazorpayButton
+            usd={usd}
+            inr={usd === null ? null : usd * USD_TO_INR}
+            desc={copy}
+            onPaid={() => setWallSeq((s) => s + 1)}
+          />
         )}
         {method === "crypto" && <CryptoPanel />}
       </div>

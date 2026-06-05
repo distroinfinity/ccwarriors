@@ -19,9 +19,10 @@ export interface DonateDeps extends RazorpayKeys {
   webhookSecret?: string;
 }
 
-// Must equal TIERS.map(t => t.inr) in apps/web/src/sponsorTiers.ts —
-// the Minecraft tier ladder (wood → netherite), rupees.
-export const ALLOWED_INR = [400, 800, 1600, 3200, 6400, 25600];
+// The web's tier ladder (apps/web/src/sponsorTiers.ts) runs ₹400–₹25,600,
+// plus a free-form custom cell — the server only enforces sane bounds.
+export const MIN_INR = 100;
+export const MAX_INR = 100_000;
 
 // Order creation is anonymous and costs a Razorpay API call + a DB row.
 const ORDERS_PER_MINUTE = 5;
@@ -47,8 +48,8 @@ export function donateRoute(db: DB, keys: DonateDeps) {
       return c.json({ error: "too many orders, slow down" }, 429);
     }
     const { amount } = c.req.valid("json");
-    if (!ALLOWED_INR.includes(amount)) {
-      return c.json({ error: "amount not in tier list" }, 422);
+    if (amount < MIN_INR || amount > MAX_INR) {
+      return c.json({ error: `amount must be ₹${MIN_INR}–₹${MAX_INR}` }, 422);
     }
     let order: { id: string };
     try {

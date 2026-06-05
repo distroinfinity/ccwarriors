@@ -214,7 +214,7 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .sponsor-p{ color:var(--muted); font-size:13.5px; margin:-4px 0 18px; }
 .sponsor-p .o{ color:var(--or); font-weight:600; }
 
-.amtgrid{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px; }
+.amtgrid{ display:grid; grid-template-columns:repeat(6,1fr) minmax(86px,.9fr); gap:10px; margin-bottom:18px; }
 .amtbtn{ font:inherit; text-align:left; display:flex; flex-direction:column; gap:2px; cursor:pointer;
   padding:12px 13px 11px; background:var(--panel); border:1px solid var(--line); color:var(--ink);
   transition:border-color .15s, box-shadow .15s; }
@@ -228,6 +228,12 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .amtbtn.on .amt-name{ color:var(--or); }
 .amt-val{ font-size:15px; font-weight:700; }
 .amt-copy{ font-size:10px; color:var(--muted); letter-spacing:.02em; }
+.amt-custom{ cursor:pointer; }
+.amt-input{ font:inherit; width:100%; min-width:0; max-width:64px; border:0; border-bottom:1px solid var(--line); background:transparent; color:var(--ink); padding:0 0 1px 2px; outline:none; }
+.amt-custom.on .amt-input{ border-bottom-color:var(--or); }
+.amt-input::placeholder{ color:var(--muted); opacity:.6; }
+.amt-input::-webkit-outer-spin-button,.amt-input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+.amt-input[type=number]{ -moz-appearance:textfield; appearance:textfield; }
 
 .sponsor-row{ display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; margin-bottom:14px; }
 .seg-sm button{ font-size:11px; padding:6px 13px; }
