@@ -59,14 +59,17 @@ type Verified = "1" | "notmember" | "failed";
       }
     }
     if (stripped) window.history.replaceState({}, "", url.toString());
-    const ref = (raw ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+    const cleanRef = (value: string | null) => (value ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+    const ref = cleanRef(raw);
     if (!ref) return;
-    if (!localStorage.getItem("ccw_ref")) localStorage.setItem("ccw_ref", ref);
+    const storedRef = cleanRef(localStorage.getItem("ccw_ref"));
+    const firstTouchRef = storedRef || ref;
+    if (!storedRef) localStorage.setItem("ccw_ref", ref);
     // Anonymous arrival beacon so the funnel starts at the page view.
     void fetch(`${API_HTTP}/telemetry`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ event: "web_visit", props: { ref } }),
+      body: JSON.stringify({ event: "web_visit", props: { ref: firstTouchRef } }),
     }).catch(() => {});
   } catch {
     /* attribution must never break the page */

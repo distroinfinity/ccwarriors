@@ -10,6 +10,7 @@ BIN_NAME="ccwarriors"
 # Channel attribution. The server bakes the ?ref= it was fetched with into the
 # default below; the value is a strict [a-z0-9_-] slug, never anything else.
 REF="${CCWARRIORS_REF:-}"
+REF="$(printf '%s' "$REF" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-' | cut -c 1-64)"
 
 say() { printf '%s\n' "$*"; }
 
@@ -57,7 +58,9 @@ fi
 printf '{ "type": "module" }\n' > "$CCW_HOME/package.json"
 # Persist the channel ref so the CLI can attribute enlistment + telemetry
 # (the enlist below also gets it via env, but logins after this shell die don't).
-[ -n "$REF" ] && printf '%s' "$REF" > "$CCW_HOME/ref" || true
+if [ -n "$REF" ]; then
+  printf '%s' "$REF" > "$CCW_HOME/ref"
+fi
 
 # 3) Wrapper executable
 STEP="wrapper"

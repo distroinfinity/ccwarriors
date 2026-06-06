@@ -6,9 +6,11 @@ $Base = if ($env:CCWARRIORS_BASE) { $env:CCWARRIORS_BASE } else { "https://api.c
 $Fallback = if ($env:CCWARRIORS_FALLBACK) { $env:CCWARRIORS_FALLBACK } else { "https://get.ccwarriors.xyz" }
 # Channel attribution. The server bakes the ?ref= it was fetched with into the
 # default below; the value is a strict [a-z0-9_-] slug, never anything else.
-$Ref = if ($env:CCWARRIORS_REF) { $env:CCWARRIORS_REF } else { "%CCW_REF_DEFAULT%" }
+$RawRef = if ($env:CCWARRIORS_REF) { $env:CCWARRIORS_REF } else { "%CCW_REF_DEFAULT%" }
 # Unreplaced placeholder (direct fetch without ?ref=) means no attribution.
-if ($Ref.StartsWith("%CCW_REF")) { $Ref = "" }
+if ($RawRef.StartsWith("%CCW_REF")) { $RawRef = "" }
+$Ref = $RawRef.ToLowerInvariant() -replace "[^a-z0-9_-]", ""
+if ($Ref.Length -gt 64) { $Ref = $Ref.Substring(0, 64) }
 
 # Anonymous install telemetry (random id, OS, failing step). Opt out: CCWARRIORS_TELEMETRY=0.
 $Tid = [guid]::NewGuid().ToString("N")

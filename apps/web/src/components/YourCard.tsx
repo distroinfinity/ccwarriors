@@ -11,6 +11,15 @@ import { formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import type { WebOrg } from "../orgs";
 
+function refQuery(prefix: "?" | "&" = "?"): string {
+  try {
+    const ref = (localStorage.getItem("ccw_ref") ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+    return ref ? `${prefix}ref=${encodeURIComponent(ref)}` : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Discord verify CTA — shown to signed-in visitors not yet on the org board. */
 function VerifyNudge({ org }: { org: WebOrg }) {
   return (
@@ -43,7 +52,7 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
           <div className="orgsteps">
             <a
               className={"orgstep" + (signedIn ? " done" : "")}
-              href={`${API_HTTP}/auth/web?org=${org.slug}`}
+              href={`${API_HTTP}/auth/web?org=${org.slug}${refQuery("&")}`}
             >
               <span className="orgstep-n">{signedIn ? <PixelGlyph name="check" size={9} /> : "1"}</span>
               Sign in with GitHub
@@ -54,7 +63,7 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
             </a>
           </div>
         ) : (
-          <a className="ghsign" href={`${API_HTTP}/auth/web`}>
+          <a className="ghsign" href={`${API_HTTP}/auth/web${refQuery()}`}>
             Already enlisted? Sign in with GitHub →
           </a>
         )}

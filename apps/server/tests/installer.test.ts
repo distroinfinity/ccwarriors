@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createApp } from "../src/app.js";
+import { sanitizeRef } from "../src/routes/installer.js";
 
 // Fallback installer endpoints — served from Railway (get.ccwarriors.xyz) so
 // installs keep working even when the Vercel domain is challenge-gated.
@@ -23,6 +24,24 @@ describe("installer fallback endpoints", () => {
     const body = await res.text();
     expect(body).toContain("CCWarriors CLI installer (Windows PowerShell)");
     expect(body).toContain('else { "https://get.ccwarriors.xyz" }');
+  });
+
+  it("injects a sanitized channel ref into served installers", async () => {
+    const sh = await app.request("https://get.ccwarriors.xyz/install.sh?ref=Test_HN!!");
+    expect(await sh.text()).toContain('REF="${CCWARRIORS_REF:-test_hn}"');
+
+    const ps1 = await app.request("https://get.ccwarriors.xyz/install.ps1?ref=Test_HN!!");
+    expect(await ps1.text()).toContain('else { "test_hn" }');
+  });
+
+  it("strips hostile ref characters before script injection", async () => {
+    expect(sanitizeRef("HN';$(rm -rf /);bad")).toBe("hnrm-rfbad");
+    expect(sanitizeRef("!@#$")).toBeNull();
+
+    const res = await app.request("https://get.ccwarriors.xyz/install.sh?ref=HN%27%3B%24%28rm%20-rf%20%2F%29%3Bbad");
+    const body = await res.text();
+    expect(body).toContain('REF="${CCWARRIORS_REF:-hnrm-rfbad}"');
+    expect(body).not.toContain("$(rm");
   });
 
   it("GET /cli.js serves the built CLI bundle", async () => {

@@ -6,8 +6,8 @@ type Os = "unix" | "win";
 // install URL so the served script can embed it and the funnel attributes.
 function refQuery(): string {
   try {
-    const ref = localStorage.getItem("ccw_ref");
-    return ref ? `?ref=${ref}` : "";
+    const ref = (localStorage.getItem("ccw_ref") ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+    return ref ? `?ref=${encodeURIComponent(ref)}` : "";
   } catch {
     return "";
   }
