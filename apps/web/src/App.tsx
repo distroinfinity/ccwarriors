@@ -15,6 +15,7 @@ import { PixelGlyph } from "./components/PixelGlyph";
 import { HowItWorks } from "./components/HowItWorks";
 import { Legal } from "./components/Legal";
 import { Sponsor } from "./components/Sponsor/Sponsor";
+import { API_HTTP } from "./api";
 import type { Entry } from "./types";
 
 // Extra routes, no router: /how and /legal render in the same shell.
@@ -41,6 +42,36 @@ if (ORG) {
 
 type Board = "30d" | "allTime";
 type Verified = "1" | "notmember" | "failed";
+
+// Channel attribution (?ref=hn, ?utm_source=hn) — read once at module scope
+// like the params below. First touch wins: the ref is kept in localStorage so
+// the install command can carry it through install.sh → CLI → enlistment, and
+// a later visit from another channel doesn't steal the credit.
+(() => {
+  try {
+    const url = new URL(window.location.href);
+    const raw = url.searchParams.get("ref") ?? url.searchParams.get("utm_source");
+    let stripped = false;
+    for (const k of ["ref", "utm_source", "utm_medium", "utm_campaign"]) {
+      if (url.searchParams.has(k)) {
+        url.searchParams.delete(k);
+        stripped = true;
+      }
+    }
+    if (stripped) window.history.replaceState({}, "", url.toString());
+    const ref = (raw ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+    if (!ref) return;
+    if (!localStorage.getItem("ccw_ref")) localStorage.setItem("ccw_ref", ref);
+    // Anonymous arrival beacon so the funnel starts at the page view.
+    void fetch(`${API_HTTP}/telemetry`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ event: "web_visit", props: { ref } }),
+    }).catch(() => {});
+  } catch {
+    /* attribution must never break the page */
+  }
+})();
 
 // Discord verify outcome (?verified=1|notmember|failed) — read once at module
 // scope (StrictMode double-invokes state initializers, and stripping the URL

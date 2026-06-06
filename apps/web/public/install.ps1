@@ -4,6 +4,11 @@ $ErrorActionPreference = "Stop"
 
 $Base = if ($env:CCWARRIORS_BASE) { $env:CCWARRIORS_BASE } else { "https://api.ccwarriors.xyz" }
 $Fallback = if ($env:CCWARRIORS_FALLBACK) { $env:CCWARRIORS_FALLBACK } else { "https://get.ccwarriors.xyz" }
+# Channel attribution. The server bakes the ?ref= it was fetched with into the
+# default below; the value is a strict [a-z0-9_-] slug, never anything else.
+$Ref = if ($env:CCWARRIORS_REF) { $env:CCWARRIORS_REF } else { "%CCW_REF_DEFAULT%" }
+# Unreplaced placeholder (direct fetch without ?ref=) means no attribution.
+if ($Ref.StartsWith("%CCW_REF")) { $Ref = "" }
 
 # Anonymous install telemetry (random id, OS, failing step). Opt out: CCWARRIORS_TELEMETRY=0.
 $Tid = [guid]::NewGuid().ToString("N")
@@ -11,7 +16,7 @@ $script:Step = "start"
 function Send-Beacon($Evt) {
   if ($env:CCWARRIORS_TELEMETRY -eq "0") { return }
   try {
-    $payload = @{ event = $Evt; distinctId = $Tid; props = @{ os = "Windows"; step = $script:Step } } | ConvertTo-Json -Compress
+    $payload = @{ event = $Evt; distinctId = $Tid; props = @{ os = "Windows"; step = $script:Step; ref = $Ref } } | ConvertTo-Json -Compress
     Invoke-RestMethod -Method Post -Uri "$Base/telemetry" -ContentType "application/json" -Body $payload -TimeoutSec 4 | Out-Null
   } catch {}
 }
@@ -47,6 +52,8 @@ try {
 # cli.js is an ES module; without this marker Node 20/21 parse it as CommonJS
 # and die on `import` (Node >=22.7 auto-detects, which hides the bug locally).
 '{ "type": "module" }' | Set-Content -Path (Join-Path $CcwHome "package.json") -Encoding ASCII
+# Persist the channel ref so the CLI can attribute enlistment + telemetry.
+if ($Ref) { $Ref | Set-Content -Path (Join-Path $CcwHome "ref") -Encoding ASCII -NoNewline }
 
 # 3) Command shim. WindowsApps is on PATH for the current user by default.
 $script:Step = "shim"
@@ -65,6 +72,7 @@ $script:Step = "enlist"
 if (-not $env:CCWARRIORS_NO_RUN) {
   Write-Host ""
   Write-Host "Hey there - installed! Starting your enlistment..."
+  $env:CCWARRIORS_REF = $Ref
   node (Join-Path $CcwHome "cli.js")
   Write-Host ""
   Write-Host "Tip: run 'ccwarriors watch' to keep your rank fresh while you work."

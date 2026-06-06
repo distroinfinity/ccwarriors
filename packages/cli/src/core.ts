@@ -1,8 +1,25 @@
 // Shared API plumbing for sync, watch, and the background daemon.
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { RawDay } from "./ccusage.js";
 
 export const API_BASE = process.env["CCWARRIORS_API"] ?? "https://api.ccwarriors.xyz";
 export const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
+
+// Channel attribution ref, planted by the installer (env during the install
+// run, ~/.ccwarriors/ref afterwards). Read once — it never changes mid-process.
+export const REF: string | null = (() => {
+  const sanitize = (raw: string) => raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64) || null;
+  const env = process.env["CCWARRIORS_REF"];
+  if (env) return sanitize(env);
+  try {
+    const home = process.env["CCWARRIORS_HOME"] ?? join(homedir(), ".ccwarriors");
+    return sanitize(readFileSync(join(home, "ref"), "utf8").trim());
+  } catch {
+    return null;
+  }
+})();
 
 export interface IngestResponse {
   ok: boolean;
@@ -46,7 +63,7 @@ export async function postTelemetry(event: string, props: Record<string, string 
     await fetch(`${API_BASE}/telemetry`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event, props: { os: process.platform, ...props } }),
+      body: JSON.stringify({ event, props: { os: process.platform, ...(REF ? { ref: REF } : {}), ...props } }),
       signal: AbortSignal.timeout(4000),
     });
   } catch {

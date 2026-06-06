@@ -44,6 +44,8 @@ export const users = pgTable("users", {
   // Anti-gaming shadow quarantine: flagged users keep syncing but leave the boards.
   flaggedAt: timestamp("flagged_at", { withTimezone: true }),
   flagReason: text("flag_reason"),
+  // Channel attribution (?ref=hn → install → enlist). First touch, never updated.
+  installSource: text("install_source"),
 });
 
 export const snapshots = pgTable("snapshots", {

@@ -2,16 +2,27 @@ import { useState } from "react";
 
 type Os = "unix" | "win";
 
-const COMMANDS: Record<Os, { label: string; prompt: string; cmd: string }> = {
+// Channel attribution: a stored ref (captured from ?ref= on arrival) rides the
+// install URL so the served script can embed it and the funnel attributes.
+function refQuery(): string {
+  try {
+    const ref = localStorage.getItem("ccw_ref");
+    return ref ? `?ref=${ref}` : "";
+  } catch {
+    return "";
+  }
+}
+
+const COMMANDS: Record<Os, { label: string; prompt: string; cmd: (ref: string) => string }> = {
   unix: {
     label: "macOS / Linux",
     prompt: "$",
-    cmd: "curl -fsSL https://api.ccwarriors.xyz/install.sh | bash",
+    cmd: (ref) => `curl -fsSL https://api.ccwarriors.xyz/install.sh${ref} | bash`,
   },
   win: {
     label: "Windows",
     prompt: ">",
-    cmd: "irm https://api.ccwarriors.xyz/install.ps1 | iex",
+    cmd: (ref) => `irm https://api.ccwarriors.xyz/install.ps1${ref} | iex`,
   },
 };
 
@@ -28,7 +39,8 @@ function detectOs(): Os {
 export function InstallBlock() {
   const [os, setOs] = useState<Os>(detectOs);
   const [copied, setCopied] = useState(false);
-  const { prompt, cmd } = COMMANDS[os];
+  const { prompt } = COMMANDS[os];
+  const cmd = COMMANDS[os].cmd(refQuery());
 
   const copy = () => {
     navigator.clipboard?.writeText(cmd);

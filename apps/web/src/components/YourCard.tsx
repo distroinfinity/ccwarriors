@@ -111,7 +111,8 @@ export function YourCard({
     // Whole dollars in the tweet — "$1,234.00 burned" reads like machine output.
     const burned = "$" + Math.round(entry.cost30d).toLocaleString("en-US");
     const text = `${burned} burned across my AI coding tools in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\ncheck your rank now:`;
-    const url = "https://ccwarriors.xyz";
+    // ?ref=x_share: installs from shared links attribute to the share loop.
+    const url = "https://ccwarriors.xyz?ref=x_share";
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       "_blank",
