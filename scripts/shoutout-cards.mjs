@@ -30,7 +30,9 @@ for (let i = 0; i < entries.length; i++) {
     await page.waitForSelector(".card", { timeout: 15000 });
     await page.waitForTimeout(5200); // ticker animation (4s) + avatar settle
     const card = page.locator(".card").first();
-    await card.screenshot({ path: `${OUT}/${e.githubLogin}.png` });
+    // Filename leads with the posting-order index (rank N posts first, #1 last).
+    const postIdx = String(entries.length - i).padStart(2, "0");
+    await card.screenshot({ path: `${OUT}/${postIdx}-${e.githubLogin}.png` });
     console.log(`#${rank} ${e.githubLogin} ok`);
   } catch (err) {
     failures.push(e.githubLogin);
@@ -89,7 +91,7 @@ for (let i = entries.length - 1; i >= 0; i--) {
   const e = entries[i];
   const rank = i + 1;
   md += `## ${entries.length - i}. rank #${rank} — ${e.githubLogin}${e.xHandle ? ` (X: @${e.xHandle})` : " (no X handle on card)"}\n`;
-  md += `image: \`assets/${DATE}/${e.githubLogin}.png\`\n\n`;
+  md += `image: \`assets/${DATE}/${String(entries.length - i).padStart(2, "0")}-${e.githubLogin}.png\`\n\n`;
   md += "```\n" + caption(e, rank, entries.length) + "\n```\n\n";
 }
 writeFileSync(`${OUT}/captions.md`, md);
