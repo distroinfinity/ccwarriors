@@ -9,6 +9,8 @@ import { randomScene } from "../lib/scenes.js";
 import { createSessionToken, readSessionToken, sessionCookie, sign, verify } from "../lib/session.js";
 import { orgBySlug } from "../lib/orgs.js";
 import { orgWebUrl } from "./orgs.js";
+import { sanitizeRef } from "./installer.js";
+import { captureEvent } from "./telemetry.js";
 
 interface AuthCfg {
   clientId: string;
@@ -43,7 +45,9 @@ export function authRoute(db: DB, cfg: AuthCfg) {
       return c.text("Invalid port: must be an integer between 1024 and 65535", 400);
     }
     const nonce = randomBytes(16).toString("hex");
-    return c.redirect(githubAuthorizeUrl({ mode: "cli", port, nonce }), 302);
+    // Channel ref rides the state so enlistment attributes to its channel.
+    const ref = sanitizeRef(c.req.query("ref"));
+    return c.redirect(githubAuthorizeUrl({ mode: "cli", port, nonce, ...(ref ? { ref } : {}) }), 302);
   });
 
   // Web flow: opens GitHub, ends back on the landing page with a session.
@@ -53,7 +57,11 @@ export function authRoute(db: DB, cfg: AuthCfg) {
     const nonce = randomBytes(16).toString("hex");
     const orgParam = c.req.query("org");
     const org = orgParam && orgBySlug(orgParam) ? orgParam : undefined;
-    return c.redirect(githubAuthorizeUrl({ mode: "web", nonce, ...(org ? { org } : {}) }), 302);
+    const ref = sanitizeRef(c.req.query("ref"));
+    return c.redirect(
+      githubAuthorizeUrl({ mode: "web", nonce, ...(org ? { org } : {}), ...(ref ? { ref } : {}) }),
+      302,
+    );
   });
 
   // Shared GitHub callback (the OAuth app's single registered redirect URI).
@@ -66,6 +74,8 @@ export function authRoute(db: DB, cfg: AuthCfg) {
     if (!payload) return c.text("Invalid state", 400);
 
     const mode: Mode = payload["mode"] === "web" ? "web" : "cli";
+    // Channel ref carried through the state — stored on first enlistment only.
+    const ref = typeof payload["ref"] === "string" ? sanitizeRef(payload["ref"]) : null;
     const port = payload["port"];
     if (mode === "cli" && (typeof port !== "number" || port < 1024 || port > 65535)) {
       return c.text("Invalid port in state", 400);
@@ -107,6 +117,14 @@ export function authRoute(db: DB, cfg: AuthCfg) {
       const session = createSessionToken({ login, avatarUrl, githubId: githubIdStr }, cfg.clientSecret);
       c.header("Set-Cookie", sessionCookie(session, cfg.publicBaseUrl));
 
+      // First-touch attribution: only a brand-new row gets install_source, and
+      // user_enlisted fires once so the funnel counts enlistments, not logins.
+      const [existing] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.githubId, githubIdStr));
+      const enlistProps = { mode, ...(ref ? { ref } : {}) };
+
       if (mode === "web") {
         // Web sign-in only identifies an existing/new visitor; no CLI token rotation.
         await db
@@ -117,8 +135,10 @@ export function authRoute(db: DB, cfg: AuthCfg) {
             avatarUrl,
             cliTokenHash: hashToken(generateToken()),
             cardScene: randomScene(),
+            ...(ref ? { installSource: ref } : {}),
           })
           .onConflictDoUpdate({ target: users.githubId, set: { githubLogin: login, avatarUrl } });
+        if (!existing) captureEvent("user_enlisted", githubIdStr, enlistProps);
         const orgSlug =
           typeof payload["org"] === "string" && orgBySlug(payload["org"]) ? payload["org"] : null;
         return c.redirect(
@@ -139,11 +159,13 @@ export function authRoute(db: DB, cfg: AuthCfg) {
           avatarUrl,
           cliTokenHash: hashToken(cliToken),
           cardScene: randomScene(),
+          ...(ref ? { installSource: ref } : {}),
         })
         .onConflictDoUpdate({
           target: users.githubId,
           set: { githubLogin: login, avatarUrl, cliTokenHash: hashToken(cliToken) },
         });
+      if (!existing) captureEvent("user_enlisted", githubIdStr, enlistProps);
 
       return c.redirect(
         `http://127.0.0.1:${port}/callback?token=${encodeURIComponent(cliToken)}&login=${encodeURIComponent(login)}`,

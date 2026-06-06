@@ -7,6 +7,10 @@ BASE="${CCWARRIORS_BASE:-https://api.ccwarriors.xyz}"
 FALLBACK="${CCWARRIORS_FALLBACK:-https://get.ccwarriors.xyz}"
 CCW_HOME="${CCWARRIORS_HOME:-$HOME/.ccwarriors}"
 BIN_NAME="ccwarriors"
+# Channel attribution. The server bakes the ?ref= it was fetched with into the
+# default below; the value is a strict [a-z0-9_-] slug, never anything else.
+REF="${CCWARRIORS_REF:-}"
+REF="$(printf '%s' "$REF" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-' | cut -c 1-64)"
 
 say() { printf '%s\n' "$*"; }
 
@@ -18,7 +22,7 @@ beacon() {
   [ "${CCWARRIORS_TELEMETRY:-1}" = "0" ] && return 0
   curl -m 4 -fsS -o /dev/null -X POST "$BASE/telemetry" \
     -H 'content-type: application/json' \
-    -d "{\"event\":\"$1\",\"distinctId\":\"$TID\",\"props\":{\"os\":\"$(uname -s)\",\"step\":\"$STEP\"}}" \
+    -d "{\"event\":\"$1\",\"distinctId\":\"$TID\",\"props\":{\"os\":\"$(uname -s)\",\"step\":\"$STEP\",\"ref\":\"$REF\"}}" \
     >/dev/null 2>&1 || true
 }
 # shellcheck disable=SC2154  # rc is assigned inside the single-quoted trap body
@@ -52,6 +56,11 @@ fi
 # cli.js is an ES module; without this marker Node 20/21 parse it as CommonJS
 # and die on `import` (Node ≥22.7 auto-detects, which hides the bug locally).
 printf '{ "type": "module" }\n' > "$CCW_HOME/package.json"
+# Persist the channel ref so the CLI can attribute enlistment + telemetry
+# (the enlist below also gets it via env, but logins after this shell die don't).
+if [ -n "$REF" ]; then
+  printf '%s' "$REF" > "$CCW_HOME/ref"
+fi
 
 # 3) Wrapper executable
 STEP="wrapper"
@@ -76,7 +85,7 @@ STEP="enlist"
 if [ -z "${CCWARRIORS_NO_RUN:-}" ]; then
   say ""
   say "⚔  Hey there — installed! Starting your enlistment…"
-  "$CCW_HOME/bin/$BIN_NAME"
+  CCWARRIORS_REF="$REF" "$CCW_HOME/bin/$BIN_NAME"
   if "$CCW_HOME/bin/$BIN_NAME" autosync on >/dev/null 2>&1; then
     say "✓ Background sync enabled — your usage streams to the board automatically."
     say "  (no terminal needed · disable anytime: ccwarriors autosync off)"

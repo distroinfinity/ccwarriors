@@ -8,6 +8,8 @@ import { z } from "zod";
 
 const bodySchema = z.object({
   event: z.enum([
+    // Channel attribution: fired by the site when a visitor arrives with ?ref=.
+    "web_visit",
     "install_started",
     "install_completed",
     "install_failed",

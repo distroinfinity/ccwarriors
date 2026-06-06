@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { captureEvent } from "./telemetry.js";
 
 // Fallback installer endpoints. The primary host (ccwarriors.xyz, Vercel) can
 // be challenge-gated by Vercel's firewall, which 403s every curl/PowerShell
@@ -10,6 +11,13 @@ import path from "node:path";
 // Origins to rewrite to the serving host (longest first so the apex match
 // doesn't clobber the api subdomain).
 const REWRITE_ORIGINS = ["https://api.ccwarriors.xyz", "https://ccwarriors.xyz"];
+
+/** Channel ref (?ref=hn): lowercase slug only — it gets embedded in scripts. */
+export function sanitizeRef(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  const ref = raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+  return ref || null;
+}
 
 // Walk up from cwd until the workspace root (works from apps/server in dev,
 // tests, and the Railway container, all of which run inside the monorepo).
@@ -69,6 +77,20 @@ export function installerRoute() {
         const proto = c.req.header("x-forwarded-proto") ?? url.protocol.replace(":", "");
         const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? url.host;
         for (const origin of REWRITE_ORIGINS) body = body.replaceAll(origin, `${proto}://${host}`);
+
+        // Channel attribution: ?ref=hn is baked into the served script as the
+        // CCWARRIORS_REF default, so beacons + enlistment attribute even though
+        // the script runs far from the browser that carried the ref. Strict
+        // whitelist — the value lands inside a shell/PowerShell script.
+        const ref = sanitizeRef(c.req.query("ref"));
+        if (ref) {
+          body = body
+            .replaceAll('${CCWARRIORS_REF:-}', `\${CCWARRIORS_REF:-${ref}}`) // install.sh
+            .replaceAll('"%CCW_REF_DEFAULT%"', `"${ref}"`); // install.ps1
+        }
+        captureEvent(`${name === "install.ps1" ? "install_ps1" : "install_sh"}_download`, "anonymous", {
+          ...(ref ? { ref } : {}),
+        });
       }
       return c.body(body, 200, { "content-type": asset.type, "cache-control": "no-cache" });
     });

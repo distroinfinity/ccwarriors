@@ -2,7 +2,7 @@ import http from "node:http";
 import { URL } from "node:url";
 import { bold, cyan, dim, green, yellow, openBrowser } from "./ui.js";
 import { loadConfig, saveConfig, type Config } from "./config.js";
-import { WEB_BASE } from "./core.js";
+import { REF, WEB_BASE } from "./core.js";
 
 const LOGIN_TIMEOUT_MS = 2 * 60 * 1000;
 
@@ -107,7 +107,8 @@ export async function runLoginFlow(apiBase: string): Promise<Config> {
       }
 
       const port = addr.port;
-      const authUrl = `${apiBase}/cli/auth?port=${port}`;
+      // The ref rides the OAuth state so enlistment attributes to its channel.
+      const authUrl = `${apiBase}/cli/auth?port=${port}${REF ? `&ref=${REF}` : ""}`;
 
       console.log(cyan(`Opening GitHub login in your browser…`));
       console.log(dim(`  (if nothing opens, visit: ${authUrl})`));

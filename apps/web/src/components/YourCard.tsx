@@ -11,6 +11,15 @@ import { formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import type { WebOrg } from "../orgs";
 
+function refQuery(prefix: "?" | "&" = "?"): string {
+  try {
+    const ref = (localStorage.getItem("ccw_ref") ?? "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
+    return ref ? `${prefix}ref=${encodeURIComponent(ref)}` : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Discord verify CTA — shown to signed-in visitors not yet on the org board. */
 function VerifyNudge({ org }: { org: WebOrg }) {
   return (
@@ -43,7 +52,7 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
           <div className="orgsteps">
             <a
               className={"orgstep" + (signedIn ? " done" : "")}
-              href={`${API_HTTP}/auth/web?org=${org.slug}`}
+              href={`${API_HTTP}/auth/web?org=${org.slug}${refQuery("&")}`}
             >
               <span className="orgstep-n">{signedIn ? <PixelGlyph name="check" size={9} /> : "1"}</span>
               Sign in with GitHub
@@ -54,7 +63,7 @@ export function EnlistCard({ org, verifyOrg }: { org?: WebOrg | null; verifyOrg?
             </a>
           </div>
         ) : (
-          <a className="ghsign" href={`${API_HTTP}/auth/web`}>
+          <a className="ghsign" href={`${API_HTTP}/auth/web${refQuery()}`}>
             Already enlisted? Sign in with GitHub →
           </a>
         )}
@@ -111,7 +120,8 @@ export function YourCard({
     // Whole dollars in the tweet — "$1,234.00 burned" reads like machine output.
     const burned = "$" + Math.round(entry.cost30d).toLocaleString("en-US");
     const text = `${burned} burned across my AI coding tools in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\ncheck your rank now:`;
-    const url = "https://ccwarriors.xyz";
+    // ?ref=x_share: installs from shared links attribute to the share loop.
+    const url = "https://ccwarriors.xyz?ref=x_share";
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       "_blank",
