@@ -230,7 +230,7 @@ export default function App() {
             <a href="https://github.com/distroinfinity/ccwarriors" target="_blank" rel="noopener">
               GitHub
             </a>
-            <a href="https://x.com/distroinfinity" target="_blank" rel="noopener">
+            <a href="https://x.com/ccwarriorsxyz" target="_blank" rel="noopener">
               X
             </a>
             <a href="mailto:manurajput2911@gmail.com?subject=CCWarriors%20issue">Facing any issues?</a>
