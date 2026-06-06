@@ -21,6 +21,8 @@ const bodySchema = z.object({
     "self_update_failed",
     "self_update_applied",
     "self_update_rollback",
+    // `autosync off` couldn't kill the daemon (macOS launchctl edge).
+    "autosync_off_failed",
   ]),
   distinctId: z.string().min(1).max(64).optional(),
   props: z.record(z.string().max(40), z.union([z.string().max(200), z.number(), z.boolean()])).optional(),
@@ -84,6 +86,7 @@ export function telemetryRoute() {
       "tool_collection_failed",
       "self_update_failed",
       "self_update_rollback",
+      "autosync_off_failed",
     ];
     if (failureEvents.includes(event)) {
       recordFailure(event, props ?? {});
@@ -106,6 +109,7 @@ export function telemetryRoute() {
       "tool_collection_failed",
       "self_update_failed",
       "self_update_rollback",
+      "autosync_off_failed",
     ]);
     const installLastHour = lastHour.filter((f) => !nonPaging.has(f.event));
     const byStep: Record<string, number> = {};

@@ -75,14 +75,39 @@ export function autosyncOn(minutes: number): void {
   writeFileSync(markerPath(), JSON.stringify({ minutes: every, node, cli }, null, 2) + "\n");
 }
 
+/** Is the launchd job still loaded? (macOS only) */
+function launchdJobAlive(): boolean {
+  try {
+    execFileSync("launchctl", ["print", `gui/${process.getuid?.() ?? 501}/${LABEL}`], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function autosyncOff(): void {
   if (process.platform === "darwin") {
+    const uid = process.getuid?.() ?? 501;
+    // `bootout` is the modern call and reliably kills a KeepAlive daemon;
+    // legacy `unload` can fail silently on newer macOS, leaving the daemon
+    // running until reboot while we claim it's off (reported in the wild).
     try {
-      execFileSync("launchctl", ["unload", plistPath()], { stdio: "ignore" });
+      execFileSync("launchctl", ["bootout", `gui/${uid}/${LABEL}`], { stdio: "ignore" });
     } catch {
-      /* not loaded */
+      try {
+        execFileSync("launchctl", ["unload", plistPath()], { stdio: "ignore" });
+      } catch {
+        /* not loaded */
+      }
     }
     rmSync(plistPath(), { force: true });
+    if (launchdJobAlive()) {
+      rmSync(markerPath(), { force: true });
+      throw new Error(
+        `the background daemon is still loaded. Stop it manually:\n` +
+          `  launchctl bootout gui/${uid}/${LABEL}`,
+      );
+    }
   } else if (process.platform === "linux") {
     let current = "";
     try {
