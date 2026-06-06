@@ -6,7 +6,6 @@ export interface WebOrg {
   name: string;
   /** Org accent, applied via html[data-org] CSS overrides AND inline badge color. */
   accent: string;
-  themeDefault: "dark" | "light";
   title: string;
   /** One-liner under the hero heading on the org page. */
   tagline: string;
@@ -21,7 +20,6 @@ export const WEB_ORGS: Record<string, WebOrg> = {
     slug: "ns",
     name: "Network School",
     accent: "#006DFF",
-    themeDefault: "dark",
     title: "CCWarriors × Network School",
     tagline: "Who's burning the most at Network School.",
     url: "https://ns.com",

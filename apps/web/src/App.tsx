@@ -28,14 +28,11 @@ if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
 
 // Org co-brand (ns.ccwarriors.xyz / ?org=ns): applied before first paint so
-// the page doesn't flash the default accent or light theme.
+// the page doesn't flash the default accent. Theme itself is resolved by the
+// inline script in index.html (saved pref > device theme > light).
 const ORG = detectOrg();
 if (ORG) {
   document.documentElement.setAttribute("data-org", ORG.slug);
-  document.documentElement.setAttribute(
-    "data-theme",
-    ORG.themeDefault === "dark" ? "dark" : "light",
-  );
   if (!isHow && !isLegal) document.title = ORG.title;
 }
 

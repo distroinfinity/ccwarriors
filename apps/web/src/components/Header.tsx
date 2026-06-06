@@ -6,13 +6,39 @@ import { formatUsd } from "../util";
 import { Sk } from "./Skeleton";
 import type { WebOrg } from "../orgs";
 
-function ThemeToggle({ initialDark }: { initialDark: boolean }) {
-  const [dark, setDark] = useState(initialDark);
+// Theme is resolved before first paint by the inline script in index.html
+// (saved pref > device theme > light); this just toggles + persists it.
+function ThemeToggle() {
+  const [dark, setDark] = useState(
+    () => document.documentElement.getAttribute("data-theme") === "dark",
+  );
+  // Follow live OS theme changes, but only while the user has no saved pref.
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-  }, [dark]);
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e: MediaQueryListEvent) => {
+      try {
+        if (localStorage.getItem("theme")) return;
+      } catch {
+        /* ignore */
+      }
+      document.documentElement.setAttribute("data-theme", e.matches ? "dark" : "light");
+      setDark(e.matches);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  const toggle = () => {
+    const next = !dark;
+    document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
+    try {
+      localStorage.setItem("theme", next ? "dark" : "light");
+    } catch {
+      /* ignore */
+    }
+    setDark(next);
+  };
   return (
-    <button className="toggle" title="Toggle theme" onClick={() => setDark((d) => !d)}>
+    <button className="toggle" title="Toggle theme" onClick={toggle}>
       <PixelGlyph name={dark ? "sun" : "moon"} size={15} />
     </button>
   );
@@ -73,7 +99,7 @@ export function Header({
             <div className="l">burned · 30d</div>
           </div>
         </div>
-        <ThemeToggle initialDark={org?.themeDefault === "dark"} />
+        <ThemeToggle />
       </div>
     </header>
   );
