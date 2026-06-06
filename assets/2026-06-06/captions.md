@@ -380,7 +380,7 @@ day 3 of the board. cry0genic holds rank #4 with $6,171 burned this month. Nethe
 image: `assets/2026-06-06/distroinfinity.png`
 
 ```
-day 3 of the board. podium watch: distroinfinity holds #3. $7,459 in 30 days. Netherite tier. ⚔️
+day 3 of the board. podium watch: distroinfinity holds #3. $7,460 in 30 days. Netherite tier. ⚔️
 
 → ccwarriors.xyz
 ```
