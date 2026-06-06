@@ -119,7 +119,7 @@ export function YourCard({
   const shareOnX = () => {
     // Whole dollars in the tweet — "$1,234.00 burned" reads like machine output.
     const burned = "$" + Math.round(entry.cost30d).toLocaleString("en-US");
-    const text = `${burned} burned across my AI coding tools in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️\n\ncheck your rank now:`;
+    const text = `${burned} burned across my AI coding tools in the last 30 days 🔥\nrank #${rank} · ${tierLabel(entry.tier)} tier ⚔️ @ccwarriorsxyz\n\ncheck your rank now:`;
     // ?ref=x_share: installs from shared links attribute to the share loop.
     const url = "https://ccwarriors.xyz?ref=x_share";
     window.open(
