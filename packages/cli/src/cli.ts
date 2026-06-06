@@ -4,7 +4,7 @@ import { runLoginFlow } from "./auth.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
-import { API_BASE, WEB_BASE, postIngest } from "./core.js";
+import { API_BASE, WEB_BASE, postIngest, postTelemetry } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
 
 declare const __BUILD_ID__: string;
@@ -197,7 +197,7 @@ async function cmdWatch(args: string[]): Promise<void> {
   }
 }
 
-function cmdAutosync(args: string[]): void {
+async function cmdAutosync(args: string[]): Promise<void> {
   const sub = args[0];
   if (sub === "on") {
     const minutes = Number(args[1] ?? 5) || 5;
@@ -211,7 +211,14 @@ function cmdAutosync(args: string[]): void {
     return;
   }
   if (sub === "off") {
-    autosyncOff();
+    try {
+      autosyncOff();
+    } catch (err) {
+      // "off" must mean off — if the daemon survived, say so loudly and let
+      // telemetry tell us it's still happening in the wild.
+      await postTelemetry("autosync_off_failed", {});
+      throw err;
+    }
     console.log(green("Autosync off."));
     return;
   }
@@ -258,7 +265,7 @@ async function main(): Promise<void> {
   }
 
   if (cmd === "autosync") {
-    cmdAutosync(args.slice(1));
+    await cmdAutosync(args.slice(1));
     return;
   }
 
