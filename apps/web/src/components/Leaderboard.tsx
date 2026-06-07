@@ -101,10 +101,8 @@ function Row({
       <Avatar src={entry.avatarUrl} name={entry.githubLogin} index={rank - 1} />
       <a
         className="who"
-        href={`https://github.com/${entry.githubLogin}`}
-        target="_blank"
-        rel="noopener"
-        title={`${entry.githubLogin} on GitHub`}
+        href={`/u/${encodeURIComponent(entry.githubLogin)}`}
+        title={`${entry.githubLogin} on CCWarriors`}
       >
         <div className="h">
           <span className="hname">{entry.githubLogin}</span>
