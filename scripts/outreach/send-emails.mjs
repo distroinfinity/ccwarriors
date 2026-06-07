@@ -2,8 +2,13 @@
 // no telegram, no linkedin — those stay human). Logs to sent.json so the
 // queue renders them as done and nobody ever gets emailed twice.
 //
-//   node scripts/outreach/send-emails.mjs           # dry run, prints plan
-//   node scripts/outreach/send-emails.mjs --send    # actually sends
+//   node scripts/outreach/send-emails.mjs                 # dry run, prints plan
+//   node scripts/outreach/send-emails.mjs --send          # send up to the cap
+//   node scripts/outreach/send-emails.mjs --send --limit 40
+//
+// Daily cap protects Gmail deliverability: bursts of near-identical cold mail
+// from a personal account trip spam classifiers and burn the whole batch.
+// Rerun on following days; sent.json guarantees nobody is emailed twice.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -15,6 +20,8 @@ const QUEUE = path.join(HERE, `queue-${DATE}.html`);
 const SENT = path.join(HERE, "sent.json");
 const SUBJECT = "fellow dev - asking for feedback on a product";
 const DO_SEND = process.argv.includes("--send");
+const limIdx = process.argv.indexOf("--limit");
+const DAILY_CAP = limIdx !== -1 ? Number(process.argv[limIdx + 1]) || 60 : 60;
 
 const html = readFileSync(QUEUE, "utf8");
 const sent = existsSync(SENT) ? JSON.parse(readFileSync(SENT, "utf8")) : {};
@@ -30,9 +37,13 @@ const cards = [...html.matchAll(/<div class="t" id="t(\d+)" data-key="([^"]+)">(
   return { idx: Number(idx), key, name, text, email, hasOther };
 });
 
-const targets = cards.filter((c) => c.email && !c.hasOther && !sent[c.key]);
-console.log(`email-only, not yet sent: ${targets.length}`);
+const all = cards.filter((c) => c.email && !c.hasOther && !sent[c.key]);
+const sentToday = Object.values(sent).filter((s) => s.at?.startsWith(DATE)).length;
+const room = Math.max(0, DAILY_CAP - sentToday);
+const targets = all.slice(0, room);
+console.log(`email-only, not yet sent: ${all.length} · sent today: ${sentToday} · cap ${DAILY_CAP} → sending now: ${targets.length}`);
 for (const t of targets) console.log(`  ${t.name} <${t.email}>`);
+if (all.length > targets.length) console.log(`  …${all.length - targets.length} more queued for the next day(s)`);
 
 if (!DO_SEND) {
   console.log("\ndry run. add --send to actually send.");
@@ -54,6 +65,6 @@ for (const t of targets) {
   } catch (err) {
     console.log(`FAILED → ${t.name}: ${String(err).slice(0, 120)}`);
   }
-  await new Promise((r) => setTimeout(r, 4000 + Math.random() * 3000)); // human pacing
+  await new Promise((r) => setTimeout(r, 9000 + Math.random() * 6000)); // human pacing
 }
 console.log("done. regenerate the queue to see them marked sent.");
