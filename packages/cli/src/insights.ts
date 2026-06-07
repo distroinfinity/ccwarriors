@@ -50,21 +50,25 @@ function promptText(content: unknown): string | null {
   if (Array.isArray(content)) {
     const blocks = content.filter((b): b is Record<string, unknown> => !!b && typeof b === "object");
     if (blocks.some((b) => b["type"] === "tool_result")) return null; // tool result, not a prompt
-    const texts = blocks.filter((b) => b["type"] === "text").map((b) => String(b["text"] ?? ""));
+    const texts = blocks
+      .filter((b) => b["type"] === "text" && typeof b["text"] === "string")
+      .map((b) => b["text"] as string);
     return texts.length > 0 ? texts.join(" ") : null;
   }
   return null;
 }
 
 /** Parse one session file's lines into counts. Null when no conversation found. */
-export function parseSessionLines(lines: Iterable<string>): SessionStats | null {
+export async function parseSessionLines(
+  lines: Iterable<string> | AsyncIterable<string>,
+): Promise<SessionStats | null> {
   let prompts = 0, interrupts = 0, subagentSpawns = 0, maxParallel = 0, editCalls = 0, assistantTurns = 0;
   let usedPlanMode = false, hadEdits = false;
   let exploreBeforeFirstEdit = false, sawExplore = false, sawEdit = false;
   let firstTs: number | null = null, lastTs: number | null = null;
   const wordBuckets = { "1-5": 0, "6-10": 0, "11-25": 0, "26+": 0 };
 
-  for (const line of lines) {
+  for await (const line of lines) {
     let o: Record<string, unknown>;
     try {
       o = JSON.parse(line) as Record<string, unknown>;
@@ -77,7 +81,7 @@ export function parseSessionLines(lines: Iterable<string>): SessionStats | null 
     const ts = typeof o["timestamp"] === "string" ? new Date(o["timestamp"]).getTime() : NaN;
     if (Number.isFinite(ts)) {
       if (firstTs === null) firstTs = ts;
-      lastTs = ts;
+      lastTs = ts; // Last record's ts, not max — mildly out-of-order writes only skew duration, never the payload counts.
     }
     const message = o["message"] as Record<string, unknown> | undefined;
 
@@ -184,10 +188,8 @@ async function saveCache(cache: CacheFile): Promise<void> {
 }
 
 async function parseFile(path: string): Promise<SessionStats | null> {
-  const lines: string[] = [];
   const rl = createInterface({ input: createReadStream(path, "utf8"), crlfDelay: Infinity });
-  for await (const line of rl) lines.push(line);
-  return parseSessionLines(lines);
+  return parseSessionLines(rl);
 }
 
 /** Collect insights for sessions modified within the window. Cache makes
@@ -227,6 +229,7 @@ export async function collectInsights(): Promise<InsightsPayload | null> {
         try {
           stats = await parseFile(full);
         } catch {
+          // File vanished between stat and read → catch stores null; pruned next run.
           stats = null;
         }
         cache.files[full] = { size: st.size, mtimeMs: st.mtimeMs, stats };

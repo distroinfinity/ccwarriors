@@ -4,7 +4,7 @@ import { parseSessionLines, aggregateSessions, type SessionStats } from "../src/
 const line = (o: object) => JSON.stringify(o);
 
 describe("parseSessionLines", () => {
-  it("counts prompts, plan mode, interrupts, tools", () => {
+  it("counts prompts, plan mode, interrupts, tools", async () => {
     const lines = [
       line({ type: "user", message: { content: "fix the bug in auth" }, timestamp: "2026-06-07T22:10:00.000Z" }),
       line({ type: "assistant", message: { content: [{ type: "tool_use", name: "Read" }, { type: "tool_use", name: "Grep" }] }, timestamp: "2026-06-07T22:10:05.000Z" }),
@@ -15,7 +15,7 @@ describe("parseSessionLines", () => {
       line({ type: "user", isSidechain: true, message: { content: "subagent prompt — not a user prompt" }, timestamp: "2026-06-07T22:13:30.000Z" }),
       line({ type: "user", isMeta: true, message: { content: "meta" }, timestamp: "2026-06-07T22:13:40.000Z" }),
     ];
-    const s = parseSessionLines(lines)!;
+    const s = (await parseSessionLines(lines))!;
     expect(s.prompts).toBe(2);
     expect(s.interrupts).toBe(1);
     expect(s.usedPlanMode).toBe(true);
@@ -29,8 +29,20 @@ describe("parseSessionLines", () => {
     expect(s.wordBuckets["1-5"]).toBe(1); // "fix the bug in auth" → 5 words
   });
 
-  it("returns null for empty/attachment-only files", () => {
-    expect(parseSessionLines([line({ type: "file-history-snapshot" })])).toBeNull();
+  it("returns null for empty/attachment-only files", async () => {
+    expect(await parseSessionLines([line({ type: "file-history-snapshot" })])).toBeNull();
+  });
+
+  it("joins only string text blocks across a multi-block prompt", async () => {
+    const s = (await parseSessionLines([
+      line({
+        type: "user",
+        message: { content: [{ type: "text", text: "two words" }, { type: "text" }, { type: "image" }] },
+        timestamp: "2026-06-07T10:00:00.000Z",
+      }),
+    ]))!;
+    expect(s.prompts).toBe(1);
+    expect(s.wordBuckets["1-5"]).toBe(1); // "two words" — no "undefined" inflation
   });
 });
 
