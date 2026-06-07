@@ -28,7 +28,7 @@ Five axes, all computed deterministically from `~/.claude/projects/**/*.jsonl` s
 
 | Axis | Measures | Raw inputs |
 |---|---|---|
-| Planning | think-before-strike | plan-mode turn %, explore-tool calls (Read/Grep/Glob) before first Edit/Write per session |
+| Planning | think-before-strike | plan-mode session %, explore-tool calls (Read/Grep/Glob) before first Edit/Write per session |
 | Autonomy | how far agents run unsupervised | avg agent turns between user messages; interrupt/abort rate (inverted) |
 | Steering | command style | prompts per session, short-prompt ratio (≤10 words), correction cadence (user messages sent immediately after interrupting/aborting an agent turn) |
 | Summoning | agent orchestration | subagent (Task/Agent) spawns per session, max parallel agents, concurrent sessions |
@@ -99,7 +99,7 @@ Extraction is **off by default for everyone**. The autosync daemon is headless, 
     "windowDays": 40,
     "sessions": 142,
     "promptWordHistogram": {"1-5": 310, "6-10": 220, "11-25": 90, "26+": 41},
-    "planModeTurnsPct": 14.2,
+    "planModeSessionsPct": 14.2,
     "exploreBeforeEditRatio": 0.61,
     "avgTurnsBetweenUserMsgs": 9.3,
     "interruptsPer100Turns": 6.1,
