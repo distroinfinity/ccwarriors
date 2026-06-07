@@ -101,38 +101,44 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
   button:hover,a.btn:hover{background:#C2683E;color:#fff}
 </style></head><body>
 <h1>Outreach queue · ${DATE}</h1>
-<div class="sub">${items.length} reachable targets of ${dataset.length} viberank users · copy, open, paste, send. Checkbox saves locally.</div>
-<div class="filters">
-  <button class="on" onclick="filt('all',this)">all</button>
-  <button onclick="filt('todo',this)">to do</button>
-  <button onclick="filt('x',this)">has x</button>
-  <button onclick="filt('emailonly',this)">email only</button>
-</div>
-${items
-  .map((t, i) => {
-    const emailOnly = t.contacts.length && t.contacts.every((c) => c.type === "email");
-    const hasX = t.contacts.some((c) => c.type === "x");
-    return `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}" data-x="${hasX}" data-eo="${emailOnly}">
-  <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank} · ${usd(t.spend)}` : ""}${t.agentSent ? " · emailed by agent" : ""}</span>
-  <label><input type="checkbox" ${t.agentSent ? "checked " : ""}onchange="mark('${esc(t.github)}',${i},this.checked)"> sent</label></div>
+<div class="sub">${items.length} reachable · ${dataset.length} viberank users total · checkbox saves locally</div>
+
+${(() => {
+  const dmItems   = items.filter((t) => t.contacts.some((c) => c.type === "x" || c.type === "linkedin"));
+  const emlItems  = items.filter((t) => !t.contacts.some((c) => c.type === "x" || c.type === "linkedin"));
+  const dmTodo    = dmItems.filter((t) => !t.agentSent).length;
+  const emlTodo   = emlItems.filter((t) => !t.agentSent).length;
+
+  const card = (t, i) => {
+    const isEmailOnly = !t.contacts.some((c) => c.type === "x" || c.type === "linkedin");
+    return `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}">
+  <div class="hd"><span>${esc(t.name)}${t.kind === "viberank" ? ` · #${t.vrank} · ${usd(t.spend)}` : ""}${t.agentSent ? " · emailed ✓" : ""}</span>
+  <label><input type="checkbox" ${t.agentSent ? "checked " : ""}onchange="mark('${esc(t.github)}',${i},this.checked)"> done</label></div>
   <div class="meta">${t.contacts.map((c) => esc(c.label)).join(" · ")}${t.bio ? " · " + esc(t.bio) : ""}</div>
   <textarea id="x${i}">${esc(t.text)}</textarea>
   <div class="row">
     <button onclick="navigator.clipboard.writeText(document.getElementById('x${i}').value)">copy text</button>
-    ${t.contacts
-      .map((c) =>
+    ${t.contacts.map((c) =>
         c.type === "email"
           ? t.agentSent
-            ? `<button disabled style="opacity:.35;cursor:not-allowed" title="already emailed">email ✓</button>`
-            : `<button onclick="sendMail('${esc(c.url.replace("mailto:", ""))}',${i})">email</button>`
-          : `<a class="btn" href="${esc(c.url)}" target="_blank">${c.type}</a>`,
-      )
-      .join("\n    ")}
+            ? `<button disabled style="opacity:.35;cursor:not-allowed">email ✓</button>`
+            : `<button onclick="sendMail('${esc(c.url.replace("mailto:",""))}',${i})">email</button>`
+          : `<a class="btn" href="${esc(c.url)}" target="_blank">${c.type}</a>`
+      ).join(" ")}
     <a class="btn" href="https://github.com/${esc(t.github)}" target="_blank">github</a>
   </div>
 </div>`;
-  })
-  .join("\n")}
+  };
+
+  return `
+<h2 style="margin:28px 0 6px;font-size:16px">DM targets — X / LinkedIn &nbsp;<span style="font-weight:400;color:#8a8a82;font-size:13px">${dmTodo} to do of ${dmItems.length}</span></h2>
+<p style="color:#8a8a82;font-size:12px;margin-bottom:12px">click x or linkedin to open their profile, paste the text, send. tick done.</p>
+${dmItems.map(card).join("\n")}
+
+<h2 style="margin:36px 0 6px;font-size:16px">Email targets &nbsp;<span style="font-weight:400;color:#8a8a82;font-size:13px">${emlTodo} remaining of ${emlItems.length}</span></h2>
+<p style="color:#8a8a82;font-size:12px;margin-bottom:12px">greyed = already sent by agent. active email button = not yet sent.</p>
+${emlItems.map(card).join("\n")}`;
+})()}
 <script>
 const SUBJECT = "fellow dev - asking for feedback on a product";
 function sendMail(addr,i){
