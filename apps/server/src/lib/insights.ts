@@ -67,17 +67,19 @@ export function mergeInsights(payloads: InsightsPayload[]): MergedInsights {
     consented population grows. */
 export function calibratedAxes(m: MergedInsights): AxisScores {
   const shortPromptRatio = shortPromptShare(m);
+  // Integer scores: these render directly on the profile card.
+  const score = (n: number) => Math.round(clamp(n));
   return {
     // think-before-strike: plan mode share + exploring before editing
-    planning: clamp((m.planModeSessionsPct / 30) * 60 + m.exploreBeforeEditRatio * 40),
+    planning: score((m.planModeSessionsPct / 30) * 60 + m.exploreBeforeEditRatio * 40),
     // long unsupervised runs, few interrupts
-    autonomy: clamp((m.avgTurnsBetweenUserMsgs / 25) * 70 + (1 - clamp(m.interruptsPer100Turns, 0, 20) / 20) * 30),
+    autonomy: score((m.avgTurnsBetweenUserMsgs / 25) * 70 + (1 - clamp(m.interruptsPer100Turns, 0, 20) / 20) * 30),
     // short rapid orders, frequent course corrections
-    steering: clamp(shortPromptRatio * 60 + (clamp(m.interruptsPer100Turns, 0, 20) / 20) * 20 + clamp(promptsPerSessionProxy(m), 0, 20) * 1),
+    steering: score(shortPromptRatio * 60 + (clamp(m.interruptsPer100Turns, 0, 20) / 20) * 20 + clamp(promptsPerSessionProxy(m), 0, 20) * 1),
     // agent armies
-    summoning: clamp((m.subagentSpawnsPerSession / 3) * 70 + Math.min(30, m.maxParallelAgents * 6)),
+    summoning: score((m.subagentSpawnsPerSession / 3) * 70 + Math.min(30, m.maxParallelAgents * 6)),
     // raw throughput
-    velocity: clamp((sessionsPerDay(m) / 5) * 50 + (m.editToolCallsPerSession / 40) * 50),
+    velocity: score((sessionsPerDay(m) / 5) * 50 + (m.editToolCallsPerSession / 40) * 50),
   };
 }
 
