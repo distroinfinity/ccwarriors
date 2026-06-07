@@ -1,0 +1,19 @@
+CREATE TABLE IF NOT EXISTS "user_insights" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"user_id" uuid NOT NULL,
+	"machine_id" text NOT NULL,
+	"payload" jsonb NOT NULL,
+	"window_days" bigint DEFAULT 40 NOT NULL,
+	"captured_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "insights_consent" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "insights_visibility" text DEFAULT 'public' NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "archetype" text;--> statement-breakpoint
+DO $$ BEGIN
+ ALTER TABLE "user_insights" ADD CONSTRAINT "user_insights_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION
+ WHEN duplicate_object THEN null;
+END $$;
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "user_insights_user_machine" ON "user_insights" USING btree ("user_id","machine_id");
