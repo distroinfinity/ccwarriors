@@ -27,7 +27,7 @@ const html = readFileSync(QUEUE, "utf8");
 const sent = existsSync(SENT) ? JSON.parse(readFileSync(SENT, "utf8")) : {};
 
 // parse cards out of the queue html
-const cards = [...html.matchAll(/<div class="t" id="t(\d+)" data-key="([^"]+)">([\s\S]*?)<\/div>\n<\/div>/g)].map((m) => {
+const cards = [...html.matchAll(/<div class="t[^"]*" id="t(\d+)" data-key="([^"]+)"[^>]*>([\s\S]*?)<\/div>\n<\/div>/g)].map((m) => {
   const [, idx, key, body] = m;
   const unesc = (s) => s.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&amp;", "&");
   const text = unesc(body.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/)?.[1] ?? "");
