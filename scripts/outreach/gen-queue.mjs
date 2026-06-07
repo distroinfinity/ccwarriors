@@ -4,7 +4,8 @@
 //   node scripts/outreach/gen-queue.mjs
 //
 // Sources: viberank top N (public board, scraped once) + targets.json extras.
-// X handles resolved from GitHub profiles (twitter_username field).
+// Contact channels resolved from GitHub profiles (X, email, telegram, linkedin).
+// Targets with no reachable channel are dropped — no point drafting for them.
 // Output: scripts/outreach/queue-<date>.html — open in a browser, work top down.
 import { chromium } from "playwright";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -14,12 +15,11 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATE = new Date().toISOString().slice(0, 10);
-const VIBERANK_TOP_N = 30;
+const VIBERANK_TOP_N = 80; // scan deep; unreachable people get dropped anyway
 
-// ---- copy rules: simple, direct, zero shill. The product is a tool that
-// tracks and measures cost and throughput of AI coding tools. No hyphens,
-// no em dashes, no marketing words. Templates are deterministic on purpose.
-const BANNED = ["—", "–", "-", "check out", "excited", "thrilled", "amazing", "game changer", "revolutionary"];
+// ---- copy rules: fellow dev to fellow dev. Short, simple english, zero shill,
+// no hyphens, no em dashes, no marketing words. Deterministic on purpose.
+const BANNED = ["—", "–", "-", "check out", "excited", "thrilled", "amazing", "game changer", "revolutionary", "powerful", "seamless"];
 function lint(text) {
   for (const b of BANNED) {
     if (text.toLowerCase().includes(b)) throw new Error(`banned phrase "${b}" in: ${text}`);
@@ -33,20 +33,24 @@ async function ourTotals() {
   return { count: d.count, burned: Math.round(d.totals?.burned30d ?? 0), top: Math.round(d.entries?.[0]?.cost30d ?? 0) };
 }
 
-// Drafts: dev to dev, Manu's voice, ready to paste with line breaks included.
+// Short skeleton: hello, their number, what I built in one line, soft close.
 function draftViberank(t, ours) {
-  const openers = [
-    `saw you at #${t.vrank} on viberank with ${t.vspend} burned.`,
-    `noticed you rank #${t.vrank} on viberank, ${t.vspend} burned. solid numbers.`,
-    `you are #${t.vrank} on viberank with ${t.vspend} burned, so you clearly use these tools for real.`,
-  ];
+  const openers = t.vrank
+    ? [
+        `saw you at #${t.vrank} on viberank with ${t.vspend} burned.`,
+        `you are #${t.vrank} on viberank, ${t.vspend} burned. solid numbers.`,
+      ]
+    : [
+        `saw you on the viberank board with ${t.vspend} burned.`,
+        `noticed you on viberank, ${t.vspend} burned. solid numbers.`,
+      ];
   const middles = [
-    `I built ccwarriors.xyz, it tracks token usage and throughput across Claude Code, Codex and 13 other agents, same local data, one curl and you are on this board too.`,
-    `I built ccwarriors.xyz, it measures cost and throughput across 15 AI coding tools using the same local usage data viberank reads, so one curl puts you on both boards.`,
+    `I built ccwarriors.xyz, same idea but it counts all your agents, Claude Code, Codex and 13 more. same local data, one curl and you are on it.`,
+    `I built ccwarriors.xyz, it reads the same local data viberank does but counts every agent you use, not just Claude Code. one curl and you are on it.`,
   ];
   const closers = [
-    `no ask, your numbers would slot right in near the top. I would love for you to try it and give me your feedback if any!`,
-    `no pressure at all, just thought you might want your full numbers counted across all your tools. any feedback is gold at this stage!`,
+    `trying to get feedback from people who actually burn tokens. no pressure!`,
+    `early days, so feedback from real users like you helps a lot. no pressure!`,
   ];
   const text = [
     "hey,",
@@ -59,7 +63,6 @@ function draftViberank(t, ours) {
 }
 
 function draftManual(t, ours) {
-  // manual targets carry their own angle in targets.json
   return lint(
     t.draft
       .replaceAll("{count}", String(ours.count))
@@ -68,81 +71,127 @@ function draftManual(t, ours) {
   );
 }
 
-// ---- viberank scrape (one page load, read the rendered table) ----
+// ---- viberank scrape: homepage shows top 25 per view; union the time/sort
+// filter combos (All/7d/30d × Cost/Tokens) to surface more unique people. ----
 async function viberankTop(n) {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   await page.goto("https://www.viberank.app", { waitUntil: "networkidle" });
-  await page.waitForTimeout(3000);
-  const rows = await page.evaluate(() => {
-    // grab anything that looks like a leaderboard row: profile links + visible text
-    const out = [];
-    const links = document.querySelectorAll('a[href*="/profile/"], a[href^="/u/"], a[href*="github.com/"]');
-    const seen = new Set();
-    for (const a of links) {
-      const m = a.getAttribute("href")?.match(/(?:\/profile\/|\/u\/|github\.com\/)([\w-]+)/);
-      if (!m) continue;
-      const u = m[1];
-      if (seen.has(u) || ["sculptdotfun", "viberank"].includes(u)) continue;
-      seen.add(u);
-      const row = a.closest("tr, li, [class*=row], [class*=Row]") ?? a;
-      out.push({ github: u, rowText: (row.textContent ?? "").slice(0, 200) });
+  await page.waitForTimeout(2500);
+
+  const collect = () =>
+    page.evaluate(() => {
+      const out = [];
+      const links = document.querySelectorAll('a[href*="/profile/"], a[href^="/u/"], a[href*="github.com/"]');
+      const seen = new Set();
+      for (const a of links) {
+        const m = a.getAttribute("href")?.match(/(?:\/profile\/|\/u\/|github\.com\/)([\w-]+)/);
+        if (!m) continue;
+        const u = m[1];
+        if (seen.has(u) || ["sculptdotfun", "viberank"].includes(u)) continue;
+        seen.add(u);
+        const row = a.closest("tr, li, [class*=row], [class*=Row]") ?? a;
+        out.push({ github: u, rowText: (row.textContent ?? "").slice(0, 200) });
+      }
+      return out;
+    });
+
+  const byUser = new Map();
+  let canonicalOrder = []; // All × Cost view = the rank we quote
+  for (const time of ["All", "7d", "30d"]) {
+    for (const sort of ["Cost", "Tokens"]) {
+      try {
+        await page.getByText(time, { exact: true }).first().click();
+        await page.waitForTimeout(900);
+        await page.getByText(sort, { exact: true }).first().click();
+        await page.waitForTimeout(1200);
+      } catch {
+        continue;
+      }
+      const rows = await collect();
+      if (time === "All" && sort === "Cost") canonicalOrder = rows.map((r) => r.github);
+      for (const r of rows) if (!byUser.has(r.github)) byUser.set(r.github, r);
     }
-    return out;
-  });
+  }
   await browser.close();
-  return rows.slice(0, n).map((r, i) => {
+
+  const all = [...byUser.values()];
+  // canonical (All×Cost) ranks first, then everyone else in discovery order
+  all.sort((a, b) => {
+    const ia = canonicalOrder.indexOf(a.github);
+    const ib = canonicalOrder.indexOf(b.github);
+    return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+  });
+  return all.slice(0, n).map((r) => {
     const m = r.rowText.match(/\$([\d,]+)(?:\.\d+)?/);
-    const spend = m ? "$" + m[1] : "their tokens";
-    return { github: r.github, vrank: i + 1, vspend: spend };
+    const idx = canonicalOrder.indexOf(r.github);
+    return { github: r.github, vrank: idx === -1 ? null : idx + 1, vspend: m ? "$" + m[1] : "their tokens" };
   });
 }
 
-function githubProfile(login) {
+// ---- contact resolution: X > email > telegram > linkedin. None = dropped. ----
+function contactsFor(login) {
+  let u;
   try {
-    const raw = execFileSync("gh", ["api", `users/${login}`], { encoding: "utf8" });
-    const u = JSON.parse(raw);
-    return { x: u.twitter_username ?? null, name: u.name ?? login, bio: (u.bio ?? "").slice(0, 120) };
+    u = JSON.parse(execFileSync("gh", ["api", `users/${login}`], { encoding: "utf8" }));
   } catch {
-    return { x: null, name: login, bio: "" };
+    return { name: login, bio: "", contacts: [] };
   }
+  const contacts = [];
+  const blob = `${u.blog ?? ""} ${u.bio ?? ""}`;
+  if (u.twitter_username) contacts.push({ type: "x", label: `X DM @${u.twitter_username}`, url: `https://x.com/${u.twitter_username}` });
+  const xInBlob = blob.match(/(?:x|twitter)\.com\/(\w+)/);
+  if (!u.twitter_username && xInBlob) contacts.push({ type: "x", label: `X DM @${xInBlob[1]}`, url: `https://x.com/${xInBlob[1]}` });
+  if (u.email) contacts.push({ type: "email", label: u.email, url: `mailto:${u.email}` });
+  const tg = blob.match(/t\.me\/(\w+)/);
+  if (tg) contacts.push({ type: "telegram", label: `t.me/${tg[1]}`, url: `https://t.me/${tg[1]}` });
+  const li = blob.match(/linkedin\.com\/in\/([\w-]+)/);
+  if (li) contacts.push({ type: "linkedin", label: `linkedin/${li[1]}`, url: `https://www.linkedin.com/in/${li[1]}` });
+  return { name: u.name ?? login, bio: (u.bio ?? "").slice(0, 100), contacts };
 }
 
 // ---- build ----
 const ours = await ourTotals();
 console.log(`ccwarriors live: ${ours.count} devs, $${ours.burned} 30d`);
 
-const targets = [];
-console.log("scraping viberank top", VIBERANK_TOP_N, "…");
+console.log(`scraping viberank top ${VIBERANK_TOP_N}…`);
 const vr = await viberankTop(VIBERANK_TOP_N);
 console.log(`viberank rows found: ${vr.length}`);
+
+const targets = [];
+let dropped = 0;
 for (const [i, t] of vr.entries()) {
-  const gh = githubProfile(t.github);
-  targets.push({
-    kind: "viberank",
-    index: i,
-    github: t.github,
-    vrank: t.vrank,
-    vspend: t.vspend,
-    x: gh.x,
-    name: gh.name,
-    bio: gh.bio,
-  });
+  const c = contactsFor(t.github);
+  if (c.contacts.length === 0) {
+    dropped++;
+    continue; // nobody home: no X, no email, no telegram, no linkedin
+  }
+  targets.push({ kind: "viberank", index: targets.length, github: t.github, vrank: t.vrank, vspend: t.vspend, ...c });
 }
+console.log(`reachable: ${targets.length}, dropped (no contact channel): ${dropped}`);
 
 const manualPath = path.join(HERE, "targets.json");
 if (existsSync(manualPath)) {
   const manual = JSON.parse(readFileSync(manualPath, "utf8"));
-  for (const [i, t] of manual.entries()) targets.push({ kind: "manual", index: i, ...t });
+  for (const [i, t] of manual.entries()) {
+    targets.push({
+      kind: "manual",
+      index: i,
+      github: t.github,
+      name: t.name,
+      bio: "",
+      draft: t.draft,
+      contacts: [{ type: "x", label: `X DM @${t.x}`, url: `https://x.com/${t.x}` }],
+    });
+  }
 }
 
-const items = targets.map((t) => {
-  const text = t.kind === "viberank" ? draftViberank(t, ours) : draftManual(t, ours);
-  const profile = t.x ? `https://x.com/${t.x}` : `https://github.com/${t.github}`;
-  return { ...t, text, profile, sendVia: t.x ? `X DM @${t.x}` : "no X handle, GitHub only (skip or find handle)" };
-});
+const items = targets.map((t) => ({
+  ...t,
+  text: t.kind === "viberank" ? draftViberank(t, ours) : draftManual(t, ours),
+}));
 
-const esc = (s) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+const esc = (s) => String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
 const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach queue ${DATE}</title>
 <style>
   body{font-family:ui-monospace,monospace;background:#FAFAF8;color:#1c1c1a;max-width:860px;margin:30px auto;padding:0 16px}
@@ -151,23 +200,24 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
   .t.done{opacity:.35}
   .hd{display:flex;justify-content:space-between;align-items:center;font-weight:700}
   .meta{color:#8a8a82;font-size:12px;margin:4px 0 10px}
-  textarea{width:100%;height:180px;font:13px ui-monospace,monospace;border:1px solid #ddd;padding:8px;box-sizing:border-box}
-  .row{display:flex;gap:8px;margin-top:8px}
+  textarea{width:100%;height:170px;font:13px ui-monospace,monospace;border:1px solid #ddd;padding:8px;box-sizing:border-box}
+  .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
   button,a.btn{font:13px ui-monospace,monospace;border:1.5px solid #1c1c1a;background:#fff;padding:6px 12px;cursor:pointer;text-decoration:none;color:#1c1c1a}
   button:hover,a.btn:hover{background:#C2683E;color:#fff}
 </style></head><body>
 <h1>Outreach queue · ${DATE}</h1>
-<div class="sub">${items.length} targets · copy, open, paste, send. Checkbox marks done (saved locally). Machines drafted, you send.</div>
+<div class="sub">${items.length} reachable targets (${dropped} dropped, no contact channel) · copy, open, paste, send. Checkbox saves locally.</div>
 ${items
   .map(
     (t, i) => `<div class="t" id="t${i}" data-key="${esc(t.github)}">
   <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank}` : ""}</span>
   <label><input type="checkbox" onchange="mark('${esc(t.github)}',${i},this.checked)"> sent</label></div>
-  <div class="meta">${esc(t.sendVia)}${t.bio ? " · " + esc(t.bio) : ""}</div>
+  <div class="meta">${t.contacts.map((c) => esc(c.label)).join(" · ")}${t.bio ? " · " + esc(t.bio) : ""}</div>
   <textarea id="x${i}">${esc(t.text)}</textarea>
   <div class="row">
     <button onclick="navigator.clipboard.writeText(document.getElementById('x${i}').value)">copy text</button>
-    <a class="btn" href="${t.profile}" target="_blank">open profile</a>
+    ${t.contacts.map((c) => `<a class="btn" href="${esc(c.url)}" target="_blank">${c.type}</a>`).join("\n    ")}
+    <a class="btn" href="https://github.com/${esc(t.github)}" target="_blank">github</a>
   </div>
 </div>`,
   )
@@ -182,4 +232,4 @@ document.querySelectorAll('.t').forEach(el=>{const k=el.getAttribute('data-key')
 
 const out = path.join(HERE, `queue-${DATE}.html`);
 writeFileSync(out, html);
-console.log(`queue: ${out} (${items.length} targets, ${items.filter((t) => t.x).length} with X handles)`);
+console.log(`queue: ${out} (${items.length} targets)`);
