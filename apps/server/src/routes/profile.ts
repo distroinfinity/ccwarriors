@@ -71,7 +71,7 @@ export function profileRoute(deps: ProfileDeps) {
     // Insights: locked unless consented AND (public OR owner) AND enough sessions.
     const merged = user ? deps.insightsStore.merged(user.id) : null;
     let insights:
-      | { locked: true; reason: "no_consent" | "private" | "forging" }
+      | { locked: true; reason: "no_consent" | "forging" }
       | {
           locked: false;
           scoresArePercentiles: boolean;
@@ -85,7 +85,9 @@ export function profileRoute(deps: ProfileDeps) {
     if (!user?.insightsConsent || !merged) {
       insights = { locked: true, reason: "no_consent" };
     } else if (user.insightsVisibility === "private" && !isOwner) {
-      insights = { locked: true, reason: "private" };
+      // Indistinguishable from never-consented: visitors must not learn that
+      // this warrior opted in and then chose to hide (privacy oracle).
+      insights = { locked: true, reason: "no_consent" };
     } else if (merged.sessions < MIN_SESSIONS) {
       insights = { locked: true, reason: "forging" };
     } else {
@@ -113,6 +115,7 @@ export function profileRoute(deps: ProfileDeps) {
 
     // Owner responses are personalized — never let a shared cache serve them.
     c.header("Cache-Control", isOwner ? "private, no-store" : "public, max-age=30");
+    if (!isOwner) c.header("Vary", "Cookie");
     return c.json({
       login,
       avatarUrl: user?.avatarUrl ?? entry?.avatarUrl ?? "",
@@ -127,7 +130,11 @@ export function profileRoute(deps: ProfileDeps) {
       memberSince: user?.createdAt?.toISOString() ?? null,
       lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,
       orgs,
-      rhythm: { days: rhythm.days, currentStreak: rhythm.currentStreak, longestStreak: rhythm.longestStreak },
+      rhythm: {
+        days: rhythm.days.filter((d) => d.day >= new Date(Date.now() - 53 * 7 * 86_400_000).toISOString().slice(0, 10)),
+        currentStreak: rhythm.currentStreak,
+        longestStreak: rhythm.longestStreak,
+      },
       efficiency,
       insights,
       ...(isOwner
