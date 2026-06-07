@@ -152,7 +152,6 @@ async function cmdSync(): Promise<void> {
   }
 
   markUpdateSuccess();
-  await maybePushInsights(config.token, machineId, result.data.insightsRequested, true);
   const data = result.data;
 
   const tier = data.tier ?? "—";
@@ -171,6 +170,9 @@ async function cmdSync(): Promise<void> {
     console.log(dim("   tip: `ccwarriors watch` keeps your rank fresh while it runs"));
   }
   console.log();
+
+  // After the user has their output: extraction is fs-bound and can take seconds cold.
+  await maybePushInsights(config.token, machineId, result.data.insightsRequested, true);
 
   // After a good sync (and after the user has their output): pick up a newer
   // build if one shipped. Cron/manual runs use it on their next invocation.
@@ -263,6 +265,11 @@ async function cmdInsights(args: string[]): Promise<void> {
     }
     console.log(green("Insights off — server-side behavioral data deleted."));
     return;
+  }
+  if (sub !== undefined && sub !== "status") {
+    console.error(red(`Unknown insights subcommand: ${sub}`));
+    console.log("usage: ccwarriors insights on|off|status|--dry-run");
+    process.exit(1);
   }
   const status = await getInsightsConsent(config.token);
   console.log(`insights: ${status ? (status.consent ? "on" : "off") : "unknown (network error)"}`);
