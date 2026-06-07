@@ -30,6 +30,8 @@ export function ogRoute(db: DB, store: LeaderboardStore, webBaseUrl: string) {
       ? `Rank #${rank} on the AI coding leaderboard. See the archetype, habits, and rhythm.`
       : `Warrior profile on the AI coding leaderboard.`;
     const url = `${webBaseUrl}/u/${encodeURIComponent(login)}`;
+    // Crawlers re-fetch on every unfurl of a viral share; let them cache.
+    c.header("Cache-Control", "public, max-age=300, stale-while-revalidate=3600");
     return c.html(`<!doctype html>
 <html><head>
 <meta charset="utf-8">
