@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import type { DB } from "./db/index.js";
 import { LeaderboardStore } from "./lib/leaderboard-store.js";
+import type { InsightsStore } from "./lib/insights-store.js";
 import { ingestRoute } from "./routes/ingest.js";
 import { leaderboardRoute } from "./routes/leaderboard.js";
 import { authRoute } from "./routes/auth.js";
@@ -12,10 +13,12 @@ import { telemetryRoute, captureEvent } from "./routes/telemetry.js";
 import { adminRoute } from "./routes/admin.js";
 import { donateRoute } from "./routes/donate.js";
 import { sponsorsRoute } from "./routes/sponsors.js";
+import { insightsRoute } from "./routes/insights.js";
 
 export interface AppDeps {
   db: DB;
   store: LeaderboardStore;
+  insightsStore?: InsightsStore;
   onIngest: () => void;
   corsOrigin?: string;
   auth?: {
@@ -87,6 +90,12 @@ export function createApp(deps?: AppDeps) {
     app.route("/leaderboard", leaderboardRoute(deps.store));
     app.route("/admin", adminRoute(deps.db, deps.store, deps.onIngest));
     app.route("/sponsors", sponsorsRoute(deps.db));
+    if (deps.insightsStore) {
+      app.route(
+        "/insights",
+        insightsRoute({ db: deps.db, insightsStore: deps.insightsStore, sessionSecret: deps.auth?.clientSecret }),
+      );
+    }
     if (deps.auth) {
       app.route("/", authRoute(deps.db, deps.auth));
     }

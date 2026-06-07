@@ -50,7 +50,7 @@ export interface RawIngestPayload {
 export type IngestPayload = LegacyIngestPayload | RawIngestPayload;
 
 export type IngestResult =
-  | { ok: true; tier: string; rank30d: number | null; rankAllTime: number | null }
+  | { ok: true; tier: string; rank30d: number | null; rankAllTime: number | null; insightsRequested: boolean }
   | { ok: false; error: "unauthorized" | "implausible" | "rate_limited" };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -471,5 +471,6 @@ async function finalize(
     tier,
     rank30d: store.getRank("30d", user.id),
     rankAllTime: store.getRank("allTime", user.id),
+    insightsRequested: user.insightsConsent === true,
   };
 }

@@ -2,8 +2,9 @@ import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
 import { parseConfig } from "./config.js";
 import { createDbFromEnv } from "./db/index.js";
-import { users, orgMembers } from "./db/schema.js";
+import { users, orgMembers, userInsights } from "./db/schema.js";
 import { LeaderboardStore } from "./lib/leaderboard-store.js";
+import { InsightsStore } from "./lib/insights-store.js";
 import { createApp } from "./app.js";
 import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, startSimulation } from "./seed.js";
@@ -14,6 +15,7 @@ async function main() {
   const cfg = parseConfig(process.env);
   const db = await createDbFromEnv(cfg.databaseUrl);
   const store = new LeaderboardStore();
+  const insightsStore = new InsightsStore();
 
   // Local/demo only — never enabled in production.
   if (cfg.seedDemo) {
@@ -69,6 +71,9 @@ async function main() {
         orgs: orgsByUser.get(u.id) ?? [],
       });
     }
+    // Warm insights (consented users only — revokes deleted their rows).
+    const insightRows = await db.select().from(userInsights);
+    for (const r of insightRows) insightsStore.upsert(r.userId, r.machineId, r.payload);
   } catch (err) {
     console.warn("store warm-up skipped:", (err as Error).message);
   }
@@ -129,6 +134,7 @@ async function main() {
   const app = createApp({
     db,
     store,
+    insightsStore,
     onIngest: broadcast,
     corsOrigin: cfg.corsOrigin,
     auth: authDeps,
