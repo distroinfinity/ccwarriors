@@ -1,0 +1,14 @@
+[
+  {
+    "github": "ThePrimeagen",
+    "name": "ThePrimeagen",
+    "x": "ThePrimeagen",
+    "draft": "hey, built ccwarriors.xyz, tracks token usage across Claude Code, Codex and 13 other agents on a live board. {count} devs, {burned} burned in 30 days, top dev at {top} alone. figured the economics of this might be your kind of content. raw token counts only, open source."
+  },
+  {
+    "github": "simonw",
+    "name": "Simon Willison",
+    "x": "simonw",
+    "draft": "hi Simon, built ccwarriors.xyz, a live board tracking token usage across Claude Code, Codex and 13 other coding agents, for comparing AI coding throughput globally or org wide. thought the data handling might interest you: the CLI sends raw per tool per day per model token counts only, never prompts or code, server prices everything from public model pricing. details at ccwarriors.xyz/how. {count} devs, {burned} burned in the last 30 days. happy to share aggregate data."
+  }
+]

@@ -12,5 +12,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "verify": "pnpm -r test && pnpm -r typecheck && pnpm -r build"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }
