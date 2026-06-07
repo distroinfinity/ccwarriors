@@ -7,7 +7,7 @@ import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { InsightsStore } from "./lib/insights-store.js";
 import { createApp } from "./app.js";
 import { attachBroadcast } from "./ws/broadcast.js";
-import { seedDemo, seedDemoDonations, startSimulation } from "./seed.js";
+import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
 import { startFxRefresh } from "./lib/fx.js";
 
@@ -21,6 +21,7 @@ async function main() {
   if (cfg.seedDemo) {
     seedDemo(store);
     await seedDemoDonations(db);
+    await seedDemoProfiles(db);
   }
 
   // Dev-only: a DB-backed user with a known CLI token, so the real CLI and
