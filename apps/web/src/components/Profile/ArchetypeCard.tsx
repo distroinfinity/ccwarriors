@@ -75,7 +75,7 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
         <>
           <p>Your archetype is locked. Unlock reads aggregate counts from your local sessions. Transcripts never leave your machine.</p>
           <button className="btn x" onClick={unlock} disabled={busy}>
-            {busy ? "Unlocking..." : "Unlock your archetype"}
+            {busy ? "Unlocking…" : "Unlock your archetype"}
           </button>
           <p className="arch-hint">Appears after your next sync. Run ccwarriors sync to skip the wait.</p>
         </>
@@ -165,7 +165,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
         <div className="arch-actions">
           <button className="btn x" onClick={shareOnX}>Share on X</button>
           <button className="btn g" onClick={downloadCard} disabled={exporting}>
-            {exporting ? "Exporting..." : "Download card"}
+            {exporting ? "Exporting…" : "Download card"}
           </button>
         </div>
       )}
