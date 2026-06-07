@@ -15,6 +15,7 @@ import { PixelGlyph } from "./components/PixelGlyph";
 import { HowItWorks } from "./components/HowItWorks";
 import { Legal } from "./components/Legal";
 import { Sponsor } from "./components/Sponsor/Sponsor";
+import { ProfilePage } from "./components/Profile/ProfilePage";
 import { API_HTTP } from "./api";
 import type { Entry } from "./types";
 
@@ -25,6 +26,10 @@ const HIDE_LEGAL = true;
 const path = window.location.pathname.replace(/\/+$/, "");
 const isHow = path === "/how";
 const isLegal = !HIDE_LEGAL && path === "/legal";
+const PROFILE_LOGIN: string | null = (() => {
+  const m = path.match(/^\/u\/([A-Za-z0-9-]{1,39})$/);
+  return m ? m[1]! : null;
+})();
 if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
 
@@ -168,7 +173,9 @@ export default function App() {
           </div>
         )}
         <main className="main">
-          {isHow ? (
+          {PROFILE_LOGIN ? (
+            <ProfilePage login={PROFILE_LOGIN} />
+          ) : isHow ? (
             <HowItWorks />
           ) : isLegal ? (
             <Legal />
@@ -211,7 +218,7 @@ export default function App() {
             </>
           )}
         </main>
-        {!isHow && !isLegal && <Sponsor />}
+        {!isHow && !isLegal && !PROFILE_LOGIN && <Sponsor />}
         <footer>
           <div className="fleft">
             <div className="fbrand">
