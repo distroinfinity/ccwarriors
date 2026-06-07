@@ -42,6 +42,12 @@ describe("mergeInsights", () => {
     expect(m.maxParallelAgents).toBe(6);
     expect(m.promptWordHistogram["1-5"]).toBe(200);
   });
+  it("returns a zero payload for an empty array", () => {
+    const m = mergeInsights([]);
+    expect(m.sessions).toBe(0);
+    expect(m.maxParallelAgents).toBe(0);
+    expect(Number.isFinite(m.longestSessionMinutes)).toBe(true);
+  });
 });
 
 describe("calibratedAxes", () => {

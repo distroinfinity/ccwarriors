@@ -20,6 +20,22 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** Merge per-machine payloads: rates weighted by sessions, counts summed, maxes maxed. */
 export function mergeInsights(payloads: InsightsPayload[]): MergedInsights {
+  if (payloads.length === 0) {
+    return {
+      windowDays: 0,
+      sessions: 0,
+      promptWordHistogram: { "1-5": 0, "6-10": 0, "11-25": 0, "26+": 0 },
+      planModeSessionsPct: 0,
+      exploreBeforeEditRatio: 0,
+      avgTurnsBetweenUserMsgs: 0,
+      interruptsPer100Turns: 0,
+      subagentSpawnsPerSession: 0,
+      maxParallelAgents: 0,
+      hourHistogram: Array(24).fill(0) as number[],
+      editToolCallsPerSession: 0,
+      longestSessionMinutes: 0,
+    };
+  }
   if (payloads.length === 1) return payloads[0]!;
   const sessions = payloads.reduce((s, p) => s + p.sessions, 0) || 1;
   const w = (f: (p: InsightsPayload) => number) =>
@@ -81,14 +97,14 @@ function promptsPerSessionProxy(m: MergedInsights): number {
   return (h["1-5"] + h["6-10"] + h["11-25"] + h["26+"]) / Math.max(1, m.sessions);
 }
 
-/** Percentile of this user's calibrated axis values within the population. */
+/** Percentile of this user's calibrated axis values within the population. Caller passes the FULL consented population (including this user) and gates on PERCENTILE_MIN_POPULATION. */
 export function percentileAxes(me: MergedInsights, population: MergedInsights[]): AxisScores {
   const mine = calibratedAxes(me);
   const all = population.map(calibratedAxes);
   const out = {} as AxisScores;
   for (const axis of AXES) {
     const below = all.filter((a) => a[axis] < mine[axis]).length;
-    out[axis] = Math.round((below / Math.max(1, all.length - 1 || 1)) * 100);
+    out[axis] = Math.round((below / Math.max(1, all.length - 1)) * 100);
   }
   return out;
 }
