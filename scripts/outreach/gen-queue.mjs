@@ -216,13 +216,25 @@ ${items
   <textarea id="x${i}">${esc(t.text)}</textarea>
   <div class="row">
     <button onclick="navigator.clipboard.writeText(document.getElementById('x${i}').value)">copy text</button>
-    ${t.contacts.map((c) => `<a class="btn" href="${esc(c.url)}" target="_blank">${c.type}</a>`).join("\n    ")}
+    ${t.contacts
+      .map((c) =>
+        c.type === "email"
+          ? // mailto with subject + the current textarea content as body
+            `<button onclick="sendMail('${esc(c.url.replace("mailto:", ""))}',${i})">email</button>`
+          : `<a class="btn" href="${esc(c.url)}" target="_blank">${c.type}</a>`,
+      )
+      .join("\n    ")}
     <a class="btn" href="https://github.com/${esc(t.github)}" target="_blank">github</a>
   </div>
 </div>`,
   )
   .join("\n")}
 <script>
+const SUBJECT = "fellow dev - asking for feedback on a product";
+function sendMail(addr,i){
+  const body = document.getElementById('x'+i).value;
+  location.href = 'mailto:'+addr+'?subject='+encodeURIComponent(SUBJECT)+'&body='+encodeURIComponent(body);
+}
 // sent-state keyed by github login so regenerating the queue never loses progress
 function mark(key,i,v){document.getElementById('t'+i).classList.toggle('done',v);const s=JSON.parse(localStorage.qk||'{}');s[key]=v;localStorage.qk=JSON.stringify(s);}
 const s=JSON.parse(localStorage.qk||'{}');
