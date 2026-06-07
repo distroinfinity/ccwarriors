@@ -13,16 +13,18 @@ function refQuery(): string {
   }
 }
 
-const COMMANDS: Record<Os, { label: string; prompt: string; cmd: (ref: string) => string }> = {
+const COMMANDS: Record<Os, { label: string; prompt: string; display: string; copy: (ref: string) => string }> = {
   unix: {
     label: "macOS / Linux",
     prompt: "$",
-    cmd: (ref) => `curl -fsSL https://api.ccwarriors.xyz/install.sh${ref} | bash`,
+    display: "curl -fsSL https://api.ccwarriors.xyz/install.sh | bash",
+    copy: (ref) => `curl -fsSL https://api.ccwarriors.xyz/install.sh${ref} | bash`,
   },
   win: {
     label: "Windows",
     prompt: ">",
-    cmd: (ref) => `irm https://api.ccwarriors.xyz/install.ps1${ref} | iex`,
+    display: "irm https://api.ccwarriors.xyz/install.ps1 | iex",
+    copy: (ref) => `irm https://api.ccwarriors.xyz/install.ps1${ref} | iex`,
   },
 };
 
@@ -39,11 +41,11 @@ function detectOs(): Os {
 export function InstallBlock() {
   const [os, setOs] = useState<Os>(detectOs);
   const [copied, setCopied] = useState(false);
-  const { prompt } = COMMANDS[os];
-  const cmd = COMMANDS[os].cmd(refQuery());
+  const { prompt, display } = COMMANDS[os];
 
   const copy = () => {
-    navigator.clipboard?.writeText(cmd);
+    // displayed URL is always clean; copied text carries the attribution ref
+    navigator.clipboard?.writeText(COMMANDS[os].copy(refQuery()));
     setCopied(true);
     setTimeout(() => setCopied(false), 1400);
   };
@@ -59,7 +61,7 @@ export function InstallBlock() {
       </div>
       <div className="install">
         <code>
-          <span className="p">{prompt}</span> {cmd}
+          <span className="p">{prompt}</span> {display}
         </code>
         <button onClick={copy}>{copied ? "Copied" : "Copy"}</button>
       </div>
