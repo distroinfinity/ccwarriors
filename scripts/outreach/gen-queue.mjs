@@ -19,7 +19,7 @@ const VIBERANK_TOP_N = 30;
 // ---- copy rules: simple, direct, zero shill. The product is a tool that
 // tracks and measures cost and throughput of AI coding tools. No hyphens,
 // no em dashes, no marketing words. Templates are deterministic on purpose.
-const BANNED = ["—", "–", "-", "check out", "excited", "thrilled", "would love", "amazing", "game changer", "revolutionary"];
+const BANNED = ["—", "–", "-", "check out", "excited", "thrilled", "amazing", "game changer", "revolutionary"];
 function lint(text) {
   for (const b of BANNED) {
     if (text.toLowerCase().includes(b)) throw new Error(`banned phrase "${b}" in: ${text}`);
@@ -33,14 +33,29 @@ async function ourTotals() {
   return { count: d.count, burned: Math.round(d.totals?.burned30d ?? 0), top: Math.round(d.entries?.[0]?.cost30d ?? 0) };
 }
 
-// Drafts. {them} = display handle, {vrank} = their viberank rank, {vspend} = their viberank spend.
+// Drafts: dev to dev, Manu's voice, ready to paste with line breaks included.
 function draftViberank(t, ours) {
-  const variants = [
-    `hey, saw you at #${t.vrank} on viberank with ${t.vspend} burned. built ccwarriors.xyz, it tracks token usage and throughput across Claude Code, Codex and 13 other agents, same local data, one curl and you are on this board too. ${ours.count} devs on it, $${ours.burned.toLocaleString("en-US")} tracked in 30 days. no ask, your numbers would slot right in near the top.`,
-    `hey, you rank #${t.vrank} on viberank. built ccwarriors.xyz, it measures cost and throughput across 15 AI coding tools, not just Claude Code. reads the same local usage data, so one curl puts you on both boards. raw token counts only, open source.`,
-    `hey, noticed your viberank profile, #${t.vrank} at ${t.vspend}. ccwarriors.xyz does the same measurement across Claude Code, Codex and 13 more agents, plus org boards for teams. one curl, same local data, both boards stay in sync. figured you would want your full numbers counted.`,
+  const openers = [
+    `saw you at #${t.vrank} on viberank with ${t.vspend} burned.`,
+    `noticed you rank #${t.vrank} on viberank, ${t.vspend} burned. solid numbers.`,
+    `you are #${t.vrank} on viberank with ${t.vspend} burned, so you clearly use these tools for real.`,
   ];
-  return lint(variants[t.index % variants.length]);
+  const middles = [
+    `I built ccwarriors.xyz, it tracks token usage and throughput across Claude Code, Codex and 13 other agents, same local data, one curl and you are on this board too.`,
+    `I built ccwarriors.xyz, it measures cost and throughput across 15 AI coding tools using the same local usage data viberank reads, so one curl puts you on both boards.`,
+  ];
+  const closers = [
+    `no ask, your numbers would slot right in near the top. I would love for you to try it and give me your feedback if any!`,
+    `no pressure at all, just thought you might want your full numbers counted across all your tools. any feedback is gold at this stage!`,
+  ];
+  const text = [
+    "hey,",
+    openers[t.index % openers.length],
+    middles[t.index % middles.length],
+    closers[t.index % closers.length],
+    "best,\nManu",
+  ].join("\n\n");
+  return lint(text);
 }
 
 function draftManual(t, ours) {
@@ -136,7 +151,7 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
   .t.done{opacity:.35}
   .hd{display:flex;justify-content:space-between;align-items:center;font-weight:700}
   .meta{color:#8a8a82;font-size:12px;margin:4px 0 10px}
-  textarea{width:100%;height:96px;font:13px ui-monospace,monospace;border:1px solid #ddd;padding:8px;box-sizing:border-box}
+  textarea{width:100%;height:180px;font:13px ui-monospace,monospace;border:1px solid #ddd;padding:8px;box-sizing:border-box}
   .row{display:flex;gap:8px;margin-top:8px}
   button,a.btn{font:13px ui-monospace,monospace;border:1.5px solid #1c1c1a;background:#fff;padding:6px 12px;cursor:pointer;text-decoration:none;color:#1c1c1a}
   button:hover,a.btn:hover{background:#C2683E;color:#fff}
@@ -145,9 +160,9 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
 <div class="sub">${items.length} targets · copy, open, paste, send. Checkbox marks done (saved locally). Machines drafted, you send.</div>
 ${items
   .map(
-    (t, i) => `<div class="t" id="t${i}">
+    (t, i) => `<div class="t" id="t${i}" data-key="${esc(t.github)}">
   <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank}` : ""}</span>
-  <label><input type="checkbox" onchange="mark(${i},this.checked)"> sent</label></div>
+  <label><input type="checkbox" onchange="mark('${esc(t.github)}',${i},this.checked)"> sent</label></div>
   <div class="meta">${esc(t.sendVia)}${t.bio ? " · " + esc(t.bio) : ""}</div>
   <textarea id="x${i}">${esc(t.text)}</textarea>
   <div class="row">
@@ -158,8 +173,10 @@ ${items
   )
   .join("\n")}
 <script>
-function mark(i,v){document.getElementById('t'+i).classList.toggle('done',v);const s=JSON.parse(localStorage.q||'{}');s[i]=v;localStorage.q=JSON.stringify(s);}
-const s=JSON.parse(localStorage.q||'{}');for(const k in s){if(s[k]){const el=document.getElementById('t'+k);if(el){el.classList.add('done');el.querySelector('input').checked=true}}}
+// sent-state keyed by github login so regenerating the queue never loses progress
+function mark(key,i,v){document.getElementById('t'+i).classList.toggle('done',v);const s=JSON.parse(localStorage.qk||'{}');s[key]=v;localStorage.qk=JSON.stringify(s);}
+const s=JSON.parse(localStorage.qk||'{}');
+document.querySelectorAll('.t').forEach(el=>{const k=el.getAttribute('data-key');if(s[k]){el.classList.add('done');el.querySelector('input').checked=true}});
 </script>
 </body></html>`;
 
