@@ -14,6 +14,7 @@ import { adminRoute } from "./routes/admin.js";
 import { donateRoute } from "./routes/donate.js";
 import { sponsorsRoute } from "./routes/sponsors.js";
 import { insightsRoute } from "./routes/insights.js";
+import { profileRoute } from "./routes/profile.js";
 
 export interface AppDeps {
   db: DB;
@@ -94,6 +95,10 @@ export function createApp(deps?: AppDeps) {
       app.route(
         "/insights",
         insightsRoute({ db: deps.db, insightsStore: deps.insightsStore, sessionSecret: deps.auth?.clientSecret }),
+      );
+      app.route(
+        "/profile",
+        profileRoute({ db: deps.db, store: deps.store, insightsStore: deps.insightsStore, sessionSecret: deps.auth?.clientSecret }),
       );
     }
     if (deps.auth) {
