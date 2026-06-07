@@ -110,9 +110,11 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
 </div>
 ${items
   .map((t, i) => {
+    const hasEmail = t.contacts.some((c) => c.type === "email");
     const hasXOrLi = t.contacts.some((c) => c.type === "x" || c.type === "linkedin");
-    const emailOnly = t.contacts.length && t.contacts.every((c) => c.type === "email");
-    return `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}" data-dm="${hasXOrLi}" data-eo="${emailOnly}">
+    const dmOnly = hasXOrLi && !hasEmail; // X/LinkedIn with NO email — requires manual DM
+    const emailOnly = t.contacts.length && !hasXOrLi;
+    return `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}" data-dm="${dmOnly}" data-eo="${emailOnly}">
   <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank} · ${usd(t.spend)}` : ""}${t.agentSent ? " · emailed ✓" : ""}</span>
   <label><input type="checkbox" ${t.agentSent ? "checked " : ""}onchange="mark('${esc(t.github)}',${i},this.checked)"> done</label></div>
   <div class="meta">${t.contacts.map((c) => esc(c.label)).join(" · ")}${t.bio ? " · " + esc(t.bio) : ""}</div>
