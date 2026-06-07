@@ -43,3 +43,22 @@ describe("computeRhythm", () => {
     expect(r.days.length).toBe(4);
   });
 });
+
+describe("edge cases", () => {
+  it("returns nulls on an empty window", () => {
+    const e = computeEfficiency([], "2026-05-08");
+    expect(e.grade).toBeNull();
+    expect(e.cacheReadRatio).toBeNull();
+    expect(e.tokensPerActiveDay).toBeNull();
+  });
+  it("tolerates null modelBreakdown rows", () => {
+    const e = computeEfficiency([{ day: "2026-06-01", cost: 5, modelBreakdown: null }], "2026-05-08");
+    expect(Number.isNaN(e.opusShare)).toBe(false);
+    expect(e.tokensPerActiveDay).toBeNull();
+  });
+  it("current streak is 0 when today is inactive", () => {
+    const r = computeRhythm([day("2026-06-01", 1), day("2026-06-02", 1)], "2026-06-07");
+    expect(r.currentStreak).toBe(0);
+    expect(r.longestStreak).toBe(2);
+  });
+});

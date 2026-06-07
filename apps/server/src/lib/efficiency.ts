@@ -79,7 +79,11 @@ export function computeEfficiency(rows: UsageDayLike[], cutoff30: string): Effic
     .map(([family, c]) => ({ family, share: Math.round((c / Math.max(0.01, totalCost)) * 100) / 100 }))
     .sort((a, b) => b.share - a.share);
 
-  const tokensPerActiveDay = Math.round((input + output + cacheCreate + cacheRead) / window.length);
+  const activeDaysInWindow = window.filter(
+    (r) => (r.modelBreakdown ?? []).reduce((s, m) => s + m.inputTokens + m.outputTokens + m.cacheCreationTokens + m.cacheReadTokens, 0) > 0,
+  ).length;
+  const tokensPerActiveDay =
+    activeDaysInWindow > 0 ? Math.round((input + output + cacheCreate + cacheRead) / activeDaysInWindow) : null;
   return { cacheReadRatio, opusShare, modelMix, grade, estSavingsPerMonth, tokensPerActiveDay };
 }
 
@@ -96,6 +100,7 @@ export function computeRhythm(rows: UsageDayLike[], today: string): Rhythm {
   for (const r of rows) byDay.set(r.day, (byDay.get(r.day) ?? 0) + r.cost);
   const days = [...byDay.entries()]
     .map(([day, cost]) => ({ day, cost: Math.round(cost * 100) / 100 }))
+    .filter((d) => d.cost > 0)
     .sort((a, b) => a.day.localeCompare(b.day));
 
   const active = new Set(days.filter((d) => d.cost > 0).map((d) => d.day));
