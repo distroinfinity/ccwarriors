@@ -102,17 +102,18 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
 </style></head><body>
 <h1>Outreach queue · ${DATE}</h1>
 <div class="sub">${items.length} reachable · ${dataset.length} viberank users total · checkbox saves locally</div>
-
-${(() => {
-  const dmItems   = items.filter((t) => t.contacts.some((c) => c.type === "x" || c.type === "linkedin"));
-  const emlItems  = items.filter((t) => !t.contacts.some((c) => c.type === "x" || c.type === "linkedin"));
-  const dmTodo    = dmItems.filter((t) => !t.agentSent).length;
-  const emlTodo   = emlItems.filter((t) => !t.agentSent).length;
-
-  const card = (t, i) => {
-    const isEmailOnly = !t.contacts.some((c) => c.type === "x" || c.type === "linkedin");
-    return `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}">
-  <div class="hd"><span>${esc(t.name)}${t.kind === "viberank" ? ` · #${t.vrank} · ${usd(t.spend)}` : ""}${t.agentSent ? " · emailed ✓" : ""}</span>
+<div class="filters">
+  <button class="on" onclick="filt('all',this)">all</button>
+  <button onclick="filt('todo',this)">to do</button>
+  <button onclick="filt('dm',this)">x / linkedin</button>
+  <button onclick="filt('emailonly',this)">email only</button>
+</div>
+${items
+  .map((t, i) => {
+    const hasXOrLi = t.contacts.some((c) => c.type === "x" || c.type === "linkedin");
+    const emailOnly = t.contacts.length && t.contacts.every((c) => c.type === "email");
+    return `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}" data-dm="${hasXOrLi}" data-eo="${emailOnly}">
+  <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank} · ${usd(t.spend)}` : ""}${t.agentSent ? " · emailed ✓" : ""}</span>
   <label><input type="checkbox" ${t.agentSent ? "checked " : ""}onchange="mark('${esc(t.github)}',${i},this.checked)"> done</label></div>
   <div class="meta">${t.contacts.map((c) => esc(c.label)).join(" · ")}${t.bio ? " · " + esc(t.bio) : ""}</div>
   <textarea id="x${i}">${esc(t.text)}</textarea>
@@ -128,17 +129,8 @@ ${(() => {
     <a class="btn" href="https://github.com/${esc(t.github)}" target="_blank">github</a>
   </div>
 </div>`;
-  };
-
-  return `
-<h2 style="margin:28px 0 6px;font-size:16px">DM targets — X / LinkedIn &nbsp;<span style="font-weight:400;color:#8a8a82;font-size:13px">${dmTodo} to do of ${dmItems.length}</span></h2>
-<p style="color:#8a8a82;font-size:12px;margin-bottom:12px">click x or linkedin to open their profile, paste the text, send. tick done.</p>
-${dmItems.map(card).join("\n")}
-
-<h2 style="margin:36px 0 6px;font-size:16px">Email targets &nbsp;<span style="font-weight:400;color:#8a8a82;font-size:13px">${emlTodo} remaining of ${emlItems.length}</span></h2>
-<p style="color:#8a8a82;font-size:12px;margin-bottom:12px">greyed = already sent by agent. active email button = not yet sent.</p>
-${emlItems.map(card).join("\n")}`;
-})()}
+  })
+  .join("\n")}
 <script>
 const SUBJECT = "fellow dev - asking for feedback on a product";
 function sendMail(addr,i){
@@ -153,7 +145,7 @@ function filt(mode,btn){
   document.querySelectorAll('.t').forEach(el=>{
     let show = true;
     if(mode==='todo') show = !el.classList.contains('done');
-    if(mode==='x') show = el.getAttribute('data-x')==='true';
+    if(mode==='dm') show = el.getAttribute('data-dm')==='true';
     if(mode==='emailonly') show = el.getAttribute('data-eo')==='true';
     el.style.display = show ? '' : 'none';
   });
