@@ -37,12 +37,12 @@ async function ourTotals() {
 function draftViberank(t, ours) {
   const openers = t.vrank
     ? [
-        `saw you at #${t.vrank} on viberank with ${t.vspend} burned.`,
-        `you are #${t.vrank} on viberank, ${t.vspend} burned. solid numbers.`,
+        `saw that you are #${t.vrank} on viberank with ${t.vspend} burned.`,
+        `saw that you are #${t.vrank} on viberank, ${t.vspend} burned. solid numbers.`,
       ]
     : [
-        `saw you on the viberank board with ${t.vspend} burned.`,
-        `noticed you on viberank, ${t.vspend} burned. solid numbers.`,
+        `saw that you are on the viberank board with ${t.vspend} burned.`,
+        `saw that you are on viberank, ${t.vspend} burned. solid numbers.`,
       ];
   const middles = [
     `I built ccwarriors.xyz, same idea but it counts all your agents, Claude Code, Codex and 13 more. same local data, one curl and you are on it.`,
