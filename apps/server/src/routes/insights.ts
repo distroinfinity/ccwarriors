@@ -125,12 +125,16 @@ export function insightsRoute(deps: InsightsDeps) {
       if (Object.keys(set).length === 0) return c.json({ error: "nothing_to_set" }, 400);
       await deps.db.update(users).set(set).where(eq(users.id, user.id));
       if (consent === false) {
-        // Revoke deletes the data, not just the flag (spec §6).
+        // Revoke deletes the data, not just the flag (spec §6). Order matters:
+        // DB rows first, store last — Map.delete can't fail, and a crash between
+        // the two self-heals at next boot (warm-up reads only surviving DB rows).
         await deps.db.delete(userInsights).where(eq(userInsights.userId, user.id));
         await deps.db.update(users).set({ archetype: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
       }
       captureEvent("insights_consent", user.githubLogin, { consent: String(consent), visibility: visibility ?? "" });
+      // Echo: request values ARE the written values (no server-side normalization),
+      // so falling back to the pre-update row is accurate for fields not in this request.
       return c.json({ ok: true, consent: consent ?? user.insightsConsent, visibility: visibility ?? user.insightsVisibility });
     },
   );
