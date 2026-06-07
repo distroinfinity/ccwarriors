@@ -159,7 +159,7 @@ export function aggregateSessions(sessions: SessionStats[], windowDays: number):
     maxParallelAgents: Math.max(0, ...sessions.map((s) => s.maxParallel)),
     hourHistogram: hours,
     editToolCallsPerSession: r1(sum((s) => s.editCalls) / n),
-    longestSessionMinutes: r1(Math.max(0, ...sessions.map((s) => s.durationMinutes))),
+    longestSessionMinutes: r1(Math.min(7 * 24 * 60, Math.max(0, ...sessions.map((s) => s.durationMinutes)))),
   };
 }
 

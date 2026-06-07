@@ -5,8 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig, ensureMachineId } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
-import { postIngest, postTelemetry } from "./core.js";
+import { postIngest, postTelemetry, postInsights } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess } from "./selfupdate.js";
+import { collectInsights, shouldSend, markSent } from "./insights.js";
 
 declare const __BUILD_ID__: string;
 
@@ -65,6 +66,22 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         failStreak = 0;
         markUpdateSuccess();
         log(`synced (${reason}) — ${formatEstimates(estimates)} · rank #${res.data.rank30d ?? "—"}`);
+        if (res.data.insightsRequested) {
+          void (async () => {
+            try {
+              if (!(await shouldSend())) return;
+              const payload = await collectInsights();
+              if (!payload) return;
+              const sent = await postInsights(token, machineId, payload);
+              if (sent.ok) {
+                await markSent();
+                log("insights synced");
+              }
+            } catch {
+              /* never break the daemon */
+            }
+          })();
+        }
       } else if (res.status === 429) {
         // Server enforces 10s between syncs — retry instead of dropping the update.
         log(`sync deferred (${reason}) — rate limited, retrying`);
