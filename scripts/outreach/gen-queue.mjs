@@ -186,8 +186,13 @@ if (existsSync(manualPath)) {
   }
 }
 
+// agent-sent emails (sent.json) render pre-checked so the human view stays true
+const sentPath = path.join(HERE, "sent.json");
+const sentLog = existsSync(sentPath) ? JSON.parse(readFileSync(sentPath, "utf8")) : {};
+
 const items = targets.map((t) => ({
   ...t,
+  agentSent: !!sentLog[t.github],
   text: t.kind === "viberank" ? draftViberank(t, ours) : draftManual(t, ours),
 }));
 
@@ -209,9 +214,9 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Outreach q
 <div class="sub">${items.length} reachable targets (${dropped} dropped, no contact channel) · copy, open, paste, send. Checkbox saves locally.</div>
 ${items
   .map(
-    (t, i) => `<div class="t" id="t${i}" data-key="${esc(t.github)}">
-  <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank}` : ""}</span>
-  <label><input type="checkbox" onchange="mark('${esc(t.github)}',${i},this.checked)"> sent</label></div>
+    (t, i) => `<div class="t${t.agentSent ? " done" : ""}" id="t${i}" data-key="${esc(t.github)}">
+  <div class="hd"><span>${i + 1}. ${esc(t.name)} ${t.kind === "viberank" ? `· viberank #${t.vrank}` : ""}${t.agentSent ? " · emailed by agent" : ""}</span>
+  <label><input type="checkbox" ${t.agentSent ? "checked " : ""}onchange="mark('${esc(t.github)}',${i},this.checked)"> sent</label></div>
   <div class="meta">${t.contacts.map((c) => esc(c.label)).join(" · ")}${t.bio ? " · " + esc(t.bio) : ""}</div>
   <textarea id="x${i}">${esc(t.text)}</textarea>
   <div class="row">
