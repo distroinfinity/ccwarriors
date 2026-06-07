@@ -122,7 +122,9 @@ ${items
     ${t.contacts
       .map((c) =>
         c.type === "email"
-          ? `<button onclick="sendMail('${esc(c.url.replace("mailto:", ""))}',${i})">email</button>`
+          ? t.agentSent
+            ? `<button disabled style="opacity:.35;cursor:not-allowed" title="already emailed">email ✓</button>`
+            : `<button onclick="sendMail('${esc(c.url.replace("mailto:", ""))}',${i})">email</button>`
           : `<a class="btn" href="${esc(c.url)}" target="_blank">${c.type}</a>`,
       )
       .join("\n    ")}
