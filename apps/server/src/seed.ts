@@ -135,6 +135,9 @@ export async function seedDemoProfiles(db: DB): Promise<void> {
         cliTokenHash: hashToken(`demo-${d.login}`),
         insightsConsent: d.consent,
         insightsVisibility: d.visibility,
+        // Prod sets this on the first /insights POST; seeding it keeps the
+        // OG route exercisable offline (archetype-in-title path).
+        archetype: d.consent ? (d.spawns > 1 ? "The Summoner" : "The Tactician") : null,
         cost30d: "1000",
         costAllTime: "2600",
         tier: "Diamond",
