@@ -76,6 +76,8 @@ export function useProfile(login: string, refreshKey = 0): ProfileState {
         setState({ status: "ready", profile: (await r.json()) as Profile });
       })
       .catch(() => {
+        // Intentional conflation: network/500 render the same enlist page as a
+        // true 404 — a profile URL with no data behind it has one story to tell.
         if (!cancelled) setState({ status: "notfound" });
       });
     return () => {
