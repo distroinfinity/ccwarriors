@@ -3,5 +3,18 @@
   "installCommand": "pnpm install",
   "buildCommand": "pnpm --filter web build",
   "outputDirectory": "apps/web/dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/u/:login",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(Twitterbot|facebookexternalhit|Slackbot|LinkedInBot|Discordbot|WhatsApp|TelegramBot).*"
+        }
+      ],
+      "destination": "https://api.ccwarriors.xyz/og/u/:login"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
