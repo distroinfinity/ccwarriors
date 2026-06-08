@@ -93,9 +93,10 @@ if (!DO_SEND) {
 
 for (const t of targets) {
   const body = draft(t);
+  const subj = SUBJECT.replaceAll('"', '\\"');
   const script = `
     tell application "Mail"
-      set msg to make new outgoing message with properties {subject:"${SUBJECT.replaceAll('"', '\\"')}", content:"${body.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "\\n")}", visible:false}
+      set msg to make new outgoing message with properties {subject:"${subj}", content:"${body.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("\n", "\\n")}", visible:false}
       tell msg to make new to recipient at end of to recipients with properties {address:"${t.email}"}
       send msg
     end tell`;
@@ -110,5 +111,34 @@ for (const t of targets) {
     console.log(`FAILED → ${t.name}: ${String(err).slice(0, 120)}`);
   }
   await new Promise((r) => setTimeout(r, 45000 + Math.random() * 45000)); // slow drip
+}
+
+// Mail auto-saves a draft per outgoing message; Gmail syncs it a beat after
+// send, so clean up once at the end (reliable) rather than racing each send.
+// Named lookup `mailbox "Drafts"` resolves wrong for Gmail — enumerate instead.
+await new Promise((r) => setTimeout(r, 3000));
+const sweep = `
+  tell application "Mail"
+    set n to 0
+    repeat with acct in accounts
+      repeat with mb in mailboxes of acct
+        if (name of mb) contains "Draft" then
+          try
+            set hits to (messages of mb whose subject contains "feedback on a product")
+            repeat with di from (count of hits) to 1 by -1
+              delete (item di of hits)
+              set n to n + 1
+            end repeat
+          end try
+        end if
+      end repeat
+    end repeat
+    return n
+  end tell`;
+try {
+  const n = execFileSync("osascript", ["-e", sweep], { encoding: "utf8" }).trim();
+  console.log(`swept ${n} leftover draft(s)`);
+} catch {
+  console.log("draft sweep skipped (run scripts/outreach/sync-sent.mjs note: clear drafts manually if any)");
 }
 console.log("done.");
