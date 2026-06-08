@@ -442,11 +442,29 @@ html[data-theme="dark"] .arch-name{ color:var(--ink); }
 .arch-owner{ margin-top:10px; font-size:11px; color:var(--muted); }
 .linklike{ background:none; border:0; padding:0; font:inherit; color:var(--ink);
   text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+.linklike:disabled{ cursor:wait; opacity:.65; }
 
 .arch-locked{ margin-top:18px; border:1px dashed var(--line); padding:18px; color:var(--muted);
   font-size:13px; line-height:1.6; display:flex; flex-direction:column; gap:10px; align-items:flex-start; }
 .arch-locked .btn{ margin-top:4px; }
 .arch-hint{ font-size:11px; }
+.arch-error{ font-size:11px; color:var(--or); }
+
+.arch-foot-link{ color:var(--muted); text-decoration:underline; text-underline-offset:2px; }
+.arch-foot-link:hover{ color:var(--ink); }
+
+/* Pending: consent granted, archetype being forged by the next sync. */
+.arch-locked.pending{ border-style:solid; }
+.arch-pulse{ width:9px; height:9px; border-radius:50%; background:var(--or);
+  box-shadow:0 0 0 0 var(--or); animation:archpulse 1.6s ease-out infinite; }
+@keyframes archpulse{
+  0%{ box-shadow:0 0 0 0 rgba(194,104,62,.45); opacity:1; }
+  70%{ box-shadow:0 0 0 9px rgba(194,104,62,0); opacity:.85; }
+  100%{ box-shadow:0 0 0 0 rgba(194,104,62,0); opacity:1; }
+}
+.arch-pending-h{ font-family:'Geist Mono',monospace; font-size:14px; color:var(--ink); font-weight:600; }
+.arch-skip{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.arch-skip code{ background:var(--segoff); padding:3px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); }
 
 .habit{ display:flex; align-items:baseline; gap:10px; margin-top:10px; font-size:12.5px; color:var(--muted); }
 .habit b{ font-size:16px; color:var(--ink); min-width:52px; }

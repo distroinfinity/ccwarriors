@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useProfile } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { InstallBlock } from "../InstallBlock";
@@ -24,8 +24,9 @@ function ProfileSkeleton() {
 }
 
 export function ProfilePage({ login }: { login: string }) {
-  // Bump after consent changes so the page refetches with the new state.
+  // Bump after consent changes (and on each pending poll) so the page refetches.
   const [refreshKey, setRefreshKey] = useState(0);
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
   const state = useProfile(login, refreshKey);
 
   if (state.status === "loading") return <ProfileSkeleton />;
@@ -36,7 +37,7 @@ export function ProfilePage({ login }: { login: string }) {
   return (
     <div className="profile">
       <div className="profile-grid">
-        <ArchetypeCard profile={p} onConsentChanged={() => setRefreshKey((k) => k + 1)} />
+        <ArchetypeCard profile={p} onConsentChanged={refetch} />
         <div className="profile-side">
           <HabitsPanel profile={p} />
           <EfficiencyPanel profile={p} />

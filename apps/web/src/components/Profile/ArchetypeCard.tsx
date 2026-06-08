@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getFontEmbedCSS, toPng } from "html-to-image";
 import { API_HTTP } from "../../api";
 import type { Profile, ProfileInsights, LockedInsights } from "../../useProfile";
@@ -38,13 +38,67 @@ function AxisBars({ insights }: { insights: ProfileInsights }) {
   );
 }
 
+// Consent is on but no insights have landed yet — the archetype is produced
+// out of band by the CLI's next sync, so we poll and swap the card in live
+// instead of leaving the owner on a dead "appears later" message.
+function PendingPanel({ onPoll }: { onPoll: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [stalled, setStalled] = useState(false);
+
+  useEffect(() => {
+    // Poll every 6s; after ~20 tries (no daemon, or the user never synced)
+    // back off to a manual "check now" so we don't poll an idle tab forever.
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      if (tries > 20) {
+        setStalled(true);
+        clearInterval(id);
+        return;
+      }
+      onPoll();
+    }, 6000);
+    return () => clearInterval(id);
+  }, [onPoll]);
+
+  const copy = () => {
+    void navigator.clipboard?.writeText("ccwarriors sync");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="arch-locked pending">
+      <span className="arch-pulse" aria-hidden="true" />
+      <p className="arch-pending-h">Forging your archetype…</p>
+      <p>
+        Reading aggregate counts from your next sync. This usually lands within the hour, and the page
+        updates itself the moment it does.
+      </p>
+      <div className="arch-skip">
+        <code className="mono">ccwarriors sync</code>
+        <button className="linklike" onClick={copy}>
+          {copied ? "copied" : "copy to skip the wait"}
+        </button>
+      </div>
+      {stalled && (
+        <button className="linklike" onClick={onPoll}>
+          Check now
+        </button>
+      )}
+    </div>
+  );
+}
+
 function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const locked = profile.insights as LockedInsights;
   const isOwner = !!profile.owner;
 
   const unlock = async () => {
     setBusy(true);
+    setError(null);
     try {
       const r = await fetch(`${API_HTTP}/insights/consent`, {
         method: "POST",
@@ -52,7 +106,13 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ consent: true }),
       });
-      if (r.ok) onConsentChanged();
+      if (!r.ok) {
+        setError("Unlock failed. Try again after refreshing your session.");
+        return;
+      }
+      onConsentChanged();
+    } catch {
+      setError("Unlock failed. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -67,6 +127,11 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     );
   }
 
+  // Owner already consented but no data has landed yet: processing, not idle.
+  if (isOwner && profile.owner?.consent) {
+    return <PendingPanel onPoll={onConsentChanged} />;
+  }
+
   // no_consent (default)
   return (
     <div className="arch-locked">
@@ -77,7 +142,7 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
           <button className="btn x" onClick={unlock} disabled={busy}>
             {busy ? "Unlocking…" : "Unlock your archetype"}
           </button>
-          <p className="arch-hint">Appears after your next sync. Run ccwarriors sync to skip the wait.</p>
+          {error && <p className="arch-error">{error}</p>}
         </>
       ) : (
         <p>This warrior has not revealed their archetype. Yours could be live in a minute: run the install command and `ccwarriors insights on`.</p>
@@ -89,6 +154,8 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
 export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const unlocked = !profile.insights.locked;
   const insights = unlocked ? (profile.insights as ProfileInsights) : null;
 
@@ -120,6 +187,30 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
       alert("Export failed. Try again once the avatar finishes loading.");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const toggleVisibility = async () => {
+    if (!profile.owner || visibilityBusy) return;
+    const next = profile.owner.visibility === "public" ? "private" : "public";
+    setVisibilityBusy(true);
+    setVisibilityError(null);
+    try {
+      const r = await fetch(`${API_HTTP}/insights/consent`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ visibility: next }),
+      });
+      if (!r.ok) {
+        setVisibilityError("Visibility update failed.");
+        return;
+      }
+      onConsentChanged();
+    } catch {
+      setVisibilityError("Visibility update failed.");
+    } finally {
+      setVisibilityBusy(false);
     }
   };
 
@@ -157,7 +248,12 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
 
         <div className="arch-foot mono">
           <span>ccwarriors.xyz/u/{profile.login}</span>
-          <span>extended from YC paxel</span>
+          <span>
+            extended from{" "}
+            <a className="arch-foot-link" href="https://paxel.ycombinator.com" target="_blank" rel="noopener">
+              YC paxel
+            </a>
+          </span>
         </div>
       </div>
 
@@ -174,19 +270,12 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           insights on &middot; {profile.owner.machineCount} machine{profile.owner.machineCount === 1 ? "" : "s"} &middot;{" "}
           <button
             className="linklike"
-            onClick={async () => {
-              const next = profile.owner!.visibility === "public" ? "private" : "public";
-              await fetch(`${API_HTTP}/insights/consent`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ visibility: next }),
-              });
-              onConsentChanged();
-            }}
+            onClick={toggleVisibility}
+            disabled={visibilityBusy}
           >
-            make {profile.owner.visibility === "public" ? "private" : "public"}
+            {visibilityBusy ? "updating" : `make ${profile.owner.visibility === "public" ? "private" : "public"}`}
           </button>
+          {visibilityError ? <span className="arch-error"> · {visibilityError}</span> : null}
         </div>
       )}
     </div>

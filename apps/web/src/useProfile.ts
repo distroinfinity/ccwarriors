@@ -67,7 +67,14 @@ export function useProfile(login: string, refreshKey = 0): ProfileState {
   const [state, setState] = useState<ProfileState>({ status: "loading" });
   useEffect(() => {
     let cancelled = false;
-    setState({ status: "loading" });
+    // Stale-while-revalidate: only show the skeleton on a cold load or a login
+    // change. Consent toggles and pending polls refetch in the background so the
+    // card never flashes back to a skeleton.
+    setState((prev) =>
+      prev.status === "ready" && prev.profile.login.toLowerCase() === login.toLowerCase()
+        ? prev
+        : { status: "loading" },
+    );
     fetch(`${API_HTTP}/profile/${encodeURIComponent(login)}`, { credentials: "include" })
       .then(async (r) => {
         if (cancelled) return;
