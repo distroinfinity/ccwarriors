@@ -62,7 +62,7 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
   }, [onPoll]);
 
   const copy = () => {
-    void navigator.clipboard?.writeText("ccwarriors sync");
+    void navigator.clipboard?.writeText("ccwarriors insights on");
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -72,13 +72,13 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
       <span className="arch-pulse" aria-hidden="true" />
       <p className="arch-pending-h">Forging your archetype…</p>
       <p>
-        Reading aggregate counts from your next sync. This usually lands within the hour, and the page
-        updates itself the moment it does.
+        Your next sync forges this from local session counts. Autosync usually lands it within minutes,
+        and this page updates itself the moment it does. To see it in seconds, run:
       </p>
       <div className="arch-skip">
-        <code className="mono">ccwarriors sync</code>
+        <code className="mono">ccwarriors insights on</code>
         <button className="linklike" onClick={copy}>
-          {copied ? "copied" : "copy to skip the wait"}
+          {copied ? "copied" : "copy"}
         </button>
       </div>
       {stalled && (
