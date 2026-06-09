@@ -7,6 +7,7 @@ import {
   jsonb,
   boolean,
   bigint,
+  integer,
   date,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -120,6 +121,11 @@ export const users = pgTable("users", {
   insightsMode: text("insights_mode").notNull().default("off"), // off | deep
   insightsVisibility: text("insights_visibility").notNull().default("public"), // public | private
   archetype: text("archetype"),
+  // Craft Score (issue #51): the headline composite, recomputed eagerly on each
+  // /insights/deep upload so the leaderboard/ranking can read it without
+  // replaying the pillar math. Null when mode is off or there's no deep data.
+  craftScore: numeric("craft_score"),
+  trustTier: integer("trust_tier"), // 0 unverified | 1 local-git
 });
 
 export const snapshots = pgTable("snapshots", {

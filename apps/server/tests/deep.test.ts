@@ -185,12 +185,35 @@ describe("/insights/mode + /insights/deep", () => {
     [u] = await db.select().from(users).where(eq(users.githubLogin, "deeper"));
     expect(u!.archetype).toBeTruthy();
 
-    // Profile reflects the derived archetype for the owner block + insights.
+    // Craft Score persisted on the user row eagerly on upload.
+    [u] = await db.select().from(users).where(eq(users.githubLogin, "deeper"));
+    expect(u!.craftScore).not.toBeNull();
+    expect(Number(u!.craftScore)).toBeGreaterThanOrEqual(0);
+    expect(Number(u!.craftScore)).toBeLessThanOrEqual(100);
+    expect(u!.trustTier).toBe(0); // records() default git is null → unverified
+
+    // Profile reflects the derived archetype + Craft Score for the insights block.
     const pApp = profileRoute({ db, store: new LeaderboardStore(), insightsStore: store });
     const pRes = await pApp.request("/deeper");
-    const profile = (await pRes.json()) as { insights: { locked: boolean; archetype?: string } };
+    const profile = (await pRes.json()) as {
+      insights: {
+        locked: boolean;
+        archetype?: string;
+        craftScore?: number | null;
+        pillars?: Record<string, number> | null;
+        trustTier?: number | null;
+        provisional?: boolean;
+      };
+    };
     expect(profile.insights.locked).toBe(false);
     expect(profile.insights.archetype).toBeTruthy();
+    expect(typeof profile.insights.craftScore).toBe("number");
+    expect(profile.insights.craftScore!).toBeGreaterThanOrEqual(0);
+    expect(profile.insights.craftScore!).toBeLessThanOrEqual(100);
+    expect(Object.keys(profile.insights.pillars!).sort()).toEqual(
+      ["autonomy", "direction", "orchestration", "throughput", "verification", "yield"],
+    );
+    expect(profile.insights.provisional).toBe(true);
 
     // Switch to off → aggregate + deep purged, archetype nulled, store evicted.
     res = await app.request("/mode", {
@@ -203,9 +226,34 @@ describe("/insights/mode + /insights/deep", () => {
     expect(await db.select().from(userInsights).where(eq(userInsights.userId, u!.id))).toHaveLength(0);
     [u] = await db.select().from(users).where(eq(users.githubLogin, "deeper"));
     expect(u!.archetype).toBeNull();
+    expect(u!.craftScore).toBeNull();
+    expect(u!.trustTier).toBeNull();
     expect(u!.insightsMode).toBe("off");
     expect(u!.insightsConsent).toBe(false);
     expect(store.merged(u!.id)).toBeNull();
+  });
+
+  it("shipped sessions with a remote set trustTier=1 and a non-zero craftScore", async () => {
+    await db.update(users).set({ insightsMode: "deep", insightsConsent: true }).where(eq(users.githubLogin, "deeper"));
+    const app = deepRoute(db, store);
+    const shippedGit = {
+      repoIdHash: "abc123", branchHash: "def456", commitsInWindow: 2, linesAdded: 120,
+      linesDeleted: 10, filesChanged: 4, testFilesTouched: 1, aiLinkedCommits: 2,
+      revertedLinesWithin14d: 0, squashMergeDetected: false, rebaseDetected: false,
+      isMonorepo: false, hasRemote: true,
+    };
+    const sessions = Array.from({ length: 10 }, () =>
+      record({ hadEdits: true, exploreBeforeFirstEdit: true, editCalls: 4, git: shippedGit }),
+    );
+    const res = await app.request("/deep", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ machineId: MID, windowDays: 40, sessions }),
+    });
+    expect(res.status).toBe(200);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "deeper"));
+    expect(u!.trustTier).toBe(1);
+    expect(Number(u!.craftScore)).toBeGreaterThan(0);
   });
 
   it("rejects payloads over the session cap", async () => {

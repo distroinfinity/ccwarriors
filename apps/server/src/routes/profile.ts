@@ -18,6 +18,8 @@ import {
   MIN_SESSIONS,
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
+import { computeCraftForUser } from "../lib/craft-score-service.js";
+import type { Pillars } from "../lib/craft-score.js";
 
 export interface ProfileDeps {
   db: DB;
@@ -81,6 +83,10 @@ export function profileRoute(deps: ProfileDeps) {
           trait: string | null;
           habits: ReturnType<typeof habitStats>;
           growthEdge: string;
+          craftScore: number | null;
+          pillars: Pillars | null;
+          trustTier: 0 | 1 | null;
+          provisional: boolean;
         };
     if (!user?.insightsConsent || !merged) {
       insights = { locked: true, reason: "no_consent" };
@@ -97,6 +103,11 @@ export function profileRoute(deps: ProfileDeps) {
       const effHint = efficiency
         ? { opusShare: efficiency.opusShare, estSavingsPerMonth: efficiency.estSavingsPerMonth ?? 0 }
         : null;
+      // Craft Score: computed on demand from the user's deep sessions + usage
+      // signal. Null when the user has no deep rows (aggregate-only insights).
+      // provisional until the deep population crosses PERCENTILE_MIN_POPULATION
+      // (single-pool percentiles are a #51 refinement); pillars stay calibrated.
+      const craft = user ? await computeCraftForUser(deps.db, user.id) : null;
       insights = {
         locked: false,
         scoresArePercentiles: usePercentiles,
@@ -106,6 +117,10 @@ export function profileRoute(deps: ProfileDeps) {
         trait: traitOf(merged, { weekendShare: rhythm.weekendShare, currentStreak: rhythm.currentStreak }),
         habits: habitStats(merged),
         growthEdge: growthEdgeOf(axes, merged, effHint),
+        craftScore: craft?.craftScore ?? null,
+        pillars: craft?.pillars ?? null,
+        trustTier: craft?.trustTier ?? null,
+        provisional: true,
       };
     }
 

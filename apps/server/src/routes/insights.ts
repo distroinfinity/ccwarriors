@@ -24,6 +24,7 @@ import {
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
 import { deriveAggregate } from "../lib/deep.js";
+import { computeCraftForUser } from "../lib/craft-score-service.js";
 import { captureEvent } from "./telemetry.js";
 
 const count = z.number().int().nonnegative().max(10_000_000);
@@ -191,7 +192,7 @@ export function insightsRoute(deps: InsightsDeps) {
         // the two self-heals at next boot (warm-up reads only surviving DB rows).
         await deps.db.delete(userInsights).where(eq(userInsights.userId, user.id));
         await deps.db.delete(userDeepSessions).where(eq(userDeepSessions.userId, user.id));
-        await deps.db.update(users).set({ archetype: null }).where(eq(users.id, user.id));
+        await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
       }
       captureEvent("insights_consent", user.githubLogin, { consent: String(consent), visibility: visibility ?? "" });
@@ -233,8 +234,21 @@ export function insightsRoute(deps: InsightsDeps) {
       });
     deps.insightsStore.upsert(user.id, mid, aggregate);
     const archetype = await refreshArchetype(deps.db, deps.insightsStore, user.id);
+
+    // Eagerly recompute the Craft Score so the profile read is instant and the
+    // leaderboard can rank on the stored value. Reads back all machines' deep
+    // rows (this upload is already committed) + usage_days.
+    const craft = await computeCraftForUser(deps.db, user.id);
+    await deps.db
+      .update(users)
+      .set({
+        craftScore: craft ? String(craft.craftScore) : null,
+        trustTier: craft ? craft.trustTier : null,
+      })
+      .where(eq(users.id, user.id));
+
     captureEvent("deep_insights_received", user.githubLogin, { sessions: deep.sessions.length });
-    return c.json({ ok: true, archetype });
+    return c.json({ ok: true, archetype, craftScore: craft?.craftScore ?? null });
   });
 
   app.get("/mode", async (c) => {
@@ -260,7 +274,7 @@ export function insightsRoute(deps: InsightsDeps) {
         // and evicts from the in-memory store. DB first, store last (self-heals).
         await deps.db.delete(userInsights).where(eq(userInsights.userId, user.id));
         await deps.db.delete(userDeepSessions).where(eq(userDeepSessions.userId, user.id));
-        await deps.db.update(users).set({ archetype: null }).where(eq(users.id, user.id));
+        await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
       }
       captureEvent("insights_mode", user.githubLogin, { mode });
