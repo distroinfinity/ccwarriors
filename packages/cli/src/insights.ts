@@ -357,10 +357,15 @@ export interface InsightsDeepPayload {
  * here — only counts, the timing summary, the model name, and the hashed git
  * outcome survive.
  */
+// A session's wall-clock span is capped at 7 days. Idle gaps (a session left
+// open across days) otherwise blow past the server's max (10080 min) and get
+// the whole upload rejected. Matches aggregateSessions' longestSessionMinutes cap.
+const MAX_SESSION_MINUTES = 7 * 24 * 60;
+
 function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): SessionRecord {
   return {
     startHour: s.startHour,
-    durationMinutes: r1(s.durationMinutes),
+    durationMinutes: r1(Math.min(MAX_SESSION_MINUTES, s.durationMinutes)),
     prompts: s.prompts,
     interrupts: s.interrupts,
     usedPlanMode: s.usedPlanMode,
@@ -388,21 +393,47 @@ export async function collectDeepInsights(salt: string): Promise<InsightsDeepPay
     const sessions = await walkSessions();
     if (sessions.length === 0) return null;
 
-    const records: SessionRecord[] = [];
-    for (const s of sessions) {
+    // Memoize "is this cwd inside a git repo": once a cwd is known non-git, a
+    // later session in the same cwd skips the git spawns entirely. (readGitOutcome
+    // returns null for non-repos.) Bounds the serial cost on big histories where
+    // many sessions share a handful of cwds.
+    const repoKnown = new Map<string, boolean>(); // cwd → is-git-repo
+
+    // Run the per-session git reads with a concurrency cap so 150+ git-linked
+    // sessions don't fire ~6 spawns each all at once (or one slow serial chain).
+    // Hand-rolled chunked pool, no new deps. Each read never throws.
+    const CONCURRENCY = 6;
+    const records: SessionRecord[] = new Array<SessionRecord>(sessions.length);
+
+    const readOne = async (i: number): Promise<void> => {
+      const s = sessions[i]!;
       let git: SessionGitOutcome | null = null;
       if (s.cwd && s.startMs !== null && s.endMs !== null) {
-        // readGitOutcome never throws and returns null quickly for non-repos.
-        git = await readGitOutcome({
-          cwd: s.cwd,
-          branch: s.gitBranch,
-          startMs: s.startMs,
-          endMs: s.endMs,
-          aiEditedFiles: s.editedFiles,
-          salt,
-        });
+        const cwd = s.cwd;
+        if (repoKnown.get(cwd) === false) {
+          git = null; // already proven non-git → skip the spawns
+        } else {
+          // readGitOutcome never throws and returns null quickly for non-repos.
+          git = await readGitOutcome({
+            cwd,
+            branch: s.gitBranch,
+            startMs: s.startMs,
+            endMs: s.endMs,
+            aiEditedFiles: s.editedFiles,
+            salt,
+          });
+          repoKnown.set(cwd, git !== null);
+        }
       }
-      records.push(toSessionRecord(s, git));
+      records[i] = toSessionRecord(s, git);
+    };
+
+    for (let start = 0; start < sessions.length; start += CONCURRENCY) {
+      const chunk: Promise<void>[] = [];
+      for (let i = start; i < Math.min(start + CONCURRENCY, sessions.length); i++) {
+        chunk.push(readOne(i));
+      }
+      await Promise.all(chunk);
     }
 
     return { windowDays: WINDOW_DAYS, sessions: records };

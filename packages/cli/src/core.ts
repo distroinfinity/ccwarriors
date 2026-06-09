@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RawDay } from "./ccusage.js";
-import type { InsightsPayload } from "./insights.js";
+import type { InsightsPayload, InsightsDeepPayload } from "./insights.js";
 
 export const API_BASE = process.env["CCWARRIORS_API"] ?? "https://api.ccwarriors.xyz";
 export const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
@@ -28,6 +28,7 @@ export interface IngestResponse {
   rank30d?: number | null;
   rankAllTime?: number | null;
   insightsRequested?: boolean;
+  insightsMode?: "off" | "deep";
 }
 
 // v3 payload: raw per-tool/day/model token counts. The server prices and
@@ -70,6 +71,44 @@ export async function postInsights(
     signal: AbortSignal.timeout(30_000),
   });
   return { status: res.status, ok: res.ok };
+}
+
+export async function postInsightsDeep(
+  token: string,
+  machineId: string,
+  payload: InsightsDeepPayload,
+): Promise<{ status: number; ok: boolean }> {
+  const res = await fetch(`${API_BASE}/insights/deep`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ machineId, windowDays: payload.windowDays, sessions: payload.sessions }),
+    // Deep payloads are bigger than the aggregate — give them more headroom.
+    signal: AbortSignal.timeout(60_000),
+  });
+  return { status: res.status, ok: res.ok };
+}
+
+export async function setInsightsMode(token: string, mode: "off" | "deep"): Promise<{ status: number; ok: boolean }> {
+  const res = await fetch(`${API_BASE}/insights/mode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ mode }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return { status: res.status, ok: res.ok };
+}
+
+export async function getInsightsMode(token: string): Promise<{ mode: "off" | "deep" } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/insights/mode`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { mode: "off" | "deep" };
+  } catch {
+    return null;
+  }
 }
 
 export async function setInsightsConsent(token: string, consent: boolean): Promise<{ status: number; ok: boolean }> {

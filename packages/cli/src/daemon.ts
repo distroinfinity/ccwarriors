@@ -3,11 +3,11 @@
 import { existsSync, watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, ensureMachineId } from "./config.js";
+import { loadConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
-import { postIngest, postTelemetry, postInsights } from "./core.js";
+import { postIngest, postTelemetry, postInsightsDeep } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess } from "./selfupdate.js";
-import { collectInsights, shouldSend, markSent } from "./insights.js";
+import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
 declare const __BUILD_ID__: string;
 
@@ -30,8 +30,9 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
     console.error("not enlisted — run `ccwarriors login` first");
     process.exit(1);
   }
-  const token = config.token;
-  const machineId = await ensureMachineId(config);
+  const cfg = config; // non-null binding for use inside closures below
+  const token = cfg.token;
+  const machineId = await ensureMachineId(cfg);
 
   let timer: NodeJS.Timeout | null = null;
   let syncing = false;
@@ -66,13 +67,17 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         failStreak = 0;
         markUpdateSuccess();
         log(`synced (${reason}) — ${formatEstimates(estimates)} · rank #${res.data.rank30d ?? "—"}`);
-        if (res.data.insightsRequested) {
+        const deepWanted =
+          res.data.insightsMode === "deep" ||
+          (res.data.insightsMode === undefined && res.data.insightsRequested === true);
+        if (deepWanted) {
           void (async () => {
             try {
               if (!(await shouldSend())) return;
-              const payload = await collectInsights();
+              const salt = await ensureInsightsSalt(cfg);
+              const payload = await collectDeepInsights(salt);
               if (!payload) return;
-              const sent = await postInsights(token, machineId, payload);
+              const sent = await postInsightsDeep(token, machineId, payload);
               if (sent.ok) {
                 await markSent();
                 log("insights synced");

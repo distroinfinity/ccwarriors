@@ -72,6 +72,18 @@ describe("collectDeepInsights", () => {
     ];
     writeFileSync(join(sessDir, "session.jsonl"), lines.join("\n") + "\n");
 
+    // A SECOND session in the SAME repo (same cwd) — exercises the repo-known
+    // memoization / concurrency pool path. It has no commit in its own window,
+    // so its git outcome is a real-but-zero-commit outcome (repo identity still
+    // resolves), while session one stays linked to its commit.
+    const s2Start = new Date(now - 4 * 60_000).toISOString();
+    const s2End = new Date(now - 3 * 60_000).toISOString();
+    const lines2 = [
+      JSON.stringify({ type: "user", message: { content: "small follow up tweak please" }, cwd: repo, gitBranch: "main", timestamp: s2Start }),
+      JSON.stringify({ type: "assistant", message: { model: "claude-opus-4-7", content: [{ type: "text", text: "ok" }] }, cwd: repo, gitBranch: "main", timestamp: s2End }),
+    ];
+    writeFileSync(join(sessDir, "session2.jsonl"), lines2.join("\n") + "\n");
+
     process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
     process.env["CCWARRIORS_HOME"] = home;
 
@@ -80,15 +92,26 @@ describe("collectDeepInsights", () => {
 
     expect(payload).not.toBeNull();
     expect(payload.windowDays).toBeGreaterThan(0);
-    expect(payload.sessions.length).toBe(1);
+    expect(payload.sessions.length).toBe(2);
 
-    const rec = payload.sessions[0]!;
+    // Find the session linked to the commit (order across files is not fixed).
+    const linked = payload.sessions.find((r) => r.git && r.git.commitsInWindow === 1);
+    const other = payload.sessions.find((r) => r !== linked);
+    expect(linked).toBeDefined();
+    expect(other).toBeDefined();
+
+    const rec = linked!;
     expect(rec.model).toBe("claude-opus-4-7");
     expect(rec.git).not.toBeNull();
     expect(rec.git!.repoIdHash).toMatch(/^[0-9a-f]{64}$/);
     expect(rec.git!.commitsInWindow).toBe(1);
     expect(rec.git!.aiLinkedCommits).toBe(1); // basename match on craft-widget.ts
     expect(rec.timing.events).toBe(3);
+
+    // Memoization sanity: both sessions resolved the SAME repo identity.
+    expect(other!.git).not.toBeNull();
+    expect(other!.git!.repoIdHash).toBe(rec.git!.repoIdHash);
+    expect(other!.git!.commitsInWindow).toBe(0);
 
     // PRIVACY ASSERTION: the uploaded JSON must contain no local paths/branches.
     const json = JSON.stringify(payload);
