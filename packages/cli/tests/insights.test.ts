@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSessionLines, aggregateSessions, type SessionStats } from "../src/insights.js";
+import { parseSessionLines, aggregateSessions, timingSummary, type SessionStats } from "../src/insights.js";
 
 const line = (o: object) => JSON.stringify(o);
 
@@ -29,6 +29,24 @@ describe("parseSessionLines", () => {
     expect(s.wordBuckets["1-5"]).toBe(1); // "fix the bug in auth" → 5 words
   });
 
+  it("captures cwd, gitBranch, model (most-frequent), editedFiles, startMs/endMs, gaps", async () => {
+    const lines = [
+      line({ type: "user", message: { content: "start the work please now" }, cwd: "/home/me/proj", gitBranch: "feature/x", timestamp: "2026-06-07T22:10:00.000Z" }),
+      line({ type: "assistant", message: { model: "claude-opus-4-7", content: [{ type: "tool_use", name: "Edit", input: { file_path: "/home/me/proj/a.ts" } }] }, cwd: "/home/me/proj", gitBranch: "feature/x", timestamp: "2026-06-07T22:10:00.500Z" }),
+      line({ type: "assistant", message: { model: "claude-opus-4-7", content: [{ type: "tool_use", name: "Write", input: { file_path: "/home/me/proj/b.ts" } }, { type: "tool_use", name: "Edit", input: { file_path: "/home/me/proj/a.ts" } }] }, timestamp: "2026-06-07T22:10:30.000Z" }),
+      line({ type: "assistant", message: { model: "claude-sonnet-4-5", content: [{ type: "text", text: "hmm" }] }, timestamp: "2026-06-07T22:11:30.000Z" }),
+    ];
+    const s = (await parseSessionLines(lines))!;
+    expect(s.cwd).toBe("/home/me/proj");
+    expect(s.gitBranch).toBe("feature/x");
+    expect(s.model).toBe("claude-opus-4-7"); // 2 turns vs sonnet's 1
+    expect(s.editedFiles.sort()).toEqual(["/home/me/proj/a.ts", "/home/me/proj/b.ts"]); // deduped
+    expect(s.startMs).toBe(new Date("2026-06-07T22:10:00.000Z").getTime());
+    expect(s.endMs).toBe(new Date("2026-06-07T22:11:30.000Z").getTime());
+    // gaps: 500ms, 29500ms, 60000ms
+    expect(s.eventGapsMs).toEqual([500, 29_500, 60_000]);
+  });
+
   it("returns null for empty/attachment-only files", async () => {
     expect(await parseSessionLines([line({ type: "file-history-snapshot" })])).toBeNull();
   });
@@ -52,6 +70,7 @@ describe("aggregateSessions", () => {
       prompts: 10, interrupts: 1, usedPlanMode: true, exploreBeforeFirstEdit: true, hadEdits: true,
       subagentSpawns: 2, maxParallel: 2, editCalls: 12, assistantTurns: 40, startHour: 14,
       durationMinutes: 60, wordBuckets: { "1-5": 4, "6-10": 3, "11-25": 2, "26+": 1 },
+      startMs: null, endMs: null, cwd: null, gitBranch: null, model: null, editedFiles: [], eventGapsMs: [],
     };
     const p = aggregateSessions([s, { ...s, usedPlanMode: false, startHour: 23 }], 40);
     expect(p.sessions).toBe(2);
@@ -61,5 +80,27 @@ describe("aggregateSessions", () => {
     expect(p.maxParallelAgents).toBe(2);
     expect(p.avgTurnsBetweenUserMsgs).toBe(4); // 80 turns / 20 prompts
     expect(p.interruptsPer100Turns).toBeCloseTo(2.5); // 2 / 80 * 100
+  });
+});
+
+describe("timingSummary", () => {
+  it("returns zeros for fewer than 2 events", () => {
+    expect(timingSummary([])).toEqual({ events: 1, medianGapMs: 0, p10GapMs: 0, subSecondFraction: 0 });
+  });
+
+  it("computes median, p10 and sub-second fraction", () => {
+    // 10 gaps: nine at 100ms (sub-second) and one at 5000ms.
+    const gaps = [100, 100, 100, 100, 100, 100, 100, 100, 100, 5000];
+    const t = timingSummary(gaps);
+    expect(t.events).toBe(11); // gaps + 1
+    expect(t.medianGapMs).toBe(100);
+    expect(t.p10GapMs).toBe(100);
+    expect(t.subSecondFraction).toBe(0.9); // 9 of 10 below 1000ms
+  });
+
+  it("median takes the lower-middle on sorted gaps", () => {
+    const t = timingSummary([3000, 1000, 2000]); // sorted: 1000,2000,3000
+    expect(t.medianGapMs).toBe(2000);
+    expect(t.subSecondFraction).toBe(0);
   });
 });

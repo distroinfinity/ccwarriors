@@ -9,6 +9,9 @@ export interface Config {
   // Stable per-machine id so multi-machine users aggregate by sum server-side
   // instead of overwriting each other's days. Generated once, kept forever.
   machineId?: string;
+  // Per-user secret used to salt the local-git outcome hashes (repo/branch).
+  // LOCAL-ONLY: this value is never uploaded. Generated once, kept forever.
+  insightsSalt?: string;
 }
 
 const CONFIG_DIR = join(homedir(), ".claude-warriors");
@@ -34,6 +37,17 @@ export async function ensureMachineId(config: Config): Promise<string> {
   const machineId = randomBytes(8).toString("hex");
   await saveConfig({ ...config, machineId });
   return machineId;
+}
+
+/**
+ * Per-user salt for hashing local-git outcomes, generated + persisted on first
+ * use. LOCAL-ONLY: never uploaded. 16 random bytes → 32 hex chars.
+ */
+export async function ensureInsightsSalt(config: Config): Promise<string> {
+  if (config.insightsSalt && /^[a-f0-9]{32}$/.test(config.insightsSalt)) return config.insightsSalt;
+  const insightsSalt = randomBytes(16).toString("hex");
+  await saveConfig({ ...config, insightsSalt });
+  return insightsSalt;
 }
 
 export async function clearConfig(): Promise<void> {

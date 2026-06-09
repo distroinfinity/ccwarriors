@@ -7,6 +7,7 @@ import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { readGitOutcome, type SessionGitOutcome } from "./git.js";
 
 export const WINDOW_DAYS = 40;
 const EXPLORE_TOOLS = new Set(["Read", "Grep", "Glob"]);
@@ -26,6 +27,14 @@ export interface SessionStats {
   startHour: number; // machine-local 0-23
   durationMinutes: number;
   wordBuckets: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
+  // ── richer per-session signal (some LOCAL-ONLY; see PRIVACY CONTRACT) ──
+  startMs: number | null; // first event epoch ms
+  endMs: number | null; // last event epoch ms
+  cwd: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
+  gitBranch: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
+  model: string | null; // model on the most assistant turns (safe to upload)
+  editedFiles: string[]; // LOCAL-ONLY: input to readGitOutcome, never uploaded
+  eventGapsMs: number[]; // LOCAL-ONLY: collapsed to a timing summary before upload
 }
 
 export interface InsightsPayload {
@@ -65,8 +74,13 @@ export async function parseSessionLines(
   let prompts = 0, interrupts = 0, subagentSpawns = 0, maxParallel = 0, editCalls = 0, assistantTurns = 0;
   let usedPlanMode = false, hadEdits = false;
   let exploreBeforeFirstEdit = false, sawExplore = false, sawEdit = false;
-  let firstTs: number | null = null, lastTs: number | null = null;
+  let firstTs: number | null = null, lastTs: number | null = null, prevTs: number | null = null;
   const wordBuckets = { "1-5": 0, "6-10": 0, "11-25": 0, "26+": 0 };
+  let cwd: string | null = null;
+  let gitBranch: string | null = null;
+  const modelCounts = new Map<string, number>();
+  const editedFiles = new Set<string>();
+  const eventGapsMs: number[] = [];
 
   for await (const line of lines) {
     let o: Record<string, unknown>;
@@ -82,7 +96,11 @@ export async function parseSessionLines(
     if (Number.isFinite(ts)) {
       if (firstTs === null) firstTs = ts;
       lastTs = ts; // Last record's ts, not max — mildly out-of-order writes only skew duration, never the payload counts.
+      if (prevTs !== null) eventGapsMs.push(Math.max(0, ts - prevTs));
+      prevTs = ts;
     }
+    if (cwd === null && typeof o["cwd"] === "string" && o["cwd"]) cwd = o["cwd"];
+    if (gitBranch === null && typeof o["gitBranch"] === "string" && o["gitBranch"]) gitBranch = o["gitBranch"];
     const message = o["message"] as Record<string, unknown> | undefined;
 
     if (type === "user") {
@@ -102,12 +120,15 @@ export async function parseSessionLines(
 
     // assistant
     assistantTurns++;
+    const model = message?.["model"];
+    if (typeof model === "string" && model) modelCounts.set(model, (modelCounts.get(model) ?? 0) + 1);
     const content = message?.["content"];
     if (!Array.isArray(content)) continue;
     let parallel = 0;
     for (const b of content) {
       if (!b || typeof b !== "object" || (b as Record<string, unknown>)["type"] !== "tool_use") continue;
-      const name = String((b as Record<string, unknown>)["name"] ?? "");
+      const block = b as Record<string, unknown>;
+      const name = String(block["name"] ?? "");
       if (SPAWN_TOOLS.has(name)) {
         subagentSpawns++;
         parallel++;
@@ -118,6 +139,9 @@ export async function parseSessionLines(
         sawEdit = true;
         hadEdits = true;
         editCalls++;
+        const inp = block["input"] as Record<string, unknown> | undefined;
+        const fp = inp?.["file_path"];
+        if (typeof fp === "string" && fp) editedFiles.add(fp);
       }
     }
     maxParallel = Math.max(maxParallel, parallel);
@@ -126,9 +150,19 @@ export async function parseSessionLines(
   if (prompts === 0 && assistantTurns === 0) return null;
   const startHour = firstTs !== null ? new Date(firstTs).getHours() : 12;
   const durationMinutes = firstTs !== null && lastTs !== null ? Math.max(0, (lastTs - firstTs) / 60_000) : 0;
+  let model: string | null = null;
+  let modelBest = 0;
+  for (const [name, count] of modelCounts) {
+    if (count > modelBest) {
+      modelBest = count;
+      model = name;
+    }
+  }
   return {
     prompts, interrupts, usedPlanMode, exploreBeforeFirstEdit, hadEdits,
     subagentSpawns, maxParallel, editCalls, assistantTurns, startHour, durationMinutes, wordBuckets,
+    startMs: firstTs, endMs: lastTs, cwd, gitBranch, model,
+    editedFiles: [...editedFiles], eventGapsMs,
   };
 }
 
@@ -163,9 +197,46 @@ export function aggregateSessions(sessions: SessionStats[], windowDays: number):
   };
 }
 
+// ── Per-session timing summary (bounded; for later gaming detection) ────────
+
+/**
+ * Collapse raw inter-event gaps into a small, bounded summary. The raw gap
+ * array is LOCAL-ONLY and never uploaded; only this summary travels.
+ * events = gaps.length + 1. median/p10 are 0 when fewer than 2 events.
+ */
+export function timingSummary(gapsMs: number[]): {
+  events: number;
+  medianGapMs: number;
+  p10GapMs: number;
+  subSecondFraction: number;
+} {
+  const events = gapsMs.length + 1;
+  if (gapsMs.length === 0) {
+    return { events, medianGapMs: 0, p10GapMs: 0, subSecondFraction: 0 };
+  }
+  const sorted = [...gapsMs].sort((a, b) => a - b);
+  const quantile = (q: number): number => {
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))));
+    return sorted[idx] ?? 0;
+  };
+  const subSecond = gapsMs.filter((g) => g < 1000).length;
+  return {
+    events,
+    medianGapMs: Math.round(quantile(0.5)),
+    p10GapMs: Math.round(quantile(0.1)),
+    subSecondFraction: Math.round((subSecond / gapsMs.length) * 1000) / 1000,
+  };
+}
+
 // ── Filesystem walk + cache ─────────────────────────────────────────────────
 
+// Bump when the cached SessionStats shape changes so older caches are
+// discarded and re-parsed (an old entry would be missing newer fields like
+// cwd/editedFiles/eventGapsMs, breaking the deep path).
+const CACHE_VERSION = 2;
+
 interface CacheFile {
+  version?: number;
   files: Record<string, { size: number; mtimeMs: number; stats: SessionStats | null }>;
   lastSentAt?: string;
 }
@@ -176,13 +247,19 @@ const PROJECTS_DIR = process.env["CCWARRIORS_CLAUDE_DIR"] ?? join(homedir(), ".c
 
 async function loadCache(): Promise<CacheFile> {
   try {
-    return JSON.parse(await readFile(CACHE_PATH, "utf8")) as CacheFile;
+    const cache = JSON.parse(await readFile(CACHE_PATH, "utf8")) as CacheFile;
+    // Stale schema → drop parsed entries (keep lastSentAt throttle), re-parse.
+    if (cache.version !== CACHE_VERSION) {
+      return { version: CACHE_VERSION, files: {}, lastSentAt: cache.lastSentAt };
+    }
+    return cache;
   } catch {
-    return { files: {} };
+    return { version: CACHE_VERSION, files: {} };
   }
 }
 
 async function saveCache(cache: CacheFile): Promise<void> {
+  cache.version = CACHE_VERSION;
   await mkdir(HOME, { recursive: true, mode: 0o700 });
   await writeFile(CACHE_PATH, JSON.stringify(cache), { encoding: "utf8", mode: 0o600 });
 }
@@ -192,10 +269,14 @@ async function parseFile(path: string): Promise<SessionStats | null> {
   return parseSessionLines(rl);
 }
 
-/** Collect insights for sessions modified within the window. Cache makes
-    repeat runs parse only new/changed files. */
-export async function collectInsights(): Promise<InsightsPayload | null> {
-  if (!existsSync(PROJECTS_DIR)) return null;
+/**
+ * Walk the project dirs, parsing every in-window session file (with the
+ * path+size+mtime cache so repeat runs only re-parse new/changed files), and
+ * return the resulting SessionStats. Shared by collectInsights (aggregate) and
+ * collectDeepInsights (per-session). Returns [] if PROJECTS_DIR is absent.
+ */
+async function walkSessions(): Promise<SessionStats[]> {
+  if (!existsSync(PROJECTS_DIR)) return [];
   const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
   const cache = await loadCache();
   const seen = new Set<string>();
@@ -242,8 +323,92 @@ export async function collectInsights(): Promise<InsightsPayload | null> {
   for (const key of Object.keys(cache.files)) if (!seen.has(key)) delete cache.files[key];
   await saveCache(cache);
 
+  return sessions;
+}
+
+/** Collect insights for sessions modified within the window. Cache makes
+    repeat runs parse only new/changed files. */
+export async function collectInsights(): Promise<InsightsPayload | null> {
+  const sessions = await walkSessions();
   if (sessions.length === 0) return null;
   return aggregateSessions(sessions, WINDOW_DAYS);
+}
+
+// ── Deep per-session extraction (Craft Score) ───────────────────────────────
+
+export interface SessionRecord {
+  startHour: number; durationMinutes: number; prompts: number; interrupts: number;
+  usedPlanMode: boolean; exploreBeforeFirstEdit: boolean; hadEdits: boolean;
+  subagentSpawns: number; maxParallel: number; editCalls: number; assistantTurns: number;
+  wordBuckets: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
+  model: string | null;
+  timing: { events: number; medianGapMs: number; p10GapMs: number; subSecondFraction: number };
+  git: SessionGitOutcome | null;
+}
+
+export interface InsightsDeepPayload {
+  windowDays: number;
+  sessions: SessionRecord[];
+}
+
+/**
+ * Build the uploadable SessionRecord from a (richer) SessionStats. PRIVACY
+ * CONTRACT: cwd, gitBranch, editedFiles, and the raw eventGapsMs are dropped
+ * here — only counts, the timing summary, the model name, and the hashed git
+ * outcome survive.
+ */
+function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): SessionRecord {
+  return {
+    startHour: s.startHour,
+    durationMinutes: r1(s.durationMinutes),
+    prompts: s.prompts,
+    interrupts: s.interrupts,
+    usedPlanMode: s.usedPlanMode,
+    exploreBeforeFirstEdit: s.exploreBeforeFirstEdit,
+    hadEdits: s.hadEdits,
+    subagentSpawns: s.subagentSpawns,
+    maxParallel: s.maxParallel,
+    editCalls: s.editCalls,
+    assistantTurns: s.assistantTurns,
+    wordBuckets: s.wordBuckets,
+    model: s.model,
+    timing: timingSummary(s.eventGapsMs),
+    git,
+  };
+}
+
+/**
+ * Deep per-session insights: one SessionRecord per in-window session, each
+ * coupled to its LOCAL-git outcome (hashed). The salt is the per-user secret
+ * from config (LOCAL-ONLY). Returns null when there are no sessions. Never
+ * throws — git reads already return null on failure and the rest is wrapped.
+ */
+export async function collectDeepInsights(salt: string): Promise<InsightsDeepPayload | null> {
+  try {
+    const sessions = await walkSessions();
+    if (sessions.length === 0) return null;
+
+    const records: SessionRecord[] = [];
+    for (const s of sessions) {
+      let git: SessionGitOutcome | null = null;
+      if (s.cwd && s.startMs !== null && s.endMs !== null) {
+        // readGitOutcome never throws and returns null quickly for non-repos.
+        git = await readGitOutcome({
+          cwd: s.cwd,
+          branch: s.gitBranch,
+          startMs: s.startMs,
+          endMs: s.endMs,
+          aiEditedFiles: s.editedFiles,
+          salt,
+        });
+      }
+      records.push(toSessionRecord(s, git));
+    }
+
+    return { windowDays: WINDOW_DAYS, sessions: records };
+  } catch {
+    return null;
+  }
 }
 
 const SEND_INTERVAL_MS = 6 * 60 * 60 * 1000; // network throttle: at most every 6h
