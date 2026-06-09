@@ -141,6 +141,7 @@ export function profileRoute(deps: ProfileDeps) {
         ? {
             owner: {
               consent: user!.insightsConsent,
+              mode: user!.insightsMode,
               visibility: user!.insightsVisibility,
               machineCount: deps.insightsStore.machineCount(user!.id),
             },
