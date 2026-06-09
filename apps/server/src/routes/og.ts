@@ -16,13 +16,18 @@ export function ogRoute(db: DB, store: LeaderboardStore, webBaseUrl: string) {
     if (!/^[a-zA-Z0-9-]{1,39}$/.test(raw)) return c.text("not found", 404);
     const entry = store.getByLogin(raw);
     const [user] = await db
-      .select({ login: users.githubLogin, archetype: users.archetype, visibility: users.insightsVisibility })
+      .select({
+        login: users.githubLogin,
+        archetype: users.archetype,
+        consent: users.insightsConsent,
+        visibility: users.insightsVisibility,
+      })
       .from(users)
       .where(sql`lower(${users.githubLogin}) = ${raw.toLowerCase()}`);
     if (!entry && !user) return c.text("not found", 404);
     const login = user?.login ?? entry!.githubLogin;
     const rank = entry ? store.getRank("30d", entry.id) : null;
-    const archetype = user?.visibility === "public" ? user?.archetype : null;
+    const archetype = user?.consent && user.visibility === "public" ? user.archetype : null;
     const title = archetype
       ? `${login} is ${archetype} on CCWarriors`
       : `${login} on CCWarriors`;
