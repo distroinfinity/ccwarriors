@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getFontEmbedCSS, toPng } from "html-to-image";
 import { API_HTTP } from "../../api";
-import type { Profile, ProfileInsights, LockedInsights } from "../../useProfile";
+import type { Profile, ProfileInsights, ProfilePillars, LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { PixelGlyph } from "../PixelGlyph";
 import { tierLabel } from "../../util";
@@ -14,6 +14,81 @@ const AXIS_LABEL: Record<(typeof AXIS_ORDER)[number], string> = {
   autonomy: "AUTONOMY",
   planning: "PLANNING",
 };
+
+const PILLAR_ORDER = ["direction", "verification", "autonomy", "yield", "orchestration", "throughput"] as const;
+const PILLAR_LABEL: Record<(typeof PILLAR_ORDER)[number], string> = {
+  direction: "DIRECTION",
+  verification: "VERIFICATION",
+  autonomy: "AUTONOMY",
+  yield: "YIELD",
+  orchestration: "ORCHESTRATION",
+  throughput: "THROUGHPUT",
+};
+
+// A response has the Craft Score headline only when the server sent a numeric
+// craftScore + pillars (deep insights, modern server). Otherwise fall back to
+// the legacy archetype + axes hero.
+function hasCraftScore(
+  insights: ProfileInsights,
+): insights is ProfileInsights & { craftScore: number; pillars: ProfilePillars } {
+  return typeof insights.craftScore === "number" && insights.pillars != null;
+}
+
+function PillarBars({ pillars }: { pillars: ProfilePillars }) {
+  // Sorted by score: terracotta intensity steps down the ranking (Paper Dossier).
+  const sorted = [...PILLAR_ORDER].sort((a, b) => pillars[b] - pillars[a]);
+  return (
+    <div className="axes mono">
+      {sorted.map((pillar, i) => (
+        <div className="axis" key={pillar}>
+          <span className="axis-k pillar-k">{PILLAR_LABEL[pillar]}</span>
+          <span className="axis-track">
+            <span className={`axis-fill f${Math.min(i, 2)}`} style={{ width: `${pillars[pillar]}%` }} />
+          </span>
+          <b className="axis-v">{Math.round(pillars[pillar])}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CraftScoreHero({
+  insights,
+  archetype,
+}: {
+  insights: ProfileInsights & { craftScore: number; pillars: ProfilePillars };
+  archetype: string;
+}) {
+  const tier1 = insights.trustTier === 1;
+  return (
+    <div className="craft">
+      <div className="craft-top">
+        <div className="craft-num-wrap">
+          <span className="craft-label mono">CRAFT SCORE</span>
+          <span className="craft-score mono">{Math.round(insights.craftScore)}</span>
+        </div>
+        <div className="craft-badges">
+          <span className={`trust-badge mono${tier1 ? " t1" : " t0"}`}>
+            {tier1 && <PixelGlyph name="check" size={9} />}
+            {tier1 ? "LOCAL-GIT VERIFIED" : "UNVERIFIED"}
+          </span>
+          {insights.provisional && (
+            <span className="provisional-chip mono">provisional · ranks once the legion grows</span>
+          )}
+        </div>
+      </div>
+      <div className="craft-flavor">
+        plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
+      </div>
+      <PillarBars pillars={insights.pillars} />
+      <div className="axis-note">
+        {insights.scoresArePercentiles
+          ? `calibrated against ${insights.population} warriors`
+          : "calibrated craft. percentiles unlock as the legion grows"}
+      </div>
+    </div>
+  );
+}
 
 function AxisBars({ insights }: { insights: ProfileInsights }) {
   // Sorted by score: terracotta intensity steps down the ranking (Paper Dossier).
@@ -161,9 +236,16 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
 
   const shareOnX = () => {
     if (!insights) return;
-    const top = [...AXIS_ORDER].sort((a, b) => insights.axes[b] - insights.axes[a]).slice(0, 2);
-    const axisBit = top.map((a) => `${AXIS_LABEL[a].toLowerCase()} ${insights.axes[a]}`).join(" · ");
-    const text = `I'm ${insights.archetype.toUpperCase()} on @ccwarriorsxyz. ${axisBit}. What class are you?`;
+    let text: string;
+    if (hasCraftScore(insights)) {
+      const top = [...PILLAR_ORDER].sort((a, b) => insights.pillars[b] - insights.pillars[a])[0] ?? "verification";
+      const topBit = `top pillar ${PILLAR_LABEL[top].charAt(0) + PILLAR_LABEL[top].slice(1).toLowerCase()} ${Math.round(insights.pillars[top])}`;
+      text = `Craft Score ${Math.round(insights.craftScore)} on @ccwarriorsxyz · ${topBit}. What's yours?`;
+    } else {
+      const top = [...AXIS_ORDER].sort((a, b) => insights.axes[b] - insights.axes[a]).slice(0, 2);
+      const axisBit = top.map((a) => `${AXIS_LABEL[a].toLowerCase()} ${insights.axes[a]}`).join(" · ");
+      text = `I'm ${insights.archetype.toUpperCase()} on @ccwarriorsxyz. ${axisBit}. What class are you?`;
+    }
     const url = `https://ccwarriors.xyz/u/${encodeURIComponent(profile.login)}?ref=x_share`;
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
@@ -180,7 +262,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
       const dataUrl = await toPng(cardRef.current, { pixelRatio: 4, cacheBust: true, fontEmbedCSS });
       const a = document.createElement("a");
       a.href = dataUrl;
-      a.download = `ccwarriors-${profile.login}-archetype.png`;
+      a.download = `ccwarriors-${profile.login}-${insights && hasCraftScore(insights) ? "craft-score" : "archetype"}.png`;
       a.click();
     } catch (err) {
       console.error("card export failed", err);
@@ -234,14 +316,18 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
         </div>
 
         {insights ? (
-          <>
-            <div className="arch-name">{insights.archetype.toUpperCase()}</div>
-            <div className="arch-trait">
-              {insights.trait ? `${insights.trait} · ` : ""}
-              {insights.growthEdge}
-            </div>
-            <AxisBars insights={insights} />
-          </>
+          hasCraftScore(insights) ? (
+            <CraftScoreHero insights={insights} archetype={insights.archetype} />
+          ) : (
+            <>
+              <div className="arch-name">{insights.archetype.toUpperCase()}</div>
+              <div className="arch-trait">
+                {insights.trait ? `${insights.trait} · ` : ""}
+                {insights.growthEdge}
+              </div>
+              <AxisBars insights={insights} />
+            </>
+          )
         ) : (
           <LockedPanel profile={profile} onConsentChanged={onConsentChanged} />
         )}

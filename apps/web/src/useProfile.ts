@@ -9,6 +9,15 @@ export interface ProfileAxes {
   velocity: number;
 }
 
+export interface ProfilePillars {
+  direction: number;
+  verification: number;
+  autonomy: number;
+  yield: number;
+  orchestration: number;
+  throughput: number;
+}
+
 export interface ProfileInsights {
   locked: false;
   scoresArePercentiles: boolean;
@@ -24,6 +33,12 @@ export interface ProfileInsights {
     longestSessionMinutes: number;
   };
   growthEdge: string;
+  // Craft Score (the headline). Null on aggregate-only insights (no deep rows)
+  // or against an older server — the UI falls back to archetype + axes then.
+  craftScore: number | null;
+  pillars: ProfilePillars | null;
+  trustTier: 0 | 1 | null;
+  provisional: boolean;
 }
 
 export interface LockedInsights {
