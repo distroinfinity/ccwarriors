@@ -8,18 +8,12 @@ export function EfficiencyPanel({ profile }: { profile: Profile }) {
       <div className="seclabel">Efficiency</div>
       <div className="eff-grade">
         <span className="eff-letter mono">{e.grade}</span>
-        <span className="eff-sub">model mix grade</span>
+        <span className="eff-sub">cache efficiency</span>
       </div>
       {e.cacheReadRatio !== null && (
         <div className="habit">
           <b className="mono">{Math.round(e.cacheReadRatio * 100)}%</b>
           <span>of context served from cache</span>
-        </div>
-      )}
-      {e.estSavingsPerMonth !== null && e.estSavingsPerMonth > 0 && (
-        <div className="habit">
-          <b className="mono">${e.estSavingsPerMonth}</b>
-          <span>monthly saving if routine work moves to Sonnet</span>
         </div>
       )}
       {e.modelMix.length > 0 && (
