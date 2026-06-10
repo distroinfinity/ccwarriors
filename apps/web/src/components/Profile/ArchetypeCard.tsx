@@ -287,7 +287,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
       const axisBit = top.map((a) => `${AXIS_LABEL[a].toLowerCase()} ${insights.axes[a]}`).join(" · ");
       text = `I'm ${insights.archetype.toUpperCase()} on @ccwarriorsxyz. ${axisBit}. What class are you?`;
     }
-    const url = `https://ccwarriors.xyz/u/${encodeURIComponent(profile.login)}?ref=x_share`;
+    const url = `https://ccwarriors.xyz/${encodeURIComponent(profile.login)}?ref=x_share`;
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       "_blank",
@@ -402,13 +402,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
         )}
 
         <div className="arch-foot mono">
-          <span>ccwarriors.xyz/u/{profile.login}</span>
-          <span>
-            extended from{" "}
-            <a className="arch-foot-link" href="https://paxel.ycombinator.com" target="_blank" rel="noopener">
-              YC paxel
-            </a>
-          </span>
+          <span>ccwarriors.xyz/{profile.login}</span>
         </div>
       </div>
 
@@ -424,8 +418,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
         <div className="arch-transparency">
           <div className="trans-status mono">
             Deep insights on &middot; {profile.owner.machineCount} machine
-            {profile.owner.machineCount === 1 ? "" : "s"} &middot;{" "}
-            <span className="trans-verified">LOCAL-GIT VERIFIED</span>
+            {profile.owner.machineCount === 1 ? "" : "s"}
           </div>
 
           <button

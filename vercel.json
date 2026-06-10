@@ -15,6 +15,18 @@
       ],
       "destination": "https://api.ccwarriors.xyz/og/u/:login"
     },
+    {
+      "//": "Short-URL bot OG rewrite for bare /<login>. The path-to-regexp exclusion of reserved/asset paths cannot be fully tested locally — verify with a real crawler UA at deploy. The server OG route 404s unknown logins, so a stray match degrades gracefully.",
+      "source": "/:login((?!how|legal|assets|api)[A-Za-z0-9-]{1,39})",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(Twitterbot|facebookexternalhit|Slackbot|LinkedInBot|Discordbot|WhatsApp|TelegramBot).*"
+        }
+      ],
+      "destination": "https://api.ccwarriors.xyz/og/u/:login"
+    },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

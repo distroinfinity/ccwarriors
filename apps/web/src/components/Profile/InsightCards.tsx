@@ -12,7 +12,7 @@ function DeckCard({ card, login }: { card: InsightCard; login: string }) {
   const [exporting, setExporting] = useState(false);
 
   const shareOnX = () => {
-    const url = `https://ccwarriors.xyz/u/${encodeURIComponent(login)}?ref=x_share`;
+    const url = `https://ccwarriors.xyz/${encodeURIComponent(login)}?ref=x_share`;
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(card.shareText)}&url=${encodeURIComponent(url)}`,
       "_blank",

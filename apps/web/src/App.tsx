@@ -26,9 +26,19 @@ const HIDE_LEGAL = true;
 const path = window.location.pathname.replace(/\/+$/, "");
 const isHow = path === "/how";
 const isLegal = !HIDE_LEGAL && path === "/legal";
+// Top-level segments that are NOT profiles (own pages/assets). Extend as the
+// app grows real top-level routes so they don't get swallowed by /<login>.
+const RESERVED_TOP_LEVEL = new Set(["how", "legal"]);
 const PROFILE_LOGIN: string | null = (() => {
-  const m = path.match(/^\/u\/([A-Za-z0-9-]{1,39})$/);
-  return m ? m[1]! : null;
+  // Legacy /u/<login> stays valid for links already shared.
+  const legacy = path.match(/^\/u\/([A-Za-z0-9-]{1,39})$/);
+  if (legacy) return legacy[1]!;
+  // New short URL: a bare single segment /<login>. The regex rejects dotted
+  // asset paths and anything with a slash; reserved words fall through to
+  // their own routes (/, /how, /legal).
+  const bare = path.match(/^\/([A-Za-z0-9-]{1,39})$/);
+  if (bare && !RESERVED_TOP_LEVEL.has(bare[1]!)) return bare[1]!;
+  return null;
 })();
 if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
