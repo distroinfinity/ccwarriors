@@ -1,5 +1,5 @@
 # CCWarriors CLI installer (Windows PowerShell)
-#   irm https://api.ccwarriors.xyz/install.ps1 | iex
+#   irm https://ccwarriors.xyz/install.ps1 | iex
 $ErrorActionPreference = "Stop"
 
 $Base = if ($env:CCWARRIORS_BASE) { $env:CCWARRIORS_BASE } else { "https://api.ccwarriors.xyz" }

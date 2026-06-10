@@ -19,8 +19,8 @@ ${bold("ccwarriors")} — sync your AI coding costs and climb the leaderboard
 ${dim("Counts every agent ccusage can read: Claude Code, Codex, Gemini, Copilot, OpenCode, Amp, and friends.")}
 
 ${bold("INSTALL")}
-  macOS/Linux:  curl -fsSL https://api.ccwarriors.xyz/install.sh | bash
-  Windows:      irm https://api.ccwarriors.xyz/install.ps1 | iex
+  macOS/Linux:  curl -fsSL https://ccwarriors.xyz/install.sh | bash
+  Windows:      irm https://ccwarriors.xyz/install.ps1 | iex
 
 ${bold("USAGE")}
   ccwarriors            Sync costs (default)

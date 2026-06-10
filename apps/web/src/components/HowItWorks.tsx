@@ -48,7 +48,7 @@ export function HowItWorks() {
           your local usage logs. When they change, it syncs. About every 12 seconds while you
           code. Every 5 minutes when idle. It also keeps itself up to date. You can read the
           installer before running it:{" "}
-          <code>curl -fsSL https://api.ccwarriors.xyz/install.sh</code>
+          <code>curl -fsSL https://ccwarriors.xyz/install.sh</code>
         </p>
       </section>
 
