@@ -38,6 +38,9 @@ export interface AppDeps {
     usdInr?: () => number;
   };
   discord?: DiscordCfg;
+  // Server-owned PAT for public GitHub-stats reads (fallback when a user's
+  // OAuth token isn't stored). Absent → user tokens only.
+  githubToken?: string;
 }
 
 export function createApp(deps?: AppDeps) {
@@ -100,7 +103,13 @@ export function createApp(deps?: AppDeps) {
       );
       app.route(
         "/profile",
-        profileRoute({ db: deps.db, store: deps.store, insightsStore: deps.insightsStore, sessionSecret: deps.auth?.clientSecret }),
+        profileRoute({
+          db: deps.db,
+          store: deps.store,
+          insightsStore: deps.insightsStore,
+          sessionSecret: deps.auth?.clientSecret,
+          githubToken: deps.githubToken ?? null,
+        }),
       );
     }
     app.route("/og", ogRoute(deps.db, deps.store, deps.auth?.webBaseUrl ?? "https://ccwarriors.xyz"));

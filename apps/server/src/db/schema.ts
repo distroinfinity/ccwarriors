@@ -130,6 +130,10 @@ export const users = pgTable("users", {
   // replaying the pillar math. Null when mode is off or there's no deep data.
   craftScore: numeric("craft_score"),
   trustTier: integer("trust_tier"), // 0 unverified | 1 local-git
+  // GitHub OAuth access token, persisted at login for server-side PUBLIC-data
+  // reads (5000 req/h/token). Scope is read:user only — blast radius of a leak
+  // is rate-limit theft, not data access. Nulled on a 401 (revoked).
+  githubAccessToken: text("github_access_token"),
 });
 
 export const snapshots = pgTable("snapshots", {
@@ -233,6 +237,44 @@ export const userDeepSessions = pgTable(
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("user_deep_sessions_user_machine").on(t.userId, t.machineId)],
+);
+
+// ── GitHub public stats (issue #48, public-only subset) ─────────────────────
+// Verified-by-GitHub public footprint, fetched server-side with the user's own
+// OAuth token (or a server PAT fallback). Card doctrine applies downstream:
+// a missing block means "no data", never fabricated zeros.
+export type GithubStats = {
+  login: string;
+  accountCreatedAt: string; // ISO
+  followers: number;
+  publicRepos: number;
+  totalStars: number; // sum over top-100 owned public repos by stars
+  topLanguages: Array<{ name: string; repos: number }>; // primaryLanguage, top 5
+  mergedPublicPrs: number;
+  reviewsLastYear: number;
+  commitsLastYear: number;
+  contributionsLastYear: number;
+  currentStreakDays: number;
+  longestStreakDays: number;
+  reposContributedTo: number; // repos the user doesn't own
+  windowCommits: number; // commit contributions in the last 40 days
+};
+
+// One row per user, upserted by the background refresher. `data` survives
+// later failed fetches (serve-stale-forever); `status` + `fetchedAt` drive
+// the retry backoff.
+export const githubStats = pgTable(
+  "github_stats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    status: text("status").notNull().default("ok"), // ok | error
+    data: jsonb("data").$type<GithubStats>(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("github_stats_user").on(t.userId)],
 );
 
 export type User = typeof users.$inferSelect;

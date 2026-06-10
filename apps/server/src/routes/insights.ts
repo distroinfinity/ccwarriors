@@ -20,6 +20,7 @@ import {
   archetypeOf,
   calibratedAxes,
   percentileAxes,
+  percentilePool,
   MIN_SESSIONS,
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
@@ -125,14 +126,17 @@ async function userFromBearer(db: DB, c: Context): Promise<User | null> {
   return user ?? null;
 }
 
-/** Recompute and persist the archetype after any insights change. */
+/** Recompute and persist the archetype after any insights change. Derives
+    from session #1 — MIN_SESSIONS only decides percentile-pool membership. */
 async function refreshArchetype(db: DB, store: InsightsStore, userId: string): Promise<string | null> {
   const merged = store.merged(userId);
   let archetype: string | null = null;
-  if (merged && merged.sessions >= MIN_SESSIONS) {
-    const pop = store.population();
+  if (merged && merged.sessions > 0) {
+    const pop = percentilePool(store.population());
     const scores =
-      pop.length >= PERCENTILE_MIN_POPULATION ? percentileAxes(merged, pop) : calibratedAxes(merged);
+      pop.length >= PERCENTILE_MIN_POPULATION && merged.sessions >= MIN_SESSIONS
+        ? percentileAxes(merged, pop)
+        : calibratedAxes(merged);
     archetype = archetypeOf(scores);
   }
   await db.update(users).set({ archetype }).where(eq(users.id, userId));

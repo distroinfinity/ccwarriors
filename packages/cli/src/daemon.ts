@@ -75,9 +75,13 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
             try {
               if (!(await shouldSend())) return;
               const salt = await ensureInsightsSalt(cfg);
-              const payload = await collectDeepInsights(salt);
-              if (!payload) return;
-              const sent = await postInsightsDeep(token, machineId, payload);
+              const result = await collectDeepInsights(salt);
+              if (result.status === "error") {
+                void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
+                return;
+              }
+              if (result.status !== "ok") return;
+              const sent = await postInsightsDeep(token, machineId, result.payload);
               if (sent.ok) {
                 await markSent();
                 log("insights synced");

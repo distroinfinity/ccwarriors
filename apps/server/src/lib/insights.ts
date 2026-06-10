@@ -6,14 +6,21 @@ export const AXES = ["planning", "autonomy", "steering", "summoning", "velocity"
 export type Axis = (typeof AXES)[number];
 export type AxisScores = Record<Axis, number>;
 
-// Below this many sessions in the window the archetype shows "forging" —
-// tiny samples produce garbage classes.
+// Percentile-pool membership floor. This no longer gates profile rendering —
+// every consented user with ≥1 session gets calibrated scores — it only keeps
+// tiny samples out of the rank-normalization pool (a flood of 1-session users
+// would shred everyone's percentiles).
 export const MIN_SESSIONS = 10;
 // Below this many consented warriors, scores use the fixed calibration
 // constants; at/after it, percentiles take over automatically.
 export const PERCENTILE_MIN_POPULATION = 30;
 
 export type MergedInsights = InsightsPayload;
+
+/** The rank-normalization pool: consented users with a non-degenerate sample. */
+export function percentilePool(population: MergedInsights[]): MergedInsights[] {
+  return population.filter((m) => m.sessions >= MIN_SESSIONS);
+}
 
 const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;

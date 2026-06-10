@@ -80,9 +80,15 @@ async function maybePushInsights(token: string, machineId: string, data: import(
     const config = await loadConfig();
     if (!config) return;
     const salt = await ensureInsightsSalt(config);
-    const payload = await collectDeepInsights(salt);
-    if (!payload) return;
-    const res = await postInsightsDeep(token, machineId, payload);
+    const result = await collectDeepInsights(salt);
+    if (result.status === "error") {
+      // Extraction broke — beacon it so a fleet-wide regression is visible,
+      // but never break the sync UX.
+      void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
+      return;
+    }
+    if (result.status !== "ok") return;
+    const res = await postInsightsDeep(token, machineId, result.payload);
     if (res.ok) {
       await markSent();
       if (verbose) console.log(dim("   insights synced — your archetype is forging at ccwarriors.xyz"));
@@ -104,6 +110,11 @@ async function cmdSync(): Promise<void> {
   console.log(dim("Reading ccusage (all your coding agents)…"));
   const { tools, estimates, ccusageVersion } = await readUsage();
 
+  if (Object.keys(tools).length === 0) {
+    // A stale npx-cached ccusage binary fails silently and reads as "no usage"
+    // (seen in the wild: a native binary linking a GC'd nix library).
+    console.log(yellow("  ccusage returned no usage — if this persists, try `npx --yes ccusage@latest` manually; a stale npx cache can break the binary."));
+  }
   console.log(dim(`  found: ${formatEstimates(estimates)} ${dim("(local estimates — the server prices the truth)")}`));
   console.log(dim("Syncing with Claude Warriors…"));
 
@@ -236,8 +247,13 @@ async function cmdInsights(args: string[]): Promise<void> {
     // dry-run works without auth (the salt only affects opaque hashes anyway).
     const config = await loadConfig();
     const salt = config ? await ensureInsightsSalt(config) : randomBytes(16).toString("hex");
-    const payload = await collectDeepInsights(salt);
-    console.log(JSON.stringify(payload, null, 2));
+    const result = await collectDeepInsights(salt);
+    if (result.status === "error") {
+      console.error(red(`Insights extraction failed: ${result.message}`));
+      console.error(red("Your sessions exist but could not be read — try deleting ~/.claude-warriors/insights-cache.json and re-running."));
+      process.exit(1);
+    }
+    console.log(JSON.stringify(result.status === "ok" ? result.payload : null, null, 2));
     return;
   }
   const config = await loadConfig();
@@ -256,15 +272,22 @@ async function cmdInsights(args: string[]): Promise<void> {
     console.log(dim("Extracting from your local sessions now — counts and hashed git outcomes only, transcripts and paths never leave this machine."));
     const machineId = await ensureMachineId(config);
     const salt = await ensureInsightsSalt(config);
-    const payload = await collectDeepInsights(salt);
-    if (payload) {
-      const sent = await postInsightsDeep(config.token, machineId, payload);
+    const result = await collectDeepInsights(salt);
+    if (result.status === "ok") {
+      const sent = await postInsightsDeep(config.token, machineId, result.payload);
       if (sent.ok) {
         await markSent();
         console.log(green(`Done — see your archetype at ${WEB_BASE}/u/${encodeURIComponent(config.login)}`));
       } else {
         console.error(red(`Upload failed (status ${sent.status}) — it will retry on the next sync.`));
       }
+    } else if (result.status === "error") {
+      // Error ≠ empty. Saying "no sessions" to someone with hundreds of them
+      // is how this bug hid in the wild — be honest and point at the fix.
+      void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
+      console.error(red(`Insights extraction failed: ${result.message}`));
+      console.error(red("Your sessions exist but could not be read — try deleting ~/.claude-warriors/insights-cache.json and re-running `ccwarriors insights on`."));
+      process.exit(1);
     } else {
       console.log(yellow("No local Claude Code sessions found in the last 40 days — your profile unlocks after you code."));
     }

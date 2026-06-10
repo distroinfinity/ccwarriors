@@ -160,7 +160,8 @@ describe("/insights/mode + /insights/deep", () => {
     expect(u!.insightsMode).toBe("deep");
     expect(u!.insightsConsent).toBe(true);
 
-    // Upload enough sessions to clear MIN_SESSIONS (10) so an archetype derives.
+    // Archetype derives from session #1 now; 12 sessions also exercises the
+    // multi-session aggregate path.
     const sessions = Array.from({ length: 12 }, (_, i) =>
       record({ startHour: 9 + (i % 5), usedPlanMode: i % 2 === 0, hadEdits: true, editCalls: 4 }),
     );

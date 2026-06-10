@@ -52,6 +52,29 @@ export interface ProfileInsights {
   pillars: ProfilePillars | null;
   trustTier: 0 | 1 | null;
   provisional: boolean;
+  // Sessions behind these scores. Absent on older servers.
+  sampleSessions?: number;
+  // Local-git verified AND public GitHub commits in the same window.
+  githubVerified?: boolean;
+}
+
+// Verified-by-GitHub public footprint. Public data — present (when fetched)
+// regardless of insights consent; absent on older servers.
+export interface GithubStats {
+  login: string;
+  accountCreatedAt: string;
+  followers: number;
+  publicRepos: number;
+  totalStars: number;
+  topLanguages: Array<{ name: string; repos: number }>;
+  mergedPublicPrs: number;
+  reviewsLastYear: number;
+  commitsLastYear: number;
+  contributionsLastYear: number;
+  currentStreakDays: number;
+  longestStreakDays: number;
+  reposContributedTo: number;
+  windowCommits: number;
 }
 
 export interface LockedInsights {
@@ -82,6 +105,7 @@ export interface Profile {
     estSavingsPerMonth: number | null;
     tokensPerActiveDay: number | null;
   } | null;
+  github?: GithubStats | null;
   insights: ProfileInsights | LockedInsights;
   owner?: { consent: boolean; visibility: "public" | "private"; machineCount: number; mode: "off" | "deep" };
 }

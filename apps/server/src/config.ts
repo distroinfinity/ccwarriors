@@ -21,6 +21,9 @@ const schema = z.object({
   // GitHub OAuth app credentials (optional — OAuth is disabled when unset).
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
+  // Server-owned PAT for public GitHub-stats reads (optional) — the fallback
+  // for users whose OAuth token isn't stored yet (pre-#48 logins) or revoked.
+  GITHUB_TOKEN: z.string().optional(),
   // Discord OAuth app credentials (optional — org verification is disabled
   // when unset). Per-org guild IDs come from their own env vars (NS_GUILD_ID).
   DISCORD_CLIENT_ID: z.string().optional(),
@@ -44,6 +47,7 @@ export interface Config {
   corsOrigin: string;
   githubClientId?: string;
   githubClientSecret?: string;
+  githubToken?: string;
   discordClientId?: string;
   discordClientSecret?: string;
   publicBaseUrl: string;
@@ -63,6 +67,7 @@ export function parseConfig(env: NodeJS.ProcessEnv): Config {
     corsOrigin: p.CORS_ORIGIN,
     githubClientId: p.GITHUB_CLIENT_ID && p.GITHUB_CLIENT_ID.length > 0 ? p.GITHUB_CLIENT_ID : undefined,
     githubClientSecret: p.GITHUB_CLIENT_SECRET && p.GITHUB_CLIENT_SECRET.length > 0 ? p.GITHUB_CLIENT_SECRET : undefined,
+    githubToken: p.GITHUB_TOKEN && p.GITHUB_TOKEN.length > 0 ? p.GITHUB_TOKEN : undefined,
     discordClientId: p.DISCORD_CLIENT_ID && p.DISCORD_CLIENT_ID.length > 0 ? p.DISCORD_CLIENT_ID : undefined,
     discordClientSecret: p.DISCORD_CLIENT_SECRET && p.DISCORD_CLIENT_SECRET.length > 0 ? p.DISCORD_CLIENT_SECRET : undefined,
     publicBaseUrl: p.PUBLIC_BASE_URL,

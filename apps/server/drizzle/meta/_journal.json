@@ -57,6 +57,13 @@
       "when": 1781011466931,
       "tag": "0007_crazy_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781121960259,
+      "tag": "0008_silly_boom_boom",
+      "breakpoints": true
     }
   ]
 }

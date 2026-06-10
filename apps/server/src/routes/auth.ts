@@ -127,6 +127,8 @@ export function authRoute(db: DB, cfg: AuthCfg) {
 
       if (mode === "web") {
         // Web sign-in only identifies an existing/new visitor; no CLI token rotation.
+        // The OAuth token is persisted for server-side PUBLIC GitHub-stats reads
+        // (read:user scope only) — success path only, never clobbered with empty.
         await db
           .insert(users)
           .values({
@@ -135,9 +137,13 @@ export function authRoute(db: DB, cfg: AuthCfg) {
             avatarUrl,
             cliTokenHash: hashToken(generateToken()),
             cardScene: randomScene(),
+            githubAccessToken: accessToken,
             ...(ref ? { installSource: ref } : {}),
           })
-          .onConflictDoUpdate({ target: users.githubId, set: { githubLogin: login, avatarUrl } });
+          .onConflictDoUpdate({
+            target: users.githubId,
+            set: { githubLogin: login, avatarUrl, githubAccessToken: accessToken },
+          });
         if (!existing) captureEvent("user_enlisted", githubIdStr, enlistProps);
         const orgSlug =
           typeof payload["org"] === "string" && orgBySlug(payload["org"]) ? payload["org"] : null;
@@ -159,11 +165,12 @@ export function authRoute(db: DB, cfg: AuthCfg) {
           avatarUrl,
           cliTokenHash: hashToken(cliToken),
           cardScene: randomScene(),
+          githubAccessToken: accessToken,
           ...(ref ? { installSource: ref } : {}),
         })
         .onConflictDoUpdate({
           target: users.githubId,
-          set: { githubLogin: login, avatarUrl, cliTokenHash: hashToken(cliToken) },
+          set: { githubLogin: login, avatarUrl, cliTokenHash: hashToken(cliToken), githubAccessToken: accessToken },
         });
       if (!existing) captureEvent("user_enlisted", githubIdStr, enlistProps);
 

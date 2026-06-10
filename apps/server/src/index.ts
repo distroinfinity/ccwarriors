@@ -141,6 +141,7 @@ async function main() {
     auth: authDeps,
     donate: donateDeps,
     discord: discordDeps,
+    githubToken: cfg.githubToken,
   });
 
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {

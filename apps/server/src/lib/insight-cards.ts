@@ -6,7 +6,7 @@
 // actually have. Each card is a small function returning InsightCard | null;
 // the builder filters the nulls. Cards whose data hasn't arrived yet (e.g.
 // commit-timing histograms before an upgraded-CLI sync) simply don't appear.
-import type { InsightsPayload, SessionRecord } from "../db/schema.js";
+import type { GithubStats, InsightsPayload, SessionRecord } from "../db/schema.js";
 import type { Efficiency } from "./efficiency.js";
 import { shipped, survivingLoc } from "./craft-score.js";
 
@@ -25,6 +25,11 @@ export interface InsightCardInput {
   efficiency: Efficiency | null;
   archetype: string | null;
   pillars: Record<string, number> | null;
+  // Verified-by-GitHub public footprint (issue #48). Optional: older callers
+  // and GitHub-less profiles simply get no gh_ cards.
+  github?: GithubStats | null;
+  // Usage-days rhythm (weekend share, streaks). Optional like github.
+  rhythm?: { weekendShare: number; currentStreak: number; longestStreak: number; activeDays: number } | null;
 }
 
 const round = (n: number) => Math.round(n);
@@ -125,7 +130,7 @@ function modelCard(input: InsightCardInput): InsightCard | null {
     withModel++;
     counts.set(s.model, (counts.get(s.model) ?? 0) + 1);
   }
-  if (withModel < 5) return null;
+  if (withModel < 1) return null;
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   const [topId, topN] = ranked[0]!;
   const topPct = round((topN / withModel) * 100);
@@ -144,7 +149,7 @@ function modelCard(input: InsightCardInput): InsightCard | null {
 function nightOwlCard(input: InsightCardInput): InsightCard | null {
   const hist = input.merged.hourHistogram;
   const total = sum(hist);
-  if (input.merged.sessions < 10 || total === 0) return null;
+  if (total === 0) return null;
   const peak = argmax(hist);
   const nightShare = sum([22, 23, 0, 1, 2].map((h) => hist[h] ?? 0)) / total;
   const morningShare = sum([5, 6, 7, 8, 9].map((h) => hist[h] ?? 0)) / total;
@@ -166,7 +171,7 @@ function shipsOnCard(input: InsightCardInput): InsightCard | null {
   }
   if (!any) return null;
   const total = sum(dows);
-  if (total < 10) return null;
+  if (total < 1) return null;
   const peak = argmax(dows);
   const weekday = WEEKDAYS[peak]!;
   return card("ships_on", "When do you ship most?", `${weekday}s`, `Your biggest push lands on ${weekday}`);
@@ -184,7 +189,7 @@ function commitsAtNightCard(input: InsightCardInput): InsightCard | null {
   }
   if (!any) return null;
   const total = sum(hours);
-  if (total < 10) return null;
+  if (total < 1) return null;
   const nightShare = sum([22, 23, 0, 1, 2].map((h) => hours[h] ?? 0)) / total;
   const pct = round(nightShare * 100);
   if (nightShare > 0.4) {
@@ -205,7 +210,7 @@ function commitsAtNightCard(input: InsightCardInput): InsightCard | null {
 
 // ── 6. plan_mode ──────────────────────────────────────────────────────────
 function planModeCard(input: InsightCardInput): InsightCard | null {
-  if (input.merged.sessions < 5) return null;
+  if (input.merged.sessions < 1) return null;
   const pct = input.merged.planModeSessionsPct;
   const r = round(pct);
   const body = `You open in plan mode before ${pct > 40 ? "most" : "some"} sessions${
@@ -228,7 +233,7 @@ function agentsCard(input: InsightCardInput): InsightCard | null {
 function promptLengthCard(input: InsightCardInput): InsightCard | null {
   const h = input.merged.promptWordHistogram;
   const total = h["1-5"] + h["6-10"] + h["11-25"] + h["26+"];
-  if (total < 20) return null;
+  if (total < 1) return null;
   const shortPct = (h["1-5"] + h["6-10"]) / total;
   const headline = shortPct > 0.6 ? "Straight to the point" : shortPct < 0.3 ? "You write essays" : "Measured";
   return card(
@@ -241,7 +246,7 @@ function promptLengthCard(input: InsightCardInput): InsightCard | null {
 
 // ── 9. course_correction ──────────────────────────────────────────────────
 function courseCorrectionCard(input: InsightCardInput): InsightCard | null {
-  if (input.merged.sessions < 5) return null;
+  if (input.merged.sessions < 1) return null;
   const rate = input.merged.interruptsPer100Turns;
   const headline = rate > 8 ? "You steer hard" : rate < 2 ? "You let it run" : "You nudge";
   return card(
@@ -256,7 +261,7 @@ function courseCorrectionCard(input: InsightCardInput): InsightCard | null {
 function longestRunCard(input: InsightCardInput): InsightCard | null {
   const mins = input.merged.longestSessionMinutes;
   // Skip the 7-day clamp artifact (deriveAggregate caps at 7*24*60).
-  if (mins < 30 || mins >= 7 * 24 * 60) return null;
+  if (mins <= 0 || mins >= 7 * 24 * 60) return null;
   const h = Math.floor(mins / 60);
   const m = round(mins % 60);
   const headline = `${h}h ${m}m`;
@@ -280,7 +285,7 @@ function shippedCard(input: InsightCardInput): InsightCard | null {
 // ── 12. you_test ──────────────────────────────────────────────────────────
 function youTestCard(input: InsightCardInput): InsightCard | null {
   const shippingSessions = input.sessions.filter(shipped);
-  if (shippingSessions.length < 5) return null;
+  if (shippingSessions.length < 1) return null;
   const withTests = shippingSessions.filter((s) => (s.git?.testFilesTouched ?? 0) > 0).length;
   const pct = withTests / shippingSessions.length;
   const headline = pct > 0.5 ? "You actually test" : pct < 0.15 ? "Ship first, test later" : "You test sometimes";
@@ -290,6 +295,210 @@ function youTestCard(input: InsightCardInput): InsightCard | null {
     headline,
     `${round(pct * 100)}% of your shipping sessions added tests`,
   );
+}
+
+// ── GitHub cards (verified public footprint, issue #48 subset) ──────────────
+// Same doctrine: each guards on ITS OWN real signal; `github` null → none.
+
+function ghMergedPrsCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g || g.mergedPublicPrs < 1) return null;
+  return card(
+    "gh_merged_prs",
+    "How much lands upstream?",
+    `${g.mergedPublicPrs} public PR${g.mergedPublicPrs === 1 ? "" : "s"} merged`,
+    "Merged into public repos, verified by GitHub",
+    String(g.mergedPublicPrs),
+  );
+}
+
+function ghStarsCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g || g.totalStars < 1) return null;
+  return card(
+    "gh_stars",
+    "Does your work resonate?",
+    `${g.totalStars.toLocaleString("en-US")} stars earned`,
+    "Stars across your public repos",
+    `★ ${g.totalStars.toLocaleString("en-US")}`,
+  );
+}
+
+function ghLanguagesCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g || g.topLanguages.length < 1) return null;
+  const names = g.topLanguages.map((l) => l.name);
+  const headline = names.length >= 3 ? "Polyglot" : `${names[0]} country`;
+  const body =
+    names.length >= 2
+      ? `Your public repos speak ${names.slice(0, 3).join(", ")}`
+      : `${names[0]} leads your public repos`;
+  return card("gh_languages", "What do you build in?", headline, body, names[0]);
+}
+
+function ghStreakCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g || g.longestStreakDays < 2) return null;
+  const current = g.currentStreakDays;
+  const body =
+    current >= 2
+      ? `Longest contribution run on GitHub. ${current} days and counting right now`
+      : "Your longest contribution run on GitHub";
+  return card("gh_streak", "How consistent are you?", `${g.longestStreakDays}-day streak`, body, `${g.longestStreakDays}d`);
+}
+
+function ghReviewsCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g || g.reviewsLastYear < 1) return null;
+  return card(
+    "gh_reviews",
+    "Do you review others' work?",
+    "You review code",
+    `${g.reviewsLastYear} pull-request reviews in the last year`,
+    String(g.reviewsLastYear),
+  );
+}
+
+function ghFootprintCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g || g.reposContributedTo < 1) return null;
+  return card(
+    "gh_footprint",
+    "How far does your code reach?",
+    "Beyond your own repos",
+    `Contributed to ${g.reposContributedTo} repos you don't own`,
+    String(g.reposContributedTo),
+  );
+}
+
+function ghVeteranCard(input: InsightCardInput): InsightCard | null {
+  const g = input.github;
+  if (!g) return null;
+  const created = Date.parse(g.accountCreatedAt);
+  if (!Number.isFinite(created)) return null;
+  const years = (Date.now() - created) / (365.25 * 86_400_000);
+  if (years < 1) return null;
+  const sinceYear = new Date(created).getUTCFullYear();
+  return card(
+    "gh_veteran",
+    "How long have you been shipping?",
+    `Shipping since ${sinceYear}`,
+    `${Math.floor(years)} year${Math.floor(years) === 1 ? "" : "s"} on GitHub`,
+    String(sinceYear),
+  );
+}
+
+// ── Session-depth / git-shape cards ─────────────────────────────────────────
+
+function marathonerCard(input: InsightCardInput): InsightCard | null {
+  const n = input.sessions.length;
+  if (n < 1) return null;
+  const mean = sum(input.sessions.map((s) => s.durationMinutes)) / n;
+  if (mean <= 0) return null;
+  const headline = mean > 90 ? "Marathoner" : mean < 20 ? "Sprinter" : "Steady pacer";
+  const h = Math.floor(mean / 60);
+  const m = round(mean % 60);
+  const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+  return card("marathoner", "How long do you go?", headline, `Your average session runs ${label}`, label);
+}
+
+function exploreFirstCard(input: InsightCardInput): InsightCard | null {
+  const ratio = input.merged.exploreBeforeEditRatio;
+  if (ratio <= 0) return null;
+  return card(
+    "explore_first",
+    "Do you look before you leap?",
+    "You read before you write",
+    `${round(ratio * 100)}% of your editing sessions explore the code first`,
+  );
+}
+
+function aiCommitsCard(input: InsightCardInput): InsightCard | null {
+  const linked = sum(input.sessions.map((s) => s.git?.aiLinkedCommits ?? 0));
+  if (linked < 1) return null;
+  return card(
+    "ai_commits",
+    "Does agent work actually land?",
+    `${linked} commit${linked === 1 ? "" : "s"} traced to agent edits`,
+    `${linked} of your commits touch files your agents edited`,
+    String(linked),
+  );
+}
+
+function localReposCard(input: InsightCardInput): InsightCard | null {
+  const repos = new Set(input.sessions.map((s) => s.git?.repoIdHash).filter((h): h is string => !!h)).size;
+  if (repos < 2) return null;
+  return card(
+    "local_repos",
+    "How wide is your battlefield?",
+    `${repos} repos deep`,
+    `Your agents rode along in ${repos} different repos this window`,
+    String(repos),
+  );
+}
+
+function cleanHistoryCard(input: InsightCardInput): InsightCard | null {
+  const tidy = input.sessions.some((s) => s.git?.rebaseDetected || s.git?.squashMergeDetected);
+  if (!tidy) return null;
+  return card(
+    "clean_history",
+    "What does your git log look like?",
+    "You curate history",
+    "Rebases or squash merges keep your log readable",
+  );
+}
+
+// ── Usage/rhythm cards (cost ground truth + active-day cadence) ─────────────
+
+function cacheWarmCard(input: InsightCardInput): InsightCard | null {
+  const ratio = input.efficiency?.cacheReadRatio;
+  if (ratio === null || ratio === undefined) return null;
+  const pct = round(ratio * 100);
+  return card(
+    "cache_warm",
+    "How warm is your context?",
+    `${pct}% from cache`,
+    pct >= 90
+      ? "Long, continuous sessions keep your context hot"
+      : "Share of your context served from cache",
+    `${pct}%`,
+  );
+}
+
+function modelMixCard(input: InsightCardInput): InsightCard | null {
+  const mix = input.efficiency?.modelMix ?? [];
+  if (mix.length < 2) return null;
+  const parts = mix.slice(0, 3).map((m) => `${m.family} ${round(m.share * 100)}%`);
+  return card(
+    "model_mix",
+    "Do you reach for the right blade?",
+    `${mix.length} models in rotation`,
+    `Cost split: ${parts.join(", ")}`,
+  );
+}
+
+function weekendWarriorCard(input: InsightCardInput): InsightCard | null {
+  const r = input.rhythm;
+  if (!r || r.activeDays < 1 || r.weekendShare <= 0) return null;
+  const pct = round(r.weekendShare * 100);
+  const headline = r.weekendShare >= 0.4 ? "Weekend warrior" : "Weekdays do the work";
+  return card(
+    "weekend_warrior",
+    "When does the real work happen?",
+    headline,
+    `${pct}% of your spend lands on weekends`,
+    `${pct}%`,
+  );
+}
+
+function grindStreakCard(input: InsightCardInput): InsightCard | null {
+  const r = input.rhythm;
+  if (!r || r.longestStreak < 2) return null;
+  const body =
+    r.currentStreak >= 2
+      ? `Longest run of consecutive active days. ${r.currentStreak} and counting right now`
+      : "Your longest run of consecutive active days";
+  return card("grind_streak", "How relentless are you?", `${r.longestStreak} days straight`, body, `${r.longestStreak}d`);
 }
 
 const BUILDERS: Array<(i: InsightCardInput) => InsightCard | null> = [
@@ -303,8 +512,24 @@ const BUILDERS: Array<(i: InsightCardInput) => InsightCard | null> = [
   promptLengthCard,
   courseCorrectionCard,
   longestRunCard,
+  marathonerCard,
+  exploreFirstCard,
   shippedCard,
+  aiCommitsCard,
+  localReposCard,
+  cleanHistoryCard,
   youTestCard,
+  ghMergedPrsCard,
+  ghStarsCard,
+  ghLanguagesCard,
+  ghStreakCard,
+  ghReviewsCard,
+  ghFootprintCard,
+  ghVeteranCard,
+  cacheWarmCard,
+  modelMixCard,
+  weekendWarriorCard,
+  grindStreakCard,
 ];
 
 /** Build the ordered deck of insight cards, emitting only cards with real data. */

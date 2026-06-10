@@ -5,6 +5,7 @@ import { InstallBlock } from "../InstallBlock";
 import { ArchetypeCard } from "./ArchetypeCard";
 import { InsightCards } from "./InsightCards";
 import { EfficiencyPanel } from "./EfficiencyPanel";
+import { GithubPanel } from "./GithubPanel";
 import { RhythmPanel } from "./RhythmPanel";
 import { OwnerControls } from "./OwnerControls";
 
@@ -44,6 +45,7 @@ export function ProfilePage({ login }: { login: string }) {
         <ArchetypeCard profile={p} onConsentChanged={refetch} />
         <div className="profile-side">
           <EfficiencyPanel profile={p} />
+          <GithubPanel profile={p} />
         </div>
       </div>
       <InsightCards cards={cards} login={p.login} />

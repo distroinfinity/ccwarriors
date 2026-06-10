@@ -52,6 +52,18 @@ function PillarBars({ pillars }: { pillars: ProfilePillars }) {
   );
 }
 
+// Small-sample marker: scores are real but not yet rank-stable. Shown while
+// the sample is under 10 sessions (the percentile-pool floor).
+function EarlyReadBadge({ insights }: { insights: ProfileInsights }) {
+  const n = insights.sampleSessions;
+  if (!insights.provisional || typeof n !== "number" || n >= 10) return null;
+  return (
+    <span className="trust-badge early mono">
+      EARLY READ · {n} SESSION{n === 1 ? "" : "S"}
+    </span>
+  );
+}
+
 function CraftScoreHero({
   insights,
   archetype,
@@ -72,6 +84,13 @@ function CraftScoreHero({
             {tier1 && <PixelGlyph name="check" size={9} />}
             {tier1 ? "LOCAL-GIT VERIFIED" : "UNVERIFIED"}
           </span>
+          {insights.githubVerified && (
+            <span className="trust-badge t1 mono">
+              <PixelGlyph name="check" size={9} />
+              GITHUB-LINKED
+            </span>
+          )}
+          <EarlyReadBadge insights={insights} />
         </div>
       </div>
       <div className="craft-flavor">
@@ -205,13 +224,12 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     }
   };
 
+  // "forging" now means exactly one thing: consented, but no data has landed
+  // yet. The pending panel polls and swaps the card in live the moment the
+  // first sync arrives. (Old servers still emit forging for <10 sessions
+  // during the deploy window — polling degrades gracefully there too.)
   if (locked.reason === "forging") {
-    return (
-      <div className="arch-locked">
-        <PixelGlyph name="diamond" size={13} />
-        <p>Archetype forging. Under 10 sessions in the window so far. Keep coding.</p>
-      </div>
-    );
+    return <PendingPanel onPoll={onConsentChanged} />;
   }
 
   // Owner already consented but no data has landed yet: processing, not idle.
@@ -323,6 +341,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
                 {insights.trait ? `${insights.trait} · ` : ""}
                 {insights.growthEdge}
               </div>
+              <EarlyReadBadge insights={insights} />
               <AxisBars insights={insights} />
             </>
           )

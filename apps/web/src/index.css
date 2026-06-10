@@ -442,6 +442,8 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .trust-badge.t1{ color:var(--or); border:1px solid var(--or);
   background:color-mix(in srgb, var(--or) 6%, transparent); }
 .trust-badge.t0{ color:var(--muted); border:1px solid var(--line); background:var(--segoff); }
+.trust-badge.early{ color:var(--bronze); border:1px dashed var(--bronze);
+  background:color-mix(in srgb, var(--bronze) 5%, transparent); margin-top:6px; }
 .provisional-chip{ font-size:10px; letter-spacing:.02em; color:var(--bronze);
   border:1px dashed var(--line); border-radius:999px; padding:3px 9px; max-width:220px; text-align:right; }
 .craft-flavor{ font-family:'Pixelify Sans'; font-size:15px; letter-spacing:.04em; color:var(--muted);
@@ -598,6 +600,7 @@ html[data-theme="dark"] .deck-stat{ color:var(--ink); text-shadow:0 1px 3px rgba
 .eff-letter{ font-size:34px; font-weight:700; color:var(--or); }
 .eff-sub{ font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .eff-mix{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); }
+.gh-meta{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
 
 .rhythm{ margin-top:18px; }
 .heatmap{ display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,10px); gap:3px; overflow-x:auto; padding-bottom:4px; }

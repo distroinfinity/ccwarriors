@@ -12,6 +12,7 @@ import {
   archetypeOf,
   calibratedAxes,
   percentileAxes,
+  percentilePool,
   growthEdgeOf,
   habitStats,
   traitOf,
@@ -21,12 +22,18 @@ import {
 import { computeCraftForUser } from "../lib/craft-score-service.js";
 import type { Pillars } from "../lib/craft-score.js";
 import { buildInsightCards, type InsightCard } from "../lib/insight-cards.js";
+import { githubVerified } from "../lib/github-stats.js";
+import { getGithubStatsCached } from "../lib/github-stats-service.js";
 
 export interface ProfileDeps {
   db: DB;
   store: LeaderboardStore;
   insightsStore: InsightsStore;
   sessionSecret?: string;
+  // Server PAT for public GitHub-stats reads (null → user tokens only).
+  githubToken?: string | null;
+  // Test seam: injected fetch for the background GitHub refresh.
+  githubFetcher?: typeof fetch;
 }
 
 const LOGIN_RE = /^[a-zA-Z0-9-]{1,39}$/; // GitHub login charset
@@ -71,7 +78,17 @@ export function profileRoute(deps: ProfileDeps) {
     const rhythm = computeRhythm(dayRows, today);
     const efficiency = dayRows.length > 0 ? computeEfficiency(dayRows, cutoff30) : null;
 
-    // Insights: locked unless consented AND (public OR owner) AND enough sessions.
+    // GitHub public footprint: one indexed SELECT, stale-OK; any refresh is
+    // fire-and-forget inside the service. Public data — no consent gate.
+    const github = user
+      ? await getGithubStatsCached(
+          { db: deps.db, serverToken: deps.githubToken ?? null, fetcher: deps.githubFetcher },
+          user,
+        )
+      : null;
+
+    // Insights: locked unless consented AND (public OR owner). There is no
+    // session-count gate — every stat we can compute renders from session #1.
     const merged = user ? deps.insightsStore.merged(user.id) : null;
     let insights:
       | { locked: true; reason: "no_consent" | "forging" }
@@ -88,19 +105,27 @@ export function profileRoute(deps: ProfileDeps) {
           pillars: Pillars | null;
           trustTier: 0 | 1 | null;
           provisional: boolean;
+          sampleSessions: number;
+          githubVerified: boolean;
           cards: InsightCard[];
         };
-    if (!user?.insightsConsent || !merged) {
+    if (!user?.insightsConsent) {
       insights = { locked: true, reason: "no_consent" };
     } else if (user.insightsVisibility === "private" && !isOwner) {
       // Indistinguishable from never-consented: visitors must not learn that
       // this warrior opted in and then chose to hide (privacy oracle).
       insights = { locked: true, reason: "no_consent" };
-    } else if (merged.sessions < MIN_SESSIONS) {
-      insights = { locked: true, reason: "forging" };
+    } else if (!merged || merged.sessions === 0) {
+      // Consented, but no payload has landed yet. Only the owner sees the
+      // honest "forging" state — to visitors it must look never-consented,
+      // or the response becomes a consent oracle.
+      insights = { locked: true, reason: isOwner ? "forging" : "no_consent" };
     } else {
-      const pop = deps.insightsStore.population();
-      const usePercentiles = pop.length >= PERCENTILE_MIN_POPULATION;
+      // Percentiles need both a big-enough pool AND a non-degenerate sample
+      // for THIS user; everyone else gets calibrated scores (real data, just
+      // not rank-normalized). Tiny samples never join the pool.
+      const pop = percentilePool(deps.insightsStore.population());
+      const usePercentiles = pop.length >= PERCENTILE_MIN_POPULATION && merged.sessions >= MIN_SESSIONS;
       const axes = usePercentiles ? percentileAxes(merged, pop) : calibratedAxes(merged);
       const effHint = efficiency
         ? { opusShare: efficiency.opusShare, estSavingsPerMonth: efficiency.estSavingsPerMonth ?? 0 }
@@ -121,6 +146,13 @@ export function profileRoute(deps: ProfileDeps) {
             efficiency,
             archetype,
             pillars: craft.pillars,
+            github,
+            rhythm: {
+              weekendShare: rhythm.weekendShare,
+              currentStreak: rhythm.currentStreak,
+              longestStreak: rhythm.longestStreak,
+              activeDays: rhythm.days.length, // days already holds active days only
+            },
           })
         : [];
       insights = {
@@ -135,7 +167,9 @@ export function profileRoute(deps: ProfileDeps) {
         craftScore: craft?.craftScore ?? null,
         pillars: craft?.pillars ?? null,
         trustTier: craft?.trustTier ?? null,
-        provisional: true,
+        provisional: merged.sessions < MIN_SESSIONS || !usePercentiles,
+        sampleSessions: merged.sessions,
+        githubVerified: githubVerified(craft?.trustTier ?? null, github),
         cards,
       };
     }
@@ -167,6 +201,7 @@ export function profileRoute(deps: ProfileDeps) {
         longestStreak: rhythm.longestStreak,
       },
       efficiency,
+      github,
       insights,
       ...(isOwner
         ? {

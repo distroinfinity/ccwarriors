@@ -232,8 +232,31 @@ export function timingSummary(gapsMs: number[]): {
 
 // Bump when the cached SessionStats shape changes so older caches are
 // discarded and re-parsed (an old entry would be missing newer fields like
-// cwd/editedFiles/eventGapsMs, breaking the deep path).
-const CACHE_VERSION = 2;
+// cwd/editedFiles/eventGapsMs, breaking the deep path). v3: purges caches
+// poisoned by the unbumped v2 shape change (entries without eventGapsMs).
+const CACHE_VERSION = 3;
+
+/**
+ * Structural check on a cached SessionStats. The version bump handles known
+ * shape changes; this guards against the next UNbumped one — a malformed
+ * cached entry is treated as a cache miss and re-parsed, never trusted.
+ */
+export function isValidSessionStats(x: unknown): x is SessionStats {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  const numeric = ["prompts", "interrupts", "subagentSpawns", "maxParallel", "editCalls", "assistantTurns", "startHour", "durationMinutes"];
+  for (const k of numeric) if (typeof o[k] !== "number") return false;
+  const booleans = ["usedPlanMode", "exploreBeforeFirstEdit", "hadEdits"];
+  for (const k of booleans) if (typeof o[k] !== "boolean") return false;
+  const wb = o["wordBuckets"] as Record<string, unknown> | undefined;
+  if (!wb || typeof wb !== "object") return false;
+  for (const k of ["1-5", "6-10", "11-25", "26+"]) if (typeof wb[k] !== "number") return false;
+  if (!Array.isArray(o["eventGapsMs"])) return false;
+  if (!Array.isArray(o["editedFiles"])) return false;
+  // Nullable fields must be PRESENT (null is fine; absent means stale shape).
+  for (const k of ["startMs", "endMs", "cwd", "gitBranch", "model"]) if (!(k in o)) return false;
+  return true;
+}
 
 interface CacheFile {
   version?: number;
@@ -304,7 +327,12 @@ async function walkSessions(): Promise<SessionStats[]> {
       seen.add(full);
       const cached = cache.files[full];
       let stats: SessionStats | null;
-      if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) {
+      if (
+        cached &&
+        cached.size === st.size &&
+        cached.mtimeMs === st.mtimeMs &&
+        (cached.stats === null || isValidSessionStats(cached.stats))
+      ) {
         stats = cached.stats;
       } else {
         try {
@@ -377,21 +405,32 @@ function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): Sessio
     assistantTurns: s.assistantTurns,
     wordBuckets: s.wordBuckets,
     model: s.model,
-    timing: timingSummary(s.eventGapsMs),
+    timing: timingSummary(s.eventGapsMs ?? []),
     git,
   };
 }
 
 /**
+ * Discriminated result so callers can tell "you have no sessions" (empty) from
+ * "your sessions exist but extraction broke" (error). Conflating the two
+ * shipped a bug where a poisoned cache made the CLI tell users with hundreds
+ * of sessions that they had none.
+ */
+export type DeepCollectResult =
+  | { status: "ok"; payload: InsightsDeepPayload }
+  | { status: "empty" }
+  | { status: "error"; message: string };
+
+/**
  * Deep per-session insights: one SessionRecord per in-window session, each
  * coupled to its LOCAL-git outcome (hashed). The salt is the per-user secret
- * from config (LOCAL-ONLY). Returns null when there are no sessions. Never
- * throws — git reads already return null on failure and the rest is wrapped.
+ * from config (LOCAL-ONLY). Never throws — git reads already return null on
+ * failure and any other failure surfaces as { status: "error" }.
  */
-export async function collectDeepInsights(salt: string): Promise<InsightsDeepPayload | null> {
+export async function collectDeepInsights(salt: string): Promise<DeepCollectResult> {
   try {
     const sessions = await walkSessions();
-    if (sessions.length === 0) return null;
+    if (sessions.length === 0) return { status: "empty" };
 
     // Memoize "is this cwd inside a git repo": once a cwd is known non-git, a
     // later session in the same cwd skips the git spawns entirely. (readGitOutcome
@@ -419,7 +458,7 @@ export async function collectDeepInsights(salt: string): Promise<InsightsDeepPay
             branch: s.gitBranch,
             startMs: s.startMs,
             endMs: s.endMs,
-            aiEditedFiles: s.editedFiles,
+            aiEditedFiles: s.editedFiles ?? [],
             salt,
           });
           repoKnown.set(cwd, git !== null);
@@ -436,9 +475,9 @@ export async function collectDeepInsights(salt: string): Promise<InsightsDeepPay
       await Promise.all(chunk);
     }
 
-    return { windowDays: WINDOW_DAYS, sessions: records };
-  } catch {
-    return null;
+    return { status: "ok", payload: { windowDays: WINDOW_DAYS, sessions: records } };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }
 
