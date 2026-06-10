@@ -18,6 +18,17 @@ export interface ProfilePillars {
   throughput: number;
 }
 
+// One delightful, shareable "wrapped" card. The server emits a card only when
+// its underlying signal is real-data-backed, so `cards` can be short or empty.
+export interface InsightCard {
+  key: string;
+  question: string;
+  headline: string;
+  body: string;
+  stat?: string;
+  shareText: string;
+}
+
 export interface ProfileInsights {
   locked: false;
   scoresArePercentiles: boolean;
@@ -32,6 +43,8 @@ export interface ProfileInsights {
     interruptsPer100Turns: number;
     longestSessionMinutes: number;
   };
+  // Paxel-style insight deck. Defaults to [] when an older server omits it.
+  cards: InsightCard[];
   growthEdge: string;
   // Craft Score (the headline). Null on aggregate-only insights (no deep rows)
   // or against an older server — the UI falls back to archetype + axes then.
@@ -95,7 +108,13 @@ export function useProfile(login: string, refreshKey = 0): ProfileState {
         if (cancelled) return;
         if (r.status === 404) return setState({ status: "notfound" });
         if (!r.ok) throw new Error(String(r.status));
-        setState({ status: "ready", profile: (await r.json()) as Profile });
+        const profile = (await r.json()) as Profile;
+        // Tolerate older servers that predate the insight-card deck: ensure
+        // `cards` is always an array so consumers never guard for undefined.
+        if (!profile.insights.locked && !Array.isArray((profile.insights as ProfileInsights).cards)) {
+          (profile.insights as ProfileInsights).cards = [];
+        }
+        setState({ status: "ready", profile });
       })
       .catch(() => {
         // Intentional conflation: network/500 render the same enlist page as a

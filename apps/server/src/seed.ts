@@ -2,7 +2,15 @@
 import { LeaderboardStore, type Entry } from "./lib/leaderboard-store.js";
 import { computeTier } from "./lib/tier.js";
 import type { DB } from "./db/index.js";
-import { donations, users, usageDays, userInsights, type InsightsPayload } from "./db/schema.js";
+import {
+  donations,
+  users,
+  usageDays,
+  userInsights,
+  userDeepSessions,
+  type InsightsPayload,
+  type SessionRecord,
+} from "./db/schema.js";
 
 const SCENES = [
   "crane", "wave", "fujiDawn", "sakura", "temple",
@@ -189,8 +197,73 @@ export async function seedDemoProfiles(db: DB): Promise<void> {
         .insert(userInsights)
         .values({ userId: u.id, machineId: "deadbeef", payload, windowDays: 40 })
         .onConflictDoNothing();
+      // Deep session rows so the Craft Score and the Paxel-style insight deck
+      // render offline (cards build from per-session records, not the aggregate).
+      await db
+        .insert(userDeepSessions)
+        .values({ userId: u.id, machineId: "deadbeef", sessions: demoDeepSessions(i), windowDays: 40 })
+        .onConflictDoNothing();
     }
   }
+}
+
+// Deterministic per-session records for a consented demo user. Spread across
+// hours/repos with git outcomes so every card in the deck has real signal:
+// model mix, night-owl timing, parallel agents, commits, tests, course
+// corrections, long runs, short prompts.
+function demoDeepSessions(seed: number): SessionRecord[] {
+  const out: SessionRecord[] = [];
+  const repos = ["repoA", "repoB", "repoC", "repoD"];
+  const nightOwl = seed === 1; // nightowl user codes late
+  for (let s = 0; s < 60; s++) {
+    const startHour = nightOwl
+      ? (s % 5 === 0 ? 14 : 22 + (s % 4)) % 24
+      : 9 + (s % 11); // 9..19 mostly
+    const opus = s % 10 < 7; // ~70% Opus
+    const repo = repos[s % repos.length]!;
+    const commits = s % 3 === 0 ? 2 : s % 3 === 1 ? 1 : 0;
+    const ship = commits > 0;
+    const commitHours = Array(24).fill(0);
+    if (ship) commitHours[startHour] = commits;
+    const commitDows = Array(7).fill(0);
+    if (ship) commitDows[s % 7] = commits;
+    out.push({
+      startHour,
+      durationMinutes: s === 0 ? 210 : 18 + (s % 40),
+      prompts: 6 + (s % 9),
+      interrupts: s % 4 === 0 ? 2 : 0,
+      usedPlanMode: s % 3 === 0,
+      exploreBeforeFirstEdit: s % 2 === 0,
+      hadEdits: s % 5 !== 0,
+      subagentSpawns: s % 4 === 0 ? 3 : 0,
+      maxParallel: s % 7 === 0 ? 6 : 1,
+      editCalls: 12 + (s % 20),
+      assistantTurns: 20 + (s % 30),
+      wordBuckets: { "1-5": 8, "6-10": 4, "11-25": 2, "26+": 1 },
+      model: opus ? "claude-opus-4-20250805" : "claude-sonnet-4-5",
+      timing: { events: 40, medianGapMs: 4000, p10GapMs: 800, subSecondFraction: 0.1 },
+      git: ship
+        ? {
+            repoIdHash: repo,
+            branchHash: `${repo}-main`,
+            commitsInWindow: commits,
+            linesAdded: 60 + s * 3,
+            linesDeleted: 10 + s,
+            filesChanged: 2 + (s % 5),
+            testFilesTouched: s % 2 === 0 ? 1 : 0,
+            aiLinkedCommits: commits,
+            revertedLinesWithin14d: s % 9 === 0 ? 5 : 0,
+            squashMergeDetected: false,
+            rebaseDetected: false,
+            isMonorepo: false,
+            hasRemote: true,
+            commitHours,
+            commitDows,
+          }
+        : null,
+    });
+  }
+  return out;
 }
 
 // Every few seconds, a random warrior burns a bit more — drives live reordering.
