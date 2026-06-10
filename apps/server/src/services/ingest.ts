@@ -83,14 +83,17 @@ function breakdown30d(b: ToolBreakdown): Record<string, number> {
   );
 }
 
-async function flagUser(db: DB, store: LeaderboardStore, user: User, signals: FlagSignal[]) {
+export async function flagUser(db: DB, store: LeaderboardStore | null, user: User, signals: FlagSignal[]) {
   if (user.flaggedAt || signals.length === 0) return;
   const reason = signals
     .slice(0, 3)
     .map((s) => `${s.reason}: ${s.detail}`)
     .join(" | ");
   await db.update(users).set({ flaggedAt: new Date(), flagReason: reason }).where(eq(users.id, user.id));
-  store.setFlagged(user.id, true);
+  // Shadow quarantine on the ranked boards. The deep-ingest path may not have a
+  // leaderboard store handle; the DB flag is the authority, setFlagged is a
+  // no-op if the user isn't currently in the store anyway.
+  store?.setFlagged(user.id, true);
   captureEvent("plausibility_flagged", user.githubLogin, { reason: signals[0]!.reason, detail: reason });
 }
 

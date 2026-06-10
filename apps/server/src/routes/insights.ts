@@ -24,7 +24,14 @@ import {
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
 import { deriveAggregate } from "../lib/deep.js";
-import { computeCraftForUser } from "../lib/craft-score-service.js";
+import { computeCraftForUser, loadDeepSessions, loadUsageSignal } from "../lib/craft-score-service.js";
+import {
+  checkOutcomeImplausibility,
+  checkTimingRegularity,
+  type FlagSignal,
+} from "../lib/plausibility.js";
+import { flagUser } from "../services/ingest.js";
+import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import { captureEvent } from "./telemetry.js";
 
 const count = z.number().int().nonnegative().max(10_000_000);
@@ -101,6 +108,9 @@ const deepBodySchema = z.object({
 export interface InsightsDeps {
   db: DB;
   insightsStore: InsightsStore;
+  // Leaderboard store so a deep-ingest flag shadow-quarantines off the ranked
+  // boards too (optional — the DB flaggedAt is the authority either way).
+  store?: LeaderboardStore;
   sessionSecret?: string; // GitHub client secret — same signer the session uses
 }
 
@@ -246,6 +256,33 @@ export function insightsRoute(deps: InsightsDeps) {
         trustTier: craft ? craft.trustTier : null,
       })
       .where(eq(users.id, user.id));
+
+    // ── Anti-gaming gates (Craft Score is a hiring credential). Run AFTER the
+    // data is stored, NEVER reject: a violation shadow-quarantines (flaggedAt
+    // set, user leaves ranked boards) but the sync still returns 200, so a
+    // cheater probing for a 4xx can't triangulate the gate. Gates read every
+    // machine's deep rows (this upload is committed) + the priced usage window.
+    const allSessions = await loadDeepSessions(deps.db, user.id);
+    const totalSurvivingLoc = allSessions.reduce(
+      (s, r) => s + (r.git ? Math.max(0, r.git.linesAdded - r.git.revertedLinesWithin14d) : 0),
+      0,
+    );
+    const totalShippedCommits = allSessions.reduce(
+      (s, r) => s + (r.git ? r.git.commitsInWindow : 0),
+      0,
+    );
+    const usage = await loadUsageSignal(deps.db, user.id, Date.now());
+    const signals: FlagSignal[] = [];
+    const outcome = checkOutcomeImplausibility(
+      totalSurvivingLoc,
+      totalShippedCommits,
+      usage.windowTokens,
+      usage.windowCostUsd,
+    );
+    if (outcome) signals.push(outcome);
+    const timing = checkTimingRegularity(allSessions);
+    if (timing) signals.push(timing);
+    await flagUser(deps.db, deps.store ?? null, user, signals);
 
     captureEvent("deep_insights_received", user.githubLogin, { sessions: deep.sessions.length });
     return c.json({ ok: true, archetype, craftScore: craft?.craftScore ?? null });

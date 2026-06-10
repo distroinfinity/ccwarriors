@@ -32,7 +32,7 @@ export async function loadDeepSessions(db: DB, userId: string): Promise<SessionR
 }
 
 /** Window cost + token totals + cache/opus signal from usage_days. */
-async function loadUsageSignal(
+export async function loadUsageSignal(
   db: DB,
   userId: string,
   now: number,
