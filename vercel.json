@@ -16,8 +16,8 @@
       "destination": "https://api.ccwarriors.xyz/og/u/:login"
     },
     {
-      "//": "Short-URL bot OG rewrite for bare /<login>. The path-to-regexp exclusion of reserved/asset paths cannot be fully tested locally — verify with a real crawler UA at deploy. The server OG route 404s unknown logins, so a stray match degrades gracefully.",
-      "source": "/:login((?!how|legal|assets|api)[A-Za-z0-9-]{1,39})",
+      "//": "Short-URL bot OG rewrite for bare /<login>. No negative-lookahead exclusion: Vercel rejects a lookahead nested inside a named param (fails the whole deploy). The server OG route already 404s non-logins, so reserved words (how/legal) degrade gracefully; it's bot-UA gated so humans always get the SPA.",
+      "source": "/:login([A-Za-z0-9-]{1,39})",
       "has": [
         {
           "type": "header",
