@@ -72,20 +72,12 @@ function CraftScoreHero({
             {tier1 && <PixelGlyph name="check" size={9} />}
             {tier1 ? "LOCAL-GIT VERIFIED" : "UNVERIFIED"}
           </span>
-          {insights.provisional && (
-            <span className="provisional-chip mono">provisional · ranks once the legion grows</span>
-          )}
         </div>
       </div>
       <div className="craft-flavor">
         plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
       </div>
       <PillarBars pillars={insights.pillars} />
-      <div className="axis-note">
-        {insights.scoresArePercentiles
-          ? `calibrated against ${insights.population} warriors`
-          : "calibrated craft. percentiles unlock as the legion grows"}
-      </div>
     </div>
   );
 }
@@ -104,11 +96,6 @@ function AxisBars({ insights }: { insights: ProfileInsights }) {
           <b className="axis-v">{insights.axes[axis]}</b>
         </div>
       ))}
-      <div className="axis-note">
-        {insights.scoresArePercentiles
-          ? `percentile among ${insights.population} warriors`
-          : "calibrated scores. percentiles unlock as the legion grows"}
-      </div>
     </div>
   );
 }
