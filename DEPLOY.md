@@ -5,7 +5,7 @@ Architecture in production:
 ```
 ccwarriors.xyz        →  Vercel   (frontend, apps/web — also serves /install.sh + /cli.js)
 api.ccwarriors.xyz    →  Railway  (backend, apps/server) + Railway Postgres
-CLI                   →  curl -fsSL https://api.ccwarriors.xyz/install.sh | bash   (no npm)
+CLI                   →  curl -fsSL https://ccwarriors.xyz/install.sh | bash   (no npm)
 ```
 
 Production has **no seed/dummy data** — the board fills up as real people run the
@@ -123,7 +123,7 @@ version ceremony.
 
 Users install + enlist with one command:
 ```bash
-curl -fsSL https://api.ccwarriors.xyz/install.sh | bash
+curl -fsSL https://ccwarriors.xyz/install.sh | bash
 ```
 What it does: checks Node 20+, downloads `cli.js` to `~/.ccwarriors/`, installs
 a `ccwarriors` command (symlinked into `~/.local/bin`), then immediately runs
@@ -167,7 +167,7 @@ CCWARRIORS_API=http://localhost:8787 CCWARRIORS_WEB=http://localhost:5173 \
 - [ ] Railway: Postgres added, `DATABASE_URL` wired, migration run, env vars set, `SEED_DEMO`/`SIMULATE` NOT set.
 - [ ] `https://api.ccwarriors.xyz/health` returns ok; `api` CNAME + TLS live.
 - [ ] Vercel: `VITE_WS_URL=wss://api.ccwarriors.xyz`; `ccwarriors.xyz` domain + TLS live.
-- [ ] `curl -fsSL https://api.ccwarriors.xyz/install.sh | bash` installs + enlists end-to-end (login → ccusage → on the board).
+- [ ] `curl -fsSL https://ccwarriors.xyz/install.sh | bash` installs + enlists end-to-end (login → ccusage → on the board).
 - [ ] Smoke test: run the CLI yourself, confirm you appear on the live board at `ccwarriors.xyz`.
 
 ---
