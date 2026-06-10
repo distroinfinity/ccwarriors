@@ -253,9 +253,102 @@ describe("readGitOutcome", () => {
         expect(typeof value === "string" && /^([0-9a-f]{64})?$/.test(value)).toBe(true);
       } else if (typeof value === "boolean") {
         // booleans are fine
+      } else if (Array.isArray(value)) {
+        // commitHours / commitDows — must be arrays of non-negative integers only
+        for (const item of value as unknown[]) {
+          expect(typeof item).toBe("number");
+          expect(Number.isInteger(item)).toBe(true);
+          expect(item as number).toBeGreaterThanOrEqual(0);
+        }
       } else {
         expect(typeof value).toBe("number");
       }
     }
+  });
+
+  it("commitHours bucket matches local hour of commit date; sum equals commitsInWindow", async () => {
+    const dir = mkrepo();
+    // Use IN_WINDOW as the commit date — derive expected bucket from the same Date object
+    // so the test is zone-independent (passes in any TZ).
+    const commitDate = new Date(IN_WINDOW);
+    const expectedHour = commitDate.getHours();
+    writeAndCommit(dir, { "a.ts": "1\n" }, "one commit", IN_WINDOW);
+
+    const out = await readGitOutcome({
+      cwd: dir,
+      branch: "main",
+      startMs: START,
+      endMs: END,
+      aiEditedFiles: [],
+      salt: SALT,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.commitHours).toHaveLength(24);
+    expect(out!.commitHours[expectedHour]).toBe(1);
+    // Every other bucket is 0.
+    const sum = out!.commitHours.reduce((acc, n) => acc + n, 0);
+    expect(sum).toBe(out!.commitsInWindow);
+  });
+
+  it("commitDows bucket matches local day-of-week of commit date; sum equals commitsInWindow", async () => {
+    const dir = mkrepo();
+    const commitDate = new Date(IN_WINDOW);
+    const expectedDow = commitDate.getDay();
+    writeAndCommit(dir, { "b.ts": "1\n" }, "one commit", IN_WINDOW);
+
+    const out = await readGitOutcome({
+      cwd: dir,
+      branch: "main",
+      startMs: START,
+      endMs: END,
+      aiEditedFiles: [],
+      salt: SALT,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.commitDows).toHaveLength(7);
+    expect(out!.commitDows[expectedDow]).toBe(1);
+    const sum = out!.commitDows.reduce((acc, n) => acc + n, 0);
+    expect(sum).toBe(out!.commitsInWindow);
+  });
+
+  it("multiple in-window commits accumulate correctly across hours and days", async () => {
+    const dir = mkrepo();
+    // Two commits at the same IN_WINDOW instant → same hour and DoW buckets get +2.
+    writeAndCommit(dir, { "c.ts": "1\n" }, "commit one", IN_WINDOW);
+    writeAndCommit(dir, { "d.ts": "1\n" }, "commit two", IN_WINDOW + 60_000);
+
+    const out = await readGitOutcome({
+      cwd: dir,
+      branch: "main",
+      startMs: START,
+      endMs: END,
+      aiEditedFiles: [],
+      salt: SALT,
+    });
+    expect(out!.commitsInWindow).toBe(2);
+    const hourSum = out!.commitHours.reduce((acc, n) => acc + n, 0);
+    const dowSum = out!.commitDows.reduce((acc, n) => acc + n, 0);
+    expect(hourSum).toBe(2);
+    expect(dowSum).toBe(2);
+  });
+
+  it("out-of-window commits do not appear in commitHours or commitDows", async () => {
+    const dir = mkrepo();
+    writeAndCommit(dir, { "old.ts": "1\n" }, "before window", BEFORE_WINDOW);
+    writeAndCommit(dir, { "new.ts": "1\n" }, "in window", IN_WINDOW);
+
+    const out = await readGitOutcome({
+      cwd: dir,
+      branch: "main",
+      startMs: START,
+      endMs: END,
+      aiEditedFiles: [],
+      salt: SALT,
+    });
+    expect(out!.commitsInWindow).toBe(1);
+    const hourSum = out!.commitHours.reduce((acc, n) => acc + n, 0);
+    const dowSum = out!.commitDows.reduce((acc, n) => acc + n, 0);
+    expect(hourSum).toBe(1);
+    expect(dowSum).toBe(1);
   });
 });

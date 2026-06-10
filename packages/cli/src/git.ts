@@ -41,6 +41,8 @@ export interface SessionGitOutcome {
   rebaseDetected: boolean;
   isMonorepo: boolean; // >1 distinct top-level dir among changed files
   hasRemote: boolean;
+  commitHours: number[]; // length 24; count of in-window commits per local hour-of-day (0-23)
+  commitDows: number[]; // length 7; count of in-window commits per local day-of-week (0=Sun..6=Sat)
 }
 
 function sha256(salt: string, value: string): string {
@@ -166,6 +168,8 @@ function zeroOutcome(repoIdHash: string, branchHash: string, hasRemote: boolean)
     rebaseDetected: false,
     isMonorepo: false,
     hasRemote,
+    commitHours: Array(24).fill(0) as number[],
+    commitDows: Array(7).fill(0) as number[],
   };
 }
 
@@ -231,12 +235,22 @@ export async function readGitOutcome(input: GitOutcomeInput): Promise<SessionGit
     const topSegs = new Set<string>();
     const windowFiles = new Set<string>(); // basenames, for revert overlap
     let squashMergeDetected = false;
+    const commitHours: number[] = Array(24).fill(0);
+    const commitDows: number[] = Array(7).fill(0);
 
     const aiBasenames = new Set(aiEditedFiles.map(basename).filter((b) => b.length > 0));
 
     for (const c of commits) {
       linesAdded += c.added;
       linesDeleted += c.deleted;
+
+      // Hour/DoW histograms: bucket by local time. If date is unparseable
+      // (dateMs === 0 from parseLog fallback), skip gracefully.
+      if (c.dateMs !== 0) {
+        const d = new Date(c.dateMs);
+        (commitHours[d.getHours()] as number)++;
+        (commitDows[d.getDay()] as number)++;
+      }
       let linkedThisCommit = false;
       for (const f of c.files) {
         distinctFiles.add(f);
@@ -313,6 +327,8 @@ export async function readGitOutcome(input: GitOutcomeInput): Promise<SessionGit
       rebaseDetected,
       isMonorepo,
       hasRemote,
+      commitHours,
+      commitDows,
     };
   } catch {
     // Absolute backstop: this function must never throw.
