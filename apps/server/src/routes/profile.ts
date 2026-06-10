@@ -18,6 +18,9 @@ import {
   MIN_SESSIONS,
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
+import { computeCraftForUser } from "../lib/craft-score-service.js";
+import type { Pillars } from "../lib/craft-score.js";
+import { buildInsightCards, type InsightCard } from "../lib/insight-cards.js";
 
 export interface ProfileDeps {
   db: DB;
@@ -81,6 +84,11 @@ export function profileRoute(deps: ProfileDeps) {
           trait: string | null;
           habits: ReturnType<typeof habitStats>;
           growthEdge: string;
+          craftScore: number | null;
+          pillars: Pillars | null;
+          trustTier: 0 | 1 | null;
+          provisional: boolean;
+          cards: InsightCard[];
         };
     if (!user?.insightsConsent || !merged) {
       insights = { locked: true, reason: "no_consent" };
@@ -97,15 +105,38 @@ export function profileRoute(deps: ProfileDeps) {
       const effHint = efficiency
         ? { opusShare: efficiency.opusShare, estSavingsPerMonth: efficiency.estSavingsPerMonth ?? 0 }
         : null;
+      // Craft Score: computed on demand from the user's deep sessions + usage
+      // signal. Null when the user has no deep rows (aggregate-only insights).
+      // provisional until the deep population crosses PERCENTILE_MIN_POPULATION
+      // (single-pool percentiles are a #51 refinement); pillars stay calibrated.
+      const craft = user ? await computeCraftForUser(deps.db, user.id) : null;
+      const archetype = archetypeOf(axes);
+      // Paxel-style insight deck. Built from the deep sessions craft already
+      // loaded; cards self-guard and emit only when their real signal exists.
+      // Empty when there's no deep data (aggregate-only insights).
+      const cards = craft
+        ? buildInsightCards({
+            sessions: craft.input.sessions,
+            merged,
+            efficiency,
+            archetype,
+            pillars: craft.pillars,
+          })
+        : [];
       insights = {
         locked: false,
         scoresArePercentiles: usePercentiles,
         population: pop.length,
         axes,
-        archetype: archetypeOf(axes),
+        archetype,
         trait: traitOf(merged, { weekendShare: rhythm.weekendShare, currentStreak: rhythm.currentStreak }),
         habits: habitStats(merged),
         growthEdge: growthEdgeOf(axes, merged, effHint),
+        craftScore: craft?.craftScore ?? null,
+        pillars: craft?.pillars ?? null,
+        trustTier: craft?.trustTier ?? null,
+        provisional: true,
+        cards,
       };
     }
 
@@ -141,6 +172,7 @@ export function profileRoute(deps: ProfileDeps) {
         ? {
             owner: {
               consent: user!.insightsConsent,
+              mode: user!.insightsMode,
               visibility: user!.insightsVisibility,
               machineCount: deps.insightsStore.machineCount(user!.id),
             },

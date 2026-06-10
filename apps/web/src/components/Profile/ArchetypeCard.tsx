@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getFontEmbedCSS, toPng } from "html-to-image";
 import { API_HTTP } from "../../api";
-import type { Profile, ProfileInsights, LockedInsights } from "../../useProfile";
+import type { Profile, ProfileInsights, ProfilePillars, LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { PixelGlyph } from "../PixelGlyph";
 import { tierLabel } from "../../util";
@@ -14,6 +14,73 @@ const AXIS_LABEL: Record<(typeof AXIS_ORDER)[number], string> = {
   autonomy: "AUTONOMY",
   planning: "PLANNING",
 };
+
+const PILLAR_ORDER = ["direction", "verification", "autonomy", "yield", "orchestration", "throughput"] as const;
+const PILLAR_LABEL: Record<(typeof PILLAR_ORDER)[number], string> = {
+  direction: "DIRECTION",
+  verification: "VERIFICATION",
+  autonomy: "AUTONOMY",
+  yield: "YIELD",
+  orchestration: "ORCHESTRATION",
+  throughput: "THROUGHPUT",
+};
+
+// A response has the Craft Score headline only when the server sent a numeric
+// craftScore + pillars (deep insights, modern server). Otherwise fall back to
+// the legacy archetype + axes hero.
+function hasCraftScore(
+  insights: ProfileInsights,
+): insights is ProfileInsights & { craftScore: number; pillars: ProfilePillars } {
+  return typeof insights.craftScore === "number" && insights.pillars != null;
+}
+
+function PillarBars({ pillars }: { pillars: ProfilePillars }) {
+  // Sorted by score: terracotta intensity steps down the ranking (Paper Dossier).
+  const sorted = [...PILLAR_ORDER].sort((a, b) => pillars[b] - pillars[a]);
+  return (
+    <div className="axes mono">
+      {sorted.map((pillar, i) => (
+        <div className="axis" key={pillar}>
+          <span className="axis-k pillar-k">{PILLAR_LABEL[pillar]}</span>
+          <span className="axis-track">
+            <span className={`axis-fill f${Math.min(i, 2)}`} style={{ width: `${pillars[pillar]}%` }} />
+          </span>
+          <b className="axis-v">{Math.round(pillars[pillar])}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CraftScoreHero({
+  insights,
+  archetype,
+}: {
+  insights: ProfileInsights & { craftScore: number; pillars: ProfilePillars };
+  archetype: string;
+}) {
+  const tier1 = insights.trustTier === 1;
+  return (
+    <div className="craft">
+      <div className="craft-top">
+        <div className="craft-num-wrap">
+          <span className="craft-label mono">CRAFT SCORE</span>
+          <span className="craft-score mono">{Math.round(insights.craftScore)}</span>
+        </div>
+        <div className="craft-badges">
+          <span className={`trust-badge mono${tier1 ? " t1" : " t0"}`}>
+            {tier1 && <PixelGlyph name="check" size={9} />}
+            {tier1 ? "LOCAL-GIT VERIFIED" : "UNVERIFIED"}
+          </span>
+        </div>
+      </div>
+      <div className="craft-flavor">
+        plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
+      </div>
+      <PillarBars pillars={insights.pillars} />
+    </div>
+  );
+}
 
 function AxisBars({ insights }: { insights: ProfileInsights }) {
   // Sorted by score: terracotta intensity steps down the ranking (Paper Dossier).
@@ -29,11 +96,6 @@ function AxisBars({ insights }: { insights: ProfileInsights }) {
           <b className="axis-v">{insights.axes[axis]}</b>
         </div>
       ))}
-      <div className="axis-note">
-        {insights.scoresArePercentiles
-          ? `percentile among ${insights.population} warriors`
-          : "calibrated scores. percentiles unlock as the legion grows"}
-      </div>
     </div>
   );
 }
@@ -90,29 +152,54 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
   );
 }
 
+// The exact, honest field list for what Deep mode uploads. One tight line each.
+// Reused verbatim by the locked chooser (the ask) and the unlocked transparency
+// block (the receipt) so the promise and the proof can never drift apart.
+const DEEP_UPLOADS: Array<{ k: string; v: string }> = [
+  { k: "Per-session counts", v: "prompts, tool calls, plan-mode turns" },
+  { k: "Timing summaries", v: "session length, active hours, gaps" },
+  { k: "Model names", v: "which models you ran, nothing about the chats" },
+  { k: "Hashed git outcomes", v: "commits, lines, tests as salted hashes" },
+];
+const DEEP_NEVER = "Never your prompts, code, file paths, or repo names.";
+
+export function DisclosureList() {
+  return (
+    <ul className="consent-disclose">
+      {DEEP_UPLOADS.map(({ k, v }) => (
+        <li key={k}>
+          <b>{k}</b>
+          <span>{v}</span>
+        </li>
+      ))}
+      <li className="consent-never">{DEEP_NEVER}</li>
+    </ul>
+  );
+}
+
 function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const locked = profile.insights as LockedInsights;
   const isOwner = !!profile.owner;
 
-  const unlock = async () => {
+  const goAllIn = async () => {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${API_HTTP}/insights/consent`, {
+      const r = await fetch(`${API_HTTP}/insights/mode`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ consent: true }),
+        body: JSON.stringify({ mode: "deep" }),
       });
       if (!r.ok) {
-        setError("Unlock failed. Try again after refreshing your session.");
+        setError("Could not switch on Deep mode. Try again after refreshing your session.");
         return;
       }
       onConsentChanged();
     } catch {
-      setError("Unlock failed. Check your connection and try again.");
+      setError("Could not switch on Deep mode. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -132,21 +219,33 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     return <PendingPanel onPoll={onConsentChanged} />;
   }
 
-  // no_consent (default)
-  return (
-    <div className="arch-locked">
-      <PixelGlyph name="diamond" size={13} />
-      {isOwner ? (
-        <>
-          <p>Your archetype is locked. Unlock reads aggregate counts from your local sessions. Transcripts never leave your machine.</p>
-          <button className="btn x" onClick={unlock} disabled={busy}>
-            {busy ? "Unlocking…" : "Unlock your archetype"}
-          </button>
-          {error && <p className="arch-error">{error}</p>}
-        </>
-      ) : (
+  if (!isOwner) {
+    return (
+      <div className="arch-locked">
+        <PixelGlyph name="diamond" size={13} />
         <p>This warrior has not revealed their archetype. Yours could be live in a minute: run the install command and `ccwarriors insights on`.</p>
-      )}
+      </div>
+    );
+  }
+
+  // Owner, mode off, no consent — the honest binary choice.
+  return (
+    <div className="arch-locked consent-choice">
+      <div className="consent-opt consent-stay">
+        <div className="consent-opt-h mono">STAY PRIVATE</div>
+        <p>Keep everything local. We only ever see your spend, never your sessions. This is where you are now.</p>
+      </div>
+
+      <div className="consent-opt consent-allin">
+        <div className="consent-opt-h mono">GO ALL-IN</div>
+        <p>Reveal your Craft Score and archetype. Here is exactly what Deep mode uploads, nothing hidden:</p>
+        <DisclosureList />
+        <p className="consent-purgenote">Purge anytime. One click deletes all of it.</p>
+        <button className="btn x" onClick={goAllIn} disabled={busy}>
+          {busy ? "Switching on Deep…" : "Reveal my Craft Score"}
+        </button>
+        {error && <p className="arch-error">{error}</p>}
+      </div>
     </div>
   );
 }
@@ -154,17 +253,22 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
 export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const [visibilityBusy, setVisibilityBusy] = useState(false);
-  const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const unlocked = !profile.insights.locked;
   const insights = unlocked ? (profile.insights as ProfileInsights) : null;
 
   const shareOnX = () => {
     if (!insights) return;
-    const top = [...AXIS_ORDER].sort((a, b) => insights.axes[b] - insights.axes[a]).slice(0, 2);
-    const axisBit = top.map((a) => `${AXIS_LABEL[a].toLowerCase()} ${insights.axes[a]}`).join(" · ");
-    const text = `I'm ${insights.archetype.toUpperCase()} on @ccwarriorsxyz. ${axisBit}. What class are you?`;
-    const url = `https://ccwarriors.xyz/u/${encodeURIComponent(profile.login)}?ref=x_share`;
+    let text: string;
+    if (hasCraftScore(insights)) {
+      const top = [...PILLAR_ORDER].sort((a, b) => insights.pillars[b] - insights.pillars[a])[0] ?? "verification";
+      const topBit = `top pillar ${PILLAR_LABEL[top].charAt(0) + PILLAR_LABEL[top].slice(1).toLowerCase()} ${Math.round(insights.pillars[top])}`;
+      text = `Craft Score ${Math.round(insights.craftScore)} on @ccwarriorsxyz · ${topBit}. What's yours?`;
+    } else {
+      const top = [...AXIS_ORDER].sort((a, b) => insights.axes[b] - insights.axes[a]).slice(0, 2);
+      const axisBit = top.map((a) => `${AXIS_LABEL[a].toLowerCase()} ${insights.axes[a]}`).join(" · ");
+      text = `I'm ${insights.archetype.toUpperCase()} on @ccwarriorsxyz. ${axisBit}. What class are you?`;
+    }
+    const url = `https://ccwarriors.xyz/${encodeURIComponent(profile.login)}?ref=x_share`;
     window.open(
       `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
       "_blank",
@@ -180,37 +284,13 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
       const dataUrl = await toPng(cardRef.current, { pixelRatio: 4, cacheBust: true, fontEmbedCSS });
       const a = document.createElement("a");
       a.href = dataUrl;
-      a.download = `ccwarriors-${profile.login}-archetype.png`;
+      a.download = `ccwarriors-${profile.login}-${insights && hasCraftScore(insights) ? "craft-score" : "archetype"}.png`;
       a.click();
     } catch (err) {
       console.error("card export failed", err);
       alert("Export failed. Try again once the avatar finishes loading.");
     } finally {
       setExporting(false);
-    }
-  };
-
-  const toggleVisibility = async () => {
-    if (!profile.owner || visibilityBusy) return;
-    const next = profile.owner.visibility === "public" ? "private" : "public";
-    setVisibilityBusy(true);
-    setVisibilityError(null);
-    try {
-      const r = await fetch(`${API_HTTP}/insights/consent`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ visibility: next }),
-      });
-      if (!r.ok) {
-        setVisibilityError("Visibility update failed.");
-        return;
-      }
-      onConsentChanged();
-    } catch {
-      setVisibilityError("Visibility update failed.");
-    } finally {
-      setVisibilityBusy(false);
     }
   };
 
@@ -234,26 +314,24 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
         </div>
 
         {insights ? (
-          <>
-            <div className="arch-name">{insights.archetype.toUpperCase()}</div>
-            <div className="arch-trait">
-              {insights.trait ? `${insights.trait} · ` : ""}
-              {insights.growthEdge}
-            </div>
-            <AxisBars insights={insights} />
-          </>
+          hasCraftScore(insights) ? (
+            <CraftScoreHero insights={insights} archetype={insights.archetype} />
+          ) : (
+            <>
+              <div className="arch-name">{insights.archetype.toUpperCase()}</div>
+              <div className="arch-trait">
+                {insights.trait ? `${insights.trait} · ` : ""}
+                {insights.growthEdge}
+              </div>
+              <AxisBars insights={insights} />
+            </>
+          )
         ) : (
           <LockedPanel profile={profile} onConsentChanged={onConsentChanged} />
         )}
 
         <div className="arch-foot mono">
-          <span>ccwarriors.xyz/u/{profile.login}</span>
-          <span>
-            extended from{" "}
-            <a className="arch-foot-link" href="https://paxel.ycombinator.com" target="_blank" rel="noopener">
-              YC paxel
-            </a>
-          </span>
+          <span>ccwarriors.xyz/{profile.login}</span>
         </div>
       </div>
 
@@ -263,19 +341,6 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           <button className="btn g" onClick={downloadCard} disabled={exporting}>
             {exporting ? "Exporting…" : "Download card"}
           </button>
-        </div>
-      )}
-      {profile.owner?.consent && (
-        <div className="arch-owner mono">
-          insights on &middot; {profile.owner.machineCount} machine{profile.owner.machineCount === 1 ? "" : "s"} &middot;{" "}
-          <button
-            className="linklike"
-            onClick={toggleVisibility}
-            disabled={visibilityBusy}
-          >
-            {visibilityBusy ? "updating" : `make ${profile.owner.visibility === "public" ? "private" : "public"}`}
-          </button>
-          {visibilityError ? <span className="arch-error"> · {visibilityError}</span> : null}
         </div>
       )}
     </div>

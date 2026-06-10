@@ -95,7 +95,7 @@ export function createApp(deps?: AppDeps) {
     if (deps.insightsStore) {
       app.route(
         "/insights",
-        insightsRoute({ db: deps.db, insightsStore: deps.insightsStore, sessionSecret: deps.auth?.clientSecret }),
+        insightsRoute({ db: deps.db, insightsStore: deps.insightsStore, store: deps.store, sessionSecret: deps.auth?.clientSecret }),
       );
       app.route(
         "/profile",

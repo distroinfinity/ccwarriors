@@ -30,10 +30,18 @@ function familyOf(model: string): string {
   return "other";
 }
 
-// Sonnet input+output is roughly 1/5 of Opus pricing; moving the overused
-// share saves ~80% of that slice. Coarse on purpose — it is a nudge, not a bill.
-const OPUS_OK_SHARE = 0.35;
-const SONNET_DISCOUNT = 0.8;
+// Efficiency grade is CACHE-based (context reuse), not model-mix based.
+// Prod (58 users, 2026-06-10): median user is ~90% Opus and ~96% cache-read —
+// for Claude Code power users Opus IS the tool, so grading down for Opus or
+// nudging "move to Sonnet" is wrong advice for nearly everyone. The real,
+// discriminating efficiency signal is cache hygiene: a warm prompt cache means
+// context is reused instead of re-sent. opusShare/modelMix stay INFORMATIONAL.
+const CACHE_GRADE: ReadonlyArray<[number, string]> = [
+  [0.95, "A+"],
+  [0.9, "A"],
+  [0.8, "B"],
+  [0.65, "C"],
+];
 
 /** Rows must already be filtered to the user; cutoff30 = ISO day 30 days ago. */
 export function computeEfficiency(rows: UsageDayLike[], cutoff30: string): Efficiency {
@@ -63,16 +71,18 @@ export function computeEfficiency(rows: UsageDayLike[], cutoff30: string): Effic
   const cacheReadRatio = denom > 0 ? cacheRead / denom : null;
   const opusCost = costByFamily.get("opus") ?? 0;
   const opusShare = totalCost > 0 ? opusCost / totalCost : 0;
-  const overuse = Math.max(0, opusShare - OPUS_OK_SHARE);
-  const estSavingsPerMonth = overuse > 0 ? Math.round(totalCost * overuse * SONNET_DISCOUNT) : 0;
+  // No "move to Sonnet" nudge — wrong advice for a 90%-Opus population (see note).
+  const estSavingsPerMonth = null;
 
-  let grade: string;
+  // Grade on cache hygiene (context reuse), the real discriminating signal.
   const cache = cacheReadRatio ?? 0;
-  if (opusShare < 0.2 && cache > 0.75) grade = "A+";
-  else if (opusShare < 0.35 && cache > 0.6) grade = "A";
-  else if (opusShare < 0.55) grade = "B";
-  else if (opusShare < 0.75) grade = "C";
-  else grade = "D";
+  let grade = "D";
+  for (const [min, g] of CACHE_GRADE) {
+    if (cache >= min) {
+      grade = g;
+      break;
+    }
+  }
 
   const modelMix = [...costByFamily.entries()]
     .filter(([, c]) => c > 0)

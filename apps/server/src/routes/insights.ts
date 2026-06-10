@@ -5,7 +5,14 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import type { Context } from "hono";
 import type { DB } from "../db/index.js";
-import { users, userInsights, type InsightsPayload, type User } from "../db/schema.js";
+import {
+  users,
+  userInsights,
+  userDeepSessions,
+  type InsightsPayload,
+  type InsightsDeepPayload,
+  type User,
+} from "../db/schema.js";
 import { hashToken } from "../lib/token.js";
 import { readSessionToken } from "../lib/session.js";
 import type { InsightsStore } from "../lib/insights-store.js";
@@ -16,6 +23,15 @@ import {
   MIN_SESSIONS,
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
+import { deriveAggregate } from "../lib/deep.js";
+import { computeCraftForUser, loadDeepSessions, loadUsageSignal } from "../lib/craft-score-service.js";
+import {
+  checkOutcomeImplausibility,
+  checkTimingRegularity,
+  type FlagSignal,
+} from "../lib/plausibility.js";
+import { flagUser } from "../services/ingest.js";
+import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import { captureEvent } from "./telemetry.js";
 
 const count = z.number().int().nonnegative().max(10_000_000);
@@ -41,9 +57,63 @@ const bodySchema = z.object({
   insights: payloadSchema,
 });
 
+// ── Deep payload validation (mirrors the CLI SessionRecord/InsightsDeepPayload).
+const hashHex = z.string().regex(/^[a-f0-9]{0,64}$/i); // "" when not a repo/branch
+const gitOutcomeSchema = z.object({
+  repoIdHash: hashHex,
+  branchHash: hashHex,
+  commitsInWindow: count,
+  linesAdded: count,
+  linesDeleted: count,
+  filesChanged: count,
+  testFilesTouched: count,
+  aiLinkedCommits: count,
+  revertedLinesWithin14d: count,
+  squashMergeDetected: z.boolean(),
+  rebaseDetected: z.boolean(),
+  isMonorepo: z.boolean(),
+  hasRemote: z.boolean(),
+  // Optional commit-timing histograms (old clients omit them).
+  commitHours: z.array(count).length(24).optional(),
+  commitDows: z.array(count).length(7).optional(),
+});
+
+const sessionRecordSchema = z.object({
+  startHour: z.number().int().min(0).max(23),
+  durationMinutes: z.number().min(0).max(7 * 24 * 60),
+  prompts: count,
+  interrupts: count,
+  usedPlanMode: z.boolean(),
+  exploreBeforeFirstEdit: z.boolean(),
+  hadEdits: z.boolean(),
+  subagentSpawns: count,
+  maxParallel: z.number().int().min(0).max(1000),
+  editCalls: count,
+  assistantTurns: count,
+  wordBuckets: z.object({ "1-5": count, "6-10": count, "11-25": count, "26+": count }),
+  model: z.string().max(200).nullable(),
+  timing: z.object({
+    events: count,
+    medianGapMs: count,
+    p10GapMs: count,
+    subSecondFraction: z.number().min(0).max(1),
+  }),
+  git: gitOutcomeSchema.nullable(),
+});
+
+const MAX_DEEP_SESSIONS = 2000;
+const deepBodySchema = z.object({
+  machineId: z.string().regex(/^[a-f0-9]{8,64}$/i),
+  windowDays: z.number().int().min(1).max(60),
+  sessions: z.array(sessionRecordSchema).max(MAX_DEEP_SESSIONS),
+});
+
 export interface InsightsDeps {
   db: DB;
   insightsStore: InsightsStore;
+  // Leaderboard store so a deep-ingest flag shadow-quarantines off the ranked
+  // boards too (optional — the DB flaggedAt is the authority either way).
+  store?: LeaderboardStore;
   sessionSecret?: string; // GitHub client secret — same signer the session uses
 }
 
@@ -121,7 +191,12 @@ export function insightsRoute(deps: InsightsDeps) {
       const { consent, visibility } = c.req.valid("json");
       const set: Partial<typeof users.$inferInsert> = {};
       if (visibility !== undefined) set.insightsVisibility = visibility;
-      if (consent !== undefined) set.insightsConsent = consent;
+      // Keep the boolean and the binary mode consistent: consent=true → 'deep',
+      // consent=false → 'off' (mode !== 'off' is the source of truth).
+      if (consent !== undefined) {
+        set.insightsConsent = consent;
+        set.insightsMode = consent ? "deep" : "off";
+      }
       if (Object.keys(set).length === 0) return c.json({ error: "nothing_to_set" }, 400);
       await deps.db.update(users).set(set).where(eq(users.id, user.id));
       if (consent === false) {
@@ -129,13 +204,121 @@ export function insightsRoute(deps: InsightsDeps) {
         // DB rows first, store last — Map.delete can't fail, and a crash between
         // the two self-heals at next boot (warm-up reads only surviving DB rows).
         await deps.db.delete(userInsights).where(eq(userInsights.userId, user.id));
-        await deps.db.update(users).set({ archetype: null }).where(eq(users.id, user.id));
+        await deps.db.delete(userDeepSessions).where(eq(userDeepSessions.userId, user.id));
+        await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
       }
       captureEvent("insights_consent", user.githubLogin, { consent: String(consent), visibility: visibility ?? "" });
       // Echo: request values ARE the written values (no server-side normalization),
       // so falling back to the pre-update row is accurate for fields not in this request.
       return c.json({ ok: true, consent: consent ?? user.insightsConsent, visibility: visibility ?? user.insightsVisibility });
+    },
+  );
+
+  // Deep-mode upload: per-session records + hashed git outcomes. The server
+  // stores the raw records AND derives the aggregate (so #47 archetype/efficiency
+  // keep working from one upload — server derives the rest).
+  app.post("/deep", zValidator("json", deepBodySchema), async (c) => {
+    const user = await userFromBearer(deps.db, c);
+    if (!user) return c.json({ error: "unauthorized" }, 401);
+    if (user.insightsMode !== "deep") return c.json({ error: "mode_off" }, 403);
+
+    const { machineId, windowDays, sessions } = c.req.valid("json");
+    const mid = machineId.toLowerCase();
+    const deep: InsightsDeepPayload = { windowDays, sessions };
+
+    await deps.db
+      .insert(userDeepSessions)
+      .values({ userId: user.id, machineId: mid, sessions: deep.sessions, windowDays, capturedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [userDeepSessions.userId, userDeepSessions.machineId],
+        set: { sessions: deep.sessions, windowDays, capturedAt: new Date() },
+      });
+
+    // Derive the aggregate and persist it through the same path as a direct
+    // /insights push, so the profile archetype/scoring are unchanged.
+    const aggregate = deriveAggregate(deep.sessions, windowDays);
+    await deps.db
+      .insert(userInsights)
+      .values({ userId: user.id, machineId: mid, payload: aggregate, windowDays, capturedAt: new Date() })
+      .onConflictDoUpdate({
+        target: [userInsights.userId, userInsights.machineId],
+        set: { payload: aggregate, windowDays, capturedAt: new Date() },
+      });
+    deps.insightsStore.upsert(user.id, mid, aggregate);
+    const archetype = await refreshArchetype(deps.db, deps.insightsStore, user.id);
+
+    // Eagerly recompute the Craft Score so the profile read is instant and the
+    // leaderboard can rank on the stored value. Reads back all machines' deep
+    // rows (this upload is already committed) + usage_days.
+    const craft = await computeCraftForUser(deps.db, user.id);
+    await deps.db
+      .update(users)
+      .set({
+        craftScore: craft ? String(craft.craftScore) : null,
+        trustTier: craft ? craft.trustTier : null,
+      })
+      .where(eq(users.id, user.id));
+
+    // ── Anti-gaming gates (Craft Score is a hiring credential). Run AFTER the
+    // data is stored, NEVER reject: a violation shadow-quarantines (flaggedAt
+    // set, user leaves ranked boards) but the sync still returns 200, so a
+    // cheater probing for a 4xx can't triangulate the gate. Gates read every
+    // machine's deep rows (this upload is committed) + the priced usage window.
+    const allSessions = await loadDeepSessions(deps.db, user.id);
+    const totalSurvivingLoc = allSessions.reduce(
+      (s, r) => s + (r.git ? Math.max(0, r.git.linesAdded - r.git.revertedLinesWithin14d) : 0),
+      0,
+    );
+    const totalShippedCommits = allSessions.reduce(
+      (s, r) => s + (r.git ? r.git.commitsInWindow : 0),
+      0,
+    );
+    const usage = await loadUsageSignal(deps.db, user.id, Date.now());
+    const signals: FlagSignal[] = [];
+    const outcome = checkOutcomeImplausibility(
+      totalSurvivingLoc,
+      totalShippedCommits,
+      usage.windowTokens,
+      usage.windowCostUsd,
+    );
+    if (outcome) signals.push(outcome);
+    const timing = checkTimingRegularity(allSessions);
+    if (timing) signals.push(timing);
+    await flagUser(deps.db, deps.store ?? null, user, signals);
+
+    captureEvent("deep_insights_received", user.githubLogin, { sessions: deep.sessions.length });
+    return c.json({ ok: true, archetype, craftScore: craft?.craftScore ?? null });
+  });
+
+  app.get("/mode", async (c) => {
+    const user = await resolveUser(c);
+    if (!user) return c.json({ error: "unauthorized" }, 401);
+    return c.json({ mode: user.insightsMode, visibility: user.insightsVisibility });
+  });
+
+  app.post(
+    "/mode",
+    zValidator("json", z.object({ mode: z.enum(["off", "deep"]) })),
+    async (c) => {
+      const user = await resolveUser(c);
+      if (!user) return c.json({ error: "unauthorized" }, 401);
+      const { mode } = c.req.valid("json");
+      // mode is the source of truth; keep the legacy consent boolean consistent.
+      await deps.db
+        .update(users)
+        .set({ insightsMode: mode, insightsConsent: mode === "deep" })
+        .where(eq(users.id, user.id));
+      if (mode === "off") {
+        // Off purges all behavioral data (aggregate + deep), nulls the archetype,
+        // and evicts from the in-memory store. DB first, store last (self-heals).
+        await deps.db.delete(userInsights).where(eq(userInsights.userId, user.id));
+        await deps.db.delete(userDeepSessions).where(eq(userDeepSessions.userId, user.id));
+        await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
+        deps.insightsStore.remove(user.id);
+      }
+      captureEvent("insights_mode", user.githubLogin, { mode });
+      return c.json({ ok: true, mode, visibility: user.insightsVisibility });
     },
   );
 

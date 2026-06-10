@@ -30,6 +30,19 @@ export const GATES = {
   // authority. The signal catches both tampered clients and a stale pricing
   // table on our side (non-quarantining: LiteLLM lag on new models is normal).
   estimateBand: () => envNum("GATE_ESTIMATE_BAND", 0.25),
+  // ── Craft Score deep-ingest gates (hiring credential — gaming resistance is
+  // make-or-break). Outcome-vs-spend: the model physically cannot emit more
+  // than ~1 line of surviving code per output token, and total tokens (even
+  // cache-inflated) vastly exceed lines — so surviving LOC above total tokens,
+  // or a flood of commits per real dollar, means a fabricated git repo.
+  maxLocPerToken: () => envNum("GATE_MAX_LOC_PER_TOKEN", 1.0),
+  maxCommitsPerDollar: () => envNum("GATE_MAX_COMMITS_PER_DOLLAR", 50),
+  // ── Timing regularity: scripted sessions fire events with near-zero, uniform
+  // gaps; humans pause to read and think. Conservative defaults — a false
+  // positive on a real credential is costly, so only the blatant cases trip.
+  timingMinEvents: () => envNum("GATE_TIMING_MIN_EVENTS", 20),
+  maxSubSecondFraction: () => envNum("GATE_MAX_SUBSECOND_FRACTION", 0.9),
+  minMedianGapMs: () => envNum("GATE_MIN_MEDIAN_GAP_MS", 300),
 } as const;
 
 export interface FlagSignal {
@@ -106,6 +119,61 @@ export function checkTokenShape(tool: string, day: string, models: ModelTokens[]
     if (out > 50_000_000) {
       return { reason: "token_shape", detail: `${tool} ${day} ${m.modelName} output ${out}` };
     }
+  }
+  return null;
+}
+
+/**
+ * Outcome-vs-spend implausibility (deep ingest). The #1 attack on a hiring
+ * credential is a fabricated git repo — scripted commits inflating LOC/commits
+ * with no corresponding AI token spend. Real AI-assisted work has a bounded
+ * outcome-per-token (a model can't emit more surviving lines than output tokens)
+ * and a bounded commits-per-dollar of real model spend.
+ */
+export function checkOutcomeImplausibility(
+  totalSurvivingLoc: number,
+  totalShippedCommits: number,
+  windowTokens: number,
+  windowCostUsd: number,
+): FlagSignal | null {
+  const locPerToken = totalSurvivingLoc / Math.max(1, windowTokens);
+  if (locPerToken > GATES.maxLocPerToken()) {
+    return {
+      reason: "outcome_implausible",
+      detail: `${totalSurvivingLoc} surviving LOC vs ${windowTokens} tokens (${locPerToken.toFixed(2)} loc/token > ${GATES.maxLocPerToken()})`,
+    };
+  }
+  const commitsPerDollar = totalShippedCommits / Math.max(1, windowCostUsd);
+  if (commitsPerDollar > GATES.maxCommitsPerDollar()) {
+    return {
+      reason: "outcome_implausible",
+      detail: `${totalShippedCommits} commits vs $${windowCostUsd.toFixed(2)} (${commitsPerDollar.toFixed(1)} commits/$ > ${GATES.maxCommitsPerDollar()})`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Timing regularity (deep ingest). Scripted/synthetic sessions have
+ * machine-regular timing — near-zero, uniform inter-event gaps — while humans
+ * pause to read and think. Only "substantial" sessions count; we need a few of
+ * them all showing the machine signature before flagging (conservative: a false
+ * positive on a real credential is costly).
+ */
+export function checkTimingRegularity(
+  sessions: { timing: { events: number; subSecondFraction: number; medianGapMs: number } }[],
+): FlagSignal | null {
+  const substantial = sessions.filter((s) => s.timing.events >= GATES.timingMinEvents());
+  if (substantial.length < 3) return null;
+  const meanSubSecond =
+    substantial.reduce((s, x) => s + x.timing.subSecondFraction, 0) / substantial.length;
+  const meanMedianGap =
+    substantial.reduce((s, x) => s + x.timing.medianGapMs, 0) / substantial.length;
+  if (meanSubSecond > GATES.maxSubSecondFraction() && meanMedianGap < GATES.minMedianGapMs()) {
+    return {
+      reason: "timing_regular",
+      detail: `${substantial.length} long sessions: mean subSecond ${meanSubSecond.toFixed(2)}, mean medianGap ${meanMedianGap.toFixed(0)}ms`,
+    };
   }
   return null;
 }

@@ -7,6 +7,7 @@ import {
   jsonb,
   boolean,
   bigint,
+  integer,
   date,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -22,6 +23,57 @@ export type ModelTokens = {
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
+};
+
+// Hashed per-session git outcome (mirrors packages/cli/src/git.ts
+// SessionGitOutcome exactly). Numbers, booleans, and salted sha256 hex only —
+// no code, diffs, paths, commit messages, or SHAs ever reach the server.
+export type SessionGitOutcome = {
+  repoIdHash: string;
+  branchHash: string;
+  commitsInWindow: number;
+  linesAdded: number;
+  linesDeleted: number;
+  filesChanged: number;
+  testFilesTouched: number;
+  aiLinkedCommits: number;
+  revertedLinesWithin14d: number;
+  squashMergeDetected: boolean;
+  rebaseDetected: boolean;
+  isMonorepo: boolean;
+  hasRemote: boolean;
+  // Commit-timing histograms (24 hours, 7 days-of-week), machine-local. Optional:
+  // older clients (pre-timing-upgrade) omit them, so consumers must guard.
+  commitHours?: number[]; // 24 buckets, hour-of-day commit counts
+  commitDows?: number[]; // 7 buckets, day-of-week commit counts (0 = Sunday)
+};
+
+// One uploadable per-session record (mirrors packages/cli/src/insights.ts
+// SessionRecord exactly). Deep mode uploads an array of these; the server
+// derives the aggregate InsightsPayload from them.
+export type SessionRecord = {
+  startHour: number;
+  durationMinutes: number;
+  prompts: number;
+  interrupts: number;
+  usedPlanMode: boolean;
+  exploreBeforeFirstEdit: boolean;
+  hadEdits: boolean;
+  subagentSpawns: number;
+  maxParallel: number;
+  editCalls: number;
+  assistantTurns: number;
+  wordBuckets: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
+  model: string | null;
+  timing: { events: number; medianGapMs: number; p10GapMs: number; subSecondFraction: number };
+  git: SessionGitOutcome | null;
+};
+
+// The deep payload the client sends (mirrors packages/cli/src/insights.ts
+// InsightsDeepPayload exactly).
+export type InsightsDeepPayload = {
+  windowDays: number;
+  sessions: SessionRecord[];
 };
 
 // Aggregate behavioral counts extracted locally by the CLI from session JSONL.
@@ -67,8 +119,17 @@ export const users = pgTable("users", {
   // truth: the CLI only extracts while this is true, and /insights rejects
   // payloads when it is false (stale clients can't push post-revoke).
   insightsConsent: boolean("insights_consent").notNull().default(false),
+  // Binary off/deep mode (forward-compatible with a future 'transcript').
+  // mode !== 'off' is the source of truth; insightsConsent is kept consistent
+  // (consent = mode === 'deep') so #47 code reading the boolean still works.
+  insightsMode: text("insights_mode").notNull().default("off"), // off | deep
   insightsVisibility: text("insights_visibility").notNull().default("public"), // public | private
   archetype: text("archetype"),
+  // Craft Score (issue #51): the headline composite, recomputed eagerly on each
+  // /insights/deep upload so the leaderboard/ranking can read it without
+  // replaying the pillar math. Null when mode is off or there's no deep data.
+  craftScore: numeric("craft_score"),
+  trustTier: integer("trust_tier"), // 0 unverified | 1 local-git
 });
 
 export const snapshots = pgTable("snapshots", {
@@ -156,9 +217,28 @@ export const userInsights = pgTable(
   (t) => [uniqueIndex("user_insights_user_machine").on(t.userId, t.machineId)],
 );
 
+// Deep-mode per-session records (Craft Score). One row per (user, machine),
+// updated in place each send. Mirrors user_insights conventions. The server
+// derives the aggregate user_insights row from these on every upload.
+export const userDeepSessions = pgTable(
+  "user_deep_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    machineId: text("machine_id").notNull(),
+    sessions: jsonb("sessions").$type<SessionRecord[]>().notNull(),
+    windowDays: bigint("window_days", { mode: "number" }).notNull().default(40),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("user_deep_sessions_user_machine").on(t.userId, t.machineId)],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UsageDay = typeof usageDays.$inferSelect;
 export type Donation = typeof donations.$inferSelect;
 export type OrgMember = typeof orgMembers.$inferSelect;
 export type UserInsights = typeof userInsights.$inferSelect;
+export type UserDeepSessions = typeof userDeepSessions.$inferSelect;

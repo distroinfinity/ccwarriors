@@ -3,9 +3,10 @@ import { useProfile } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { InstallBlock } from "../InstallBlock";
 import { ArchetypeCard } from "./ArchetypeCard";
-import { HabitsPanel } from "./HabitsPanel";
+import { InsightCards } from "./InsightCards";
 import { EfficiencyPanel } from "./EfficiencyPanel";
 import { RhythmPanel } from "./RhythmPanel";
+import { OwnerControls } from "./OwnerControls";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -33,17 +34,21 @@ export function ProfilePage({ login }: { login: string }) {
   if (state.status === "notfound") return <NotFound login={login} />;
   const p = state.profile;
   document.title = `${p.login} · CCWarriors`;
+  // The insight deck only exists once insights are unlocked; the Habits stats
+  // it absorbed are now individual cards inside it.
+  const cards = !p.insights.locked ? p.insights.cards : [];
 
   return (
     <div className="profile">
       <div className="profile-grid">
         <ArchetypeCard profile={p} onConsentChanged={refetch} />
         <div className="profile-side">
-          <HabitsPanel profile={p} />
           <EfficiencyPanel profile={p} />
         </div>
       </div>
+      <InsightCards cards={cards} login={p.login} />
       <RhythmPanel profile={p} />
+      <OwnerControls profile={p} onConsentChanged={refetch} />
     </div>
   );
 }

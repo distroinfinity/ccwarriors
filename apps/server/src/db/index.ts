@@ -21,7 +21,10 @@ export async function createTestDb(): Promise<DB> {
   const { PGlite } = await import("@electric-sql/pglite");
   const { drizzle } = await import("drizzle-orm/pglite");
   const { migrate } = await import("drizzle-orm/pglite/migrator");
-  const client = new PGlite();
+  // PGLITE_DIR persists the local DB to disk so a dev/test server restart keeps
+  // its data (e.g. a local e2e enlistment). Unset = ephemeral in-memory (CI/tests).
+  const dir = process.env["PGLITE_DIR"];
+  const client = dir ? new PGlite(dir) : new PGlite();
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder: new URL("../../drizzle", import.meta.url).pathname });
   return db as unknown as DB;

@@ -292,6 +292,33 @@ describe("ingest v3 (raw token counts)", () => {
     expect(u!.flaggedAt).toBeNull(); // legit multi-tool adoption, not a rig
   });
 
+  it("a NEW machine's first sync is exempt from the burn gate (2nd laptop backfill)", async () => {
+    // Established on laptop A one hour ago.
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }, "aaaaaaaaaaaaaaaa"), NOW - 3_600_000);
+    // Enlists laptop B: its ~10-day backfill (~$6.7k) lands at once, minutes later.
+    const backfill = Array.from({ length: 10 }, (_, i) => opusDay(isoDaysAgo(i + 1)));
+    await ingestUsage(db, store, TOKEN, raw({ claude: backfill }, "bbbbbbbbbbbbbbbb"), NOW + 60_000);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    // The merge happened (sum of both machines) and the user was NOT flagged —
+    // this is the Seungwoo321 case: a legit 2nd machine, not a rig.
+    expect(u!.flaggedAt).toBeNull();
+    expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost() * 11, 2);
+  });
+
+  it("an EXISTING machine's implausible jump still trips the burn gate", async () => {
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }, "aaaaaaaaaaaaaaaa"), NOW);
+    // Same machine re-syncs a $67k day seconds later — still caught.
+    await ingestUsage(
+      db,
+      store,
+      TOKEN,
+      raw({ claude: [opusDay(isoDaysAgo(1), 100_000_000)] }, "aaaaaaaaaaaaaaaa"),
+      NOW + 11_000,
+    );
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    expect(u!.flagReason).toContain("burn_rate");
+  });
+
   it("v1 sync after v3 doesn't double count (old client lumps all agents)", async () => {
     // v3 establishes claude + codex…
     await ingestUsage(

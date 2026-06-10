@@ -18,19 +18,21 @@ const day = (d: string, cost: number, opus = false, cacheRead = 0, input = 1000)
 });
 
 describe("computeEfficiency", () => {
-  it("grades a sonnet-heavy, cache-warm mix highly", () => {
+  it("grades a cache-warm mix highly", () => {
     const rows = [day("2026-06-01", 10, false, 9000), day("2026-06-02", 10, false, 9000)];
     const e = computeEfficiency(rows, "2026-05-08");
-    expect(e.opusShare).toBe(0);
-    expect(e.cacheReadRatio).toBeGreaterThan(0.8);
-    expect(e.grade).toBe("A+");
+    expect(e.cacheReadRatio).toBeCloseTo(0.9, 1); // 9000 / (1000+9000)
+    expect(e.grade).toBe("A");
   });
-  it("flags an opus-heavy mix with savings", () => {
-    const rows = [day("2026-06-01", 100, true, 0)];
-    const e = computeEfficiency(rows, "2026-05-08");
-    expect(e.opusShare).toBe(1);
-    expect(e.estSavingsPerMonth).toBeGreaterThan(0);
-    expect(["C", "D"]).toContain(e.grade);
+  it("does NOT penalize Opus — grade is cache-based (prod: ~90% Opus is the norm)", () => {
+    // Heavy Opus but warm cache → still graded well; no 'move to Sonnet' nudge.
+    const opusWarm = computeEfficiency([day("2026-06-01", 100, true, 9000)], "2026-05-08");
+    expect(opusWarm.opusShare).toBe(1);
+    expect(opusWarm.grade).toBe("A");
+    expect(opusWarm.estSavingsPerMonth).toBeNull();
+    // Poor cache hygiene is what grades down, regardless of model.
+    const opusCold = computeEfficiency([day("2026-06-01", 100, true, 0)], "2026-05-08");
+    expect(opusCold.grade).toBe("D");
   });
 });
 

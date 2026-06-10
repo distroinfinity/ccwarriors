@@ -1,12 +1,13 @@
+import { randomBytes } from "node:crypto";
 import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
-import { loadConfig, clearConfig, ensureMachineId } from "./config.js";
+import { loadConfig, clearConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
-import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsights, setInsightsConsent, getInsightsConsent } from "./core.js";
+import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsightsDeep, setInsightsConsent, getInsightsMode } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
-import { collectInsights, shouldSend, markSent } from "./insights.js";
+import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
 declare const __BUILD_ID__: string;
 
@@ -34,7 +35,7 @@ ${bold("USAGE")}
   ccwarriors autosync status         Show whether autosync is enabled
   ccwarriors daemon [heartbeatMin]   Run the sync daemon in the foreground (autosync runs this for you)
   ccwarriors insights on|off|status   Behavioral insights for your profile page (opt in)
-  ccwarriors insights --dry-run       Print exactly what would be sent — nothing uploads
+  ccwarriors insights --dry-run       Print the exact per-session payload that would upload — nothing is sent
   ccwarriors --version  Show the installed build
   ccwarriors --help     Show this help
 
@@ -67,15 +68,21 @@ async function cmdWhoami(): Promise<void> {
   }
 }
 
-/** After a good sync: when the server asks (consent on) and the 6h throttle
-    allows, extract locally and push. Fire-and-forget — sync UX never blocks. */
-async function maybePushInsights(token: string, machineId: string, requested: boolean | undefined, verbose: boolean): Promise<void> {
-  if (!requested) return;
+/** After a good sync: when the server asks for deep mode and the 6h throttle
+    allows, extract the per-session + git-outcome payload locally and push it.
+    Fire-and-forget — sync UX never blocks. Falls back to the legacy
+    insightsRequested bool when an old server omits insightsMode. */
+async function maybePushInsights(token: string, machineId: string, data: import("./core.js").IngestResponse, verbose: boolean): Promise<void> {
+  const deepWanted = data.insightsMode === "deep" || (data.insightsMode === undefined && data.insightsRequested === true);
+  if (!deepWanted) return;
   try {
     if (!(await shouldSend())) return;
-    const payload = await collectInsights();
+    const config = await loadConfig();
+    if (!config) return;
+    const salt = await ensureInsightsSalt(config);
+    const payload = await collectDeepInsights(salt);
     if (!payload) return;
-    const res = await postInsights(token, machineId, payload);
+    const res = await postInsightsDeep(token, machineId, payload);
     if (res.ok) {
       await markSent();
       if (verbose) console.log(dim("   insights synced — your archetype is forging at ccwarriors.xyz"));
@@ -172,7 +179,7 @@ async function cmdSync(): Promise<void> {
   console.log();
 
   // After the user has their output: extraction is fs-bound and can take seconds cold.
-  await maybePushInsights(config.token, machineId, result.data.insightsRequested, true);
+  await maybePushInsights(config.token, machineId, result.data, true);
 
   // After a good sync (and after the user has their output): pick up a newer
   // build if one shipped. Cron/manual runs use it on their next invocation.
@@ -225,7 +232,11 @@ async function cmdInsights(args: string[]): Promise<void> {
   const sub = args[0];
   if (sub === "--dry-run" || sub === "dry-run") {
     console.log(dim("Extracting locally — nothing is sent. This is the exact payload a sync would upload:"));
-    const payload = await collectInsights();
+    // Use the persisted salt when logged in; otherwise an ephemeral one so the
+    // dry-run works without auth (the salt only affects opaque hashes anyway).
+    const config = await loadConfig();
+    const salt = config ? await ensureInsightsSalt(config) : randomBytes(16).toString("hex");
+    const payload = await collectDeepInsights(salt);
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
@@ -235,17 +246,19 @@ async function cmdInsights(args: string[]): Promise<void> {
     process.exit(1);
   }
   if (sub === "on") {
+    // setInsightsConsent(true) → server sets mode=deep (back-compat path).
     const res = await setInsightsConsent(config.token, true);
     if (!res.ok) {
       console.error(red(`Could not enable insights (status ${res.status}).`));
       process.exit(1);
     }
     console.log(green("Insights on."));
-    console.log(dim("Extracting from your local sessions now — aggregate counts only, transcripts never leave this machine."));
+    console.log(dim("Extracting from your local sessions now — counts and hashed git outcomes only, transcripts and paths never leave this machine."));
     const machineId = await ensureMachineId(config);
-    const payload = await collectInsights();
+    const salt = await ensureInsightsSalt(config);
+    const payload = await collectDeepInsights(salt);
     if (payload) {
-      const sent = await postInsights(config.token, machineId, payload);
+      const sent = await postInsightsDeep(config.token, machineId, payload);
       if (sent.ok) {
         await markSent();
         console.log(green(`Done — see your archetype at ${WEB_BASE}/u/${encodeURIComponent(config.login)}`));
@@ -271,8 +284,8 @@ async function cmdInsights(args: string[]): Promise<void> {
     console.log("usage: ccwarriors insights on|off|status|--dry-run");
     process.exit(1);
   }
-  const status = await getInsightsConsent(config.token);
-  console.log(`insights: ${status ? (status.consent ? "on" : "off") : "unknown (network error)"}`);
+  const status = await getInsightsMode(config.token);
+  console.log(`insights: ${status ? (status.mode === "deep" ? "on" : "off") : "unknown (network error)"}`);
 }
 
 async function cmdAutosync(args: string[]): Promise<void> {

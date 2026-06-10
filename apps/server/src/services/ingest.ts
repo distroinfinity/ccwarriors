@@ -50,7 +50,14 @@ export interface RawIngestPayload {
 export type IngestPayload = LegacyIngestPayload | RawIngestPayload;
 
 export type IngestResult =
-  | { ok: true; tier: string; rank30d: number | null; rankAllTime: number | null; insightsRequested: boolean }
+  | {
+      ok: true;
+      tier: string;
+      rank30d: number | null;
+      rankAllTime: number | null;
+      insightsRequested: boolean;
+      insightsMode: string;
+    }
   | { ok: false; error: "unauthorized" | "implausible" | "rate_limited" };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -76,14 +83,17 @@ function breakdown30d(b: ToolBreakdown): Record<string, number> {
   );
 }
 
-async function flagUser(db: DB, store: LeaderboardStore, user: User, signals: FlagSignal[]) {
+export async function flagUser(db: DB, store: LeaderboardStore | null, user: User, signals: FlagSignal[]) {
   if (user.flaggedAt || signals.length === 0) return;
   const reason = signals
     .slice(0, 3)
     .map((s) => `${s.reason}: ${s.detail}`)
     .join(" | ");
   await db.update(users).set({ flaggedAt: new Date(), flagReason: reason }).where(eq(users.id, user.id));
-  store.setFlagged(user.id, true);
+  // Shadow quarantine on the ranked boards. The deep-ingest path may not have a
+  // leaderboard store handle; the DB flag is the authority, setFlagged is a
+  // no-op if the user isn't currently in the store anyway.
+  store?.setFlagged(user.id, true);
   captureEvent("plausibility_flagged", user.githubLogin, { reason: signals[0]!.reason, detail: reason });
 }
 
@@ -480,6 +490,9 @@ async function finalize(
     tier,
     rank30d: store.getRank("30d", user.id),
     rankAllTime: store.getRank("allTime", user.id),
-    insightsRequested: user.insightsConsent === true,
+    // Back-compat: insightsRequested = (mode === 'deep'). mode is the new
+    // source of truth the client reads going forward.
+    insightsRequested: user.insightsMode === "deep",
+    insightsMode: user.insightsMode,
   };
 }

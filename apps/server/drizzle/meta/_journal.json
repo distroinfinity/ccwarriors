@@ -43,6 +43,20 @@
       "when": 1780846307735,
       "tag": "0005_rainy_micromacro",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781010148431,
+      "tag": "0006_greedy_metal_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781011466931,
+      "tag": "0007_crazy_shocker",
+      "breakpoints": true
     }
   ]
 }
