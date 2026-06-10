@@ -165,29 +165,54 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
   );
 }
 
+// The exact, honest field list for what Deep mode uploads. One tight line each.
+// Reused verbatim by the locked chooser (the ask) and the unlocked transparency
+// block (the receipt) so the promise and the proof can never drift apart.
+const DEEP_UPLOADS: Array<{ k: string; v: string }> = [
+  { k: "Per-session counts", v: "prompts, tool calls, plan-mode turns" },
+  { k: "Timing summaries", v: "session length, active hours, gaps" },
+  { k: "Model names", v: "which models you ran, nothing about the chats" },
+  { k: "Hashed git outcomes", v: "commits, lines, tests as salted hashes" },
+];
+const DEEP_NEVER = "Never your prompts, code, file paths, or repo names.";
+
+function DisclosureList() {
+  return (
+    <ul className="consent-disclose">
+      {DEEP_UPLOADS.map(({ k, v }) => (
+        <li key={k}>
+          <b>{k}</b>
+          <span>{v}</span>
+        </li>
+      ))}
+      <li className="consent-never">{DEEP_NEVER}</li>
+    </ul>
+  );
+}
+
 function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const locked = profile.insights as LockedInsights;
   const isOwner = !!profile.owner;
 
-  const unlock = async () => {
+  const goAllIn = async () => {
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${API_HTTP}/insights/consent`, {
+      const r = await fetch(`${API_HTTP}/insights/mode`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ consent: true }),
+        body: JSON.stringify({ mode: "deep" }),
       });
       if (!r.ok) {
-        setError("Unlock failed. Try again after refreshing your session.");
+        setError("Could not switch on Deep mode. Try again after refreshing your session.");
         return;
       }
       onConsentChanged();
     } catch {
-      setError("Unlock failed. Check your connection and try again.");
+      setError("Could not switch on Deep mode. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
@@ -207,21 +232,33 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     return <PendingPanel onPoll={onConsentChanged} />;
   }
 
-  // no_consent (default)
-  return (
-    <div className="arch-locked">
-      <PixelGlyph name="diamond" size={13} />
-      {isOwner ? (
-        <>
-          <p>Your archetype is locked. Unlock reads aggregate counts from your local sessions. Transcripts never leave your machine.</p>
-          <button className="btn x" onClick={unlock} disabled={busy}>
-            {busy ? "Unlocking…" : "Unlock your archetype"}
-          </button>
-          {error && <p className="arch-error">{error}</p>}
-        </>
-      ) : (
+  if (!isOwner) {
+    return (
+      <div className="arch-locked">
+        <PixelGlyph name="diamond" size={13} />
         <p>This warrior has not revealed their archetype. Yours could be live in a minute: run the install command and `ccwarriors insights on`.</p>
-      )}
+      </div>
+    );
+  }
+
+  // Owner, mode off, no consent — the honest binary choice.
+  return (
+    <div className="arch-locked consent-choice">
+      <div className="consent-opt consent-stay">
+        <div className="consent-opt-h mono">STAY PRIVATE</div>
+        <p>Keep everything local. We only ever see your spend, never your sessions. This is where you are now.</p>
+      </div>
+
+      <div className="consent-opt consent-allin">
+        <div className="consent-opt-h mono">GO ALL-IN</div>
+        <p>Reveal your Craft Score and archetype. Here is exactly what Deep mode uploads, nothing hidden:</p>
+        <DisclosureList />
+        <p className="consent-purgenote">Purge anytime. One click deletes all of it.</p>
+        <button className="btn x" onClick={goAllIn} disabled={busy}>
+          {busy ? "Switching on Deep…" : "Reveal my Craft Score"}
+        </button>
+        {error && <p className="arch-error">{error}</p>}
+      </div>
     </div>
   );
 }
@@ -231,6 +268,10 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
   const [exporting, setExporting] = useState(false);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
+  const [showStored, setShowStored] = useState(false);
+  const [purgeArmed, setPurgeArmed] = useState(false);
+  const [purgeBusy, setPurgeBusy] = useState(false);
+  const [purgeError, setPurgeError] = useState<string | null>(null);
   const unlocked = !profile.insights.locked;
   const insights = unlocked ? (profile.insights as ProfileInsights) : null;
 
@@ -296,6 +337,34 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
     }
   };
 
+  const purge = async () => {
+    // First click arms the confirm; second click does the deletion.
+    if (!purgeArmed) {
+      setPurgeArmed(true);
+      return;
+    }
+    setPurgeBusy(true);
+    setPurgeError(null);
+    try {
+      const r = await fetch(`${API_HTTP}/insights/mode`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "off" }),
+      });
+      if (!r.ok) {
+        setPurgeError("Purge failed. Try again.");
+        return;
+      }
+      setPurgeArmed(false);
+      onConsentChanged();
+    } catch {
+      setPurgeError("Purge failed. Check your connection and try again.");
+    } finally {
+      setPurgeBusy(false);
+    }
+  };
+
   return (
     <div className="arch-wrap">
       <div className="arch-card" ref={cardRef}>
@@ -351,17 +420,58 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           </button>
         </div>
       )}
-      {profile.owner?.consent && (
-        <div className="arch-owner mono">
-          insights on &middot; {profile.owner.machineCount} machine{profile.owner.machineCount === 1 ? "" : "s"} &middot;{" "}
+      {profile.owner && profile.owner.mode === "deep" && (
+        <div className="arch-transparency">
+          <div className="trans-status mono">
+            Deep insights on &middot; {profile.owner.machineCount} machine
+            {profile.owner.machineCount === 1 ? "" : "s"} &middot;{" "}
+            <span className="trans-verified">LOCAL-GIT VERIFIED</span>
+          </div>
+
           <button
-            className="linklike"
-            onClick={toggleVisibility}
-            disabled={visibilityBusy}
+            className="linklike trans-toggle"
+            onClick={() => setShowStored((s) => !s)}
+            aria-expanded={showStored}
           >
-            {visibilityBusy ? "updating" : `make ${profile.owner.visibility === "public" ? "private" : "public"}`}
+            {showStored ? "Hide what we store" : "What we store"}
           </button>
-          {visibilityError ? <span className="arch-error"> · {visibilityError}</span> : null}
+          {showStored && <DisclosureList />}
+
+          <div className="trans-actions">
+            <span className="trans-vis mono">
+              {profile.owner.visibility === "public" ? "Visible to everyone" : "Hidden from others"} &middot;{" "}
+              <button className="linklike" onClick={toggleVisibility} disabled={visibilityBusy}>
+                {visibilityBusy ? "updating" : `make ${profile.owner.visibility === "public" ? "private" : "public"}`}
+              </button>
+            </span>
+            {visibilityError ? <span className="arch-error">{visibilityError}</span> : null}
+          </div>
+
+          <div className="purge">
+            {purgeArmed ? (
+              <span className="purge-confirm mono">
+                This deletes everything we have computed and stops collecting. Sure?{" "}
+                <button className="linklike purge-go" onClick={purge} disabled={purgeBusy}>
+                  {purgeBusy ? "purging…" : "yes, purge it all"}
+                </button>{" "}
+                <button
+                  className="linklike"
+                  onClick={() => {
+                    setPurgeArmed(false);
+                    setPurgeError(null);
+                  }}
+                  disabled={purgeBusy}
+                >
+                  cancel
+                </button>
+              </span>
+            ) : (
+              <button className="linklike purge-start" onClick={purge}>
+                Purge and go private
+              </button>
+            )}
+            {purgeError ? <span className="arch-error"> · {purgeError}</span> : null}
+          </div>
         </div>
       )}
     </div>

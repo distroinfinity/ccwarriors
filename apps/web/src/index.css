@@ -489,6 +489,47 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .arch-skip{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .arch-skip code{ background:var(--segoff); padding:3px 8px; border-radius:3px; font-size:11.5px; color:var(--ink); }
 
+/* Binary consent chooser — the honest off/all-in choice. Two stacked options,
+   the all-in one emphasized with a left rule and the brand color. Restrained:
+   this is a privacy surface, not a promo. */
+.consent-choice{ gap:0; padding:0; border:1px solid var(--line); border-style:solid; overflow:hidden; }
+.consent-opt{ padding:16px 18px; }
+.consent-opt-h{ font-size:10px; letter-spacing:.18em; color:var(--muted); margin-bottom:6px; }
+.consent-opt p{ font-size:12.5px; line-height:1.55; color:var(--muted); margin:0; }
+.consent-stay{ border-bottom:1px dashed var(--line); }
+.consent-allin{ background:color-mix(in srgb, var(--or) 4%, transparent);
+  border-left:2px solid var(--or); }
+.consent-allin .consent-opt-h{ color:var(--or); }
+.consent-allin .btn.x{ margin-top:14px; }
+.consent-purgenote{ margin-top:10px; font-size:11px; color:var(--bronze); }
+
+/* What-we-store list — tight, scannable, deliberately plain. The disclosure is
+   the trust signal; it stays muted so it reads as a receipt, not a sales pitch. */
+.consent-disclose{ list-style:none; margin:12px 0 0; padding:0;
+  border-top:1px dashed var(--line); }
+.consent-disclose li{ display:flex; gap:10px; align-items:baseline; padding:7px 0;
+  border-bottom:1px dashed var(--line); font-size:11.5px; line-height:1.45; }
+.consent-disclose li b{ flex:none; width:118px; color:var(--ink); font-weight:600;
+  font-family:'Geist Mono',monospace; font-size:10.5px; letter-spacing:.02em; }
+.consent-disclose li span{ color:var(--muted); }
+.consent-disclose li.consent-never{ display:block; padding:9px 0 0; border-bottom:0;
+  color:var(--bronze); font-weight:600; font-size:11px; }
+
+/* Transparency + purge block (unlocked owner): calm, the receipt for Deep mode. */
+.arch-transparency{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--line);
+  display:flex; flex-direction:column; gap:8px; }
+.trans-status{ font-size:11px; color:var(--muted); }
+.trans-verified{ color:var(--or); font-weight:600; letter-spacing:.06em; }
+.trans-toggle{ align-self:flex-start; font-size:11px; color:var(--muted); }
+.arch-transparency .consent-disclose{ margin-top:2px; }
+.trans-actions{ display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
+.trans-vis{ font-size:11px; color:var(--muted); }
+.purge{ margin-top:2px; font-size:11px; }
+.purge-start{ color:var(--muted); text-decoration-style:dotted; }
+.purge-start:hover{ color:var(--or); }
+.purge-confirm{ font-size:11px; color:var(--ink); line-height:1.6; }
+.purge-go{ color:var(--or); font-weight:700; text-decoration-color:var(--or); }
+
 .habit{ display:flex; align-items:baseline; gap:10px; margin-top:10px; font-size:12.5px; color:var(--muted); }
 .habit b{ font-size:16px; color:var(--ink); min-width:52px; }
 

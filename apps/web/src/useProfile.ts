@@ -70,7 +70,7 @@ export interface Profile {
     tokensPerActiveDay: number | null;
   } | null;
   insights: ProfileInsights | LockedInsights;
-  owner?: { consent: boolean; visibility: "public" | "private"; machineCount: number };
+  owner?: { consent: boolean; visibility: "public" | "private"; machineCount: number; mode: "off" | "deep" };
 }
 
 export type ProfileState =
