@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
-import { homedir } from "node:os";
+import { createHash, randomBytes } from "node:crypto";
+import { homedir, hostname, userInfo, platform, arch } from "node:os";
 import { join } from "node:path";
 
 export interface Config {
@@ -28,10 +28,30 @@ export async function saveConfig(config: Config): Promise<void> {
   await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
-/** Machine id from config, generating + persisting one on first use. */
+/** sha256(seed) truncated to 16 hex chars. Deterministic by design. */
+export function deriveMachineId(seed: string): string {
+  return createHash("sha256").update(seed).digest("hex").slice(0, 16);
+}
+
+/**
+ * Machine id from config, generating + persisting one on first use.
+ *
+ * A DETERMINISTIC id (hashed from hostname/user/platform/arch) so a reinstall,
+ * `logout` (which deletes config), or `rm -rf ~/.claude-warriors` reuses the
+ * SAME id — otherwise a fresh random id makes this one machine's usage get
+ * counted again on top of the old id (the server sums distinct machines),
+ * double-counting cost/tier/rank. Existing configs keep their stored id (the
+ * guard below) so nobody's history shifts; only a newly-generated id is derived.
+ */
 export async function ensureMachineId(config: Config): Promise<string> {
   if (config.machineId && /^[a-f0-9]{8,64}$/.test(config.machineId)) return config.machineId;
-  const machineId = randomBytes(8).toString("hex");
+  let seed: string;
+  try {
+    seed = `${hostname()}|${userInfo().username}|${platform()}|${arch()}`;
+  } catch {
+    seed = randomBytes(16).toString("hex"); // locked-down env (no os info) → random
+  }
+  const machineId = deriveMachineId(seed);
   await saveConfig({ ...config, machineId });
   return machineId;
 }

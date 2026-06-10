@@ -259,6 +259,23 @@ describe("ingest v3 (raw token counts)", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("first sync from a legitimate second machine is exempt from the burn gate", async () => {
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }, "aaaaaaaaaaaaaaaa"), NOW - 3_600_000);
+    const secondMachineDays = Array.from({ length: 10 }, (_, i) => opusDay(isoDaysAgo(i + 1)));
+    const res = await ingestUsage(
+      db,
+      store,
+      TOKEN,
+      raw({ claude: secondMachineDays }, "bbbbbbbbbbbbbbbb"),
+      NOW,
+    );
+    expect(res.ok).toBe(true);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    expect(u!.flaggedAt).toBeNull();
+    const rows = await db.select().from(usageDays);
+    expect(rows).toHaveLength(11);
+  });
+
   it("first multi-tool sync is exempt from the burn gate for newly-appearing tools", async () => {
     // Established claude user…
     await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW - 3_600_000);

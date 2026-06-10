@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createApp, type AppDeps } from "../src/app.js";
 import { LeaderboardStore, type Entry } from "../src/lib/leaderboard-store.js";
+import { makeDb, seedUser } from "./helpers/db.js";
+import { users } from "../src/db/schema.js";
+import { eq } from "drizzle-orm";
 
 describe("health", () => {
   it("GET /health returns ok", async () => {
@@ -98,5 +101,32 @@ describe("cors", () => {
     });
     expect(cached.status).toBe(304);
     expect(cached.headers.get("access-control-allow-origin")).toBe(origin);
+  });
+});
+
+describe("OG profile metadata", () => {
+  it("only exposes archetype when insights are consented and public", async () => {
+    const db = await makeDb();
+    const store = new LeaderboardStore();
+    const user = (await seedUser(db, { login: "privatewarrior", token: "tok" }))!;
+    store.upsert(entry(user.id, { githubLogin: "privatewarrior", cost30d: 50 }));
+
+    await db
+      .update(users)
+      .set({ archetype: "The Summoner", insightsConsent: false, insightsVisibility: "public" })
+      .where(eq(users.id, user.id));
+
+    const app = createApp({ db, store, onIngest: () => {}, auth: undefined });
+
+    const noConsent = await app.request("/og/u/privatewarrior");
+    expect(await noConsent.text()).not.toContain("The Summoner");
+
+    await db.update(users).set({ insightsConsent: true, insightsVisibility: "private" }).where(eq(users.id, user.id));
+    const privateProfile = await app.request("/og/u/privatewarrior");
+    expect(await privateProfile.text()).not.toContain("The Summoner");
+
+    await db.update(users).set({ insightsVisibility: "public" }).where(eq(users.id, user.id));
+    const publicProfile = await app.request("/og/u/privatewarrior");
+    expect(await publicProfile.text()).toContain("privatewarrior is The Summoner");
   });
 });

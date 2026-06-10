@@ -41,6 +41,15 @@ export class LeaderboardStore {
     return this.entries.get(id);
   }
 
+  /** Case-insensitive login lookup (profile URLs arrive in user-typed case). */
+  getByLogin(login: string): Entry | undefined {
+    const lower = login.toLowerCase();
+    for (const e of this.entries.values()) {
+      if (e.githubLogin.toLowerCase() === lower) return e;
+    }
+    return undefined;
+  }
+
   setFlagged(id: string, flagged: boolean): void {
     const e = this.entries.get(id);
     if (e) this.entries.set(id, { ...e, flagged });

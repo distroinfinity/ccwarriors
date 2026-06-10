@@ -24,6 +24,23 @@ export type ModelTokens = {
   cacheReadTokens: number;
 };
 
+// Aggregate behavioral counts extracted locally by the CLI from session JSONL.
+// Raw counts and histograms only — prompt text, paths, code never leave the machine.
+export type InsightsPayload = {
+  windowDays: number;
+  sessions: number;
+  promptWordHistogram: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
+  planModeSessionsPct: number; // % of sessions that used plan mode
+  exploreBeforeEditRatio: number; // sessions with explore call before first edit / sessions with edits
+  avgTurnsBetweenUserMsgs: number;
+  interruptsPer100Turns: number;
+  subagentSpawnsPerSession: number;
+  maxParallelAgents: number;
+  hourHistogram: number[]; // 24 buckets, session-start counts, machine-local
+  editToolCallsPerSession: number;
+  longestSessionMinutes: number;
+};
+
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   githubId: text("github_id").notNull().unique(),
@@ -46,6 +63,12 @@ export const users = pgTable("users", {
   flagReason: text("flag_reason"),
   // Channel attribution (?ref=hn → install → enlist). First touch, never updated.
   installSource: text("install_source"),
+  // Warrior profile insights (behavioral extraction). Consent is the source of
+  // truth: the CLI only extracts while this is true, and /insights rejects
+  // payloads when it is false (stale clients can't push post-revoke).
+  insightsConsent: boolean("insights_consent").notNull().default(false),
+  insightsVisibility: text("insights_visibility").notNull().default("public"), // public | private
+  archetype: text("archetype"),
 });
 
 export const snapshots = pgTable("snapshots", {
@@ -115,8 +138,27 @@ export const orgMembers = pgTable(
   (t) => [uniqueIndex("org_members_user_org").on(t.userId, t.orgSlug)],
 );
 
+// Per-machine behavioral insights payload (aggregate counts only — no
+// transcript text ever reaches the server). Mirrors usage_days conventions:
+// one row per (user, machine), updated in place each send.
+export const userInsights = pgTable(
+  "user_insights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    machineId: text("machine_id").notNull(),
+    payload: jsonb("payload").$type<InsightsPayload>().notNull(),
+    windowDays: bigint("window_days", { mode: "number" }).notNull().default(40),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("user_insights_user_machine").on(t.userId, t.machineId)],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type UsageDay = typeof usageDays.$inferSelect;
 export type Donation = typeof donations.$inferSelect;
 export type OrgMember = typeof orgMembers.$inferSelect;
+export type UserInsights = typeof userInsights.$inferSelect;

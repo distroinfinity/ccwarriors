@@ -4,8 +4,9 @@ import { runLoginFlow } from "./auth.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
-import { API_BASE, WEB_BASE, postIngest, postTelemetry } from "./core.js";
+import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsights, setInsightsConsent, getInsightsConsent } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
+import { collectInsights, shouldSend, markSent } from "./insights.js";
 
 declare const __BUILD_ID__: string;
 
@@ -32,6 +33,8 @@ ${bold("USAGE")}
   ccwarriors autosync off            Stop the background daemon
   ccwarriors autosync status         Show whether autosync is enabled
   ccwarriors daemon [heartbeatMin]   Run the sync daemon in the foreground (autosync runs this for you)
+  ccwarriors insights on|off|status   Behavioral insights for your profile page (opt in)
+  ccwarriors insights --dry-run       Print exactly what would be sent — nothing uploads
   ccwarriors --version  Show the installed build
   ccwarriors --help     Show this help
 
@@ -61,6 +64,24 @@ async function cmdWhoami(): Promise<void> {
     console.log("not enlisted");
   } else {
     console.log(config.login);
+  }
+}
+
+/** After a good sync: when the server asks (consent on) and the 6h throttle
+    allows, extract locally and push. Fire-and-forget — sync UX never blocks. */
+async function maybePushInsights(token: string, machineId: string, requested: boolean | undefined, verbose: boolean): Promise<void> {
+  if (!requested) return;
+  try {
+    if (!(await shouldSend())) return;
+    const payload = await collectInsights();
+    if (!payload) return;
+    const res = await postInsights(token, machineId, payload);
+    if (res.ok) {
+      await markSent();
+      if (verbose) console.log(dim("   insights synced — your archetype is forging at ccwarriors.xyz"));
+    }
+  } catch {
+    // insights must never break a sync
   }
 }
 
@@ -150,6 +171,9 @@ async function cmdSync(): Promise<void> {
   }
   console.log();
 
+  // After the user has their output: extraction is fs-bound and can take seconds cold.
+  await maybePushInsights(config.token, machineId, result.data.insightsRequested, true);
+
   // After a good sync (and after the user has their output): pick up a newer
   // build if one shipped. Cron/manual runs use it on their next invocation.
   if ((await maybeSelfUpdate()) === "updated") {
@@ -195,6 +219,60 @@ async function cmdWatch(args: string[]): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, seconds * 1000));
   }
+}
+
+async function cmdInsights(args: string[]): Promise<void> {
+  const sub = args[0];
+  if (sub === "--dry-run" || sub === "dry-run") {
+    console.log(dim("Extracting locally — nothing is sent. This is the exact payload a sync would upload:"));
+    const payload = await collectInsights();
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  const config = await loadConfig();
+  if (!config) {
+    console.error(red("Not enlisted — run `ccwarriors login` first."));
+    process.exit(1);
+  }
+  if (sub === "on") {
+    const res = await setInsightsConsent(config.token, true);
+    if (!res.ok) {
+      console.error(red(`Could not enable insights (status ${res.status}).`));
+      process.exit(1);
+    }
+    console.log(green("Insights on."));
+    console.log(dim("Extracting from your local sessions now — aggregate counts only, transcripts never leave this machine."));
+    const machineId = await ensureMachineId(config);
+    const payload = await collectInsights();
+    if (payload) {
+      const sent = await postInsights(config.token, machineId, payload);
+      if (sent.ok) {
+        await markSent();
+        console.log(green(`Done — see your archetype at ${WEB_BASE}/u/${encodeURIComponent(config.login)}`));
+      } else {
+        console.error(red(`Upload failed (status ${sent.status}) — it will retry on the next sync.`));
+      }
+    } else {
+      console.log(yellow("No local Claude Code sessions found in the last 40 days — your profile unlocks after you code."));
+    }
+    return;
+  }
+  if (sub === "off") {
+    const res = await setInsightsConsent(config.token, false);
+    if (!res.ok) {
+      console.error(red(`Could not disable insights (status ${res.status}).`));
+      process.exit(1);
+    }
+    console.log(green("Insights off — server-side behavioral data deleted."));
+    return;
+  }
+  if (sub !== undefined && sub !== "status") {
+    console.error(red(`Unknown insights subcommand: ${sub}`));
+    console.log("usage: ccwarriors insights on|off|status|--dry-run");
+    process.exit(1);
+  }
+  const status = await getInsightsConsent(config.token);
+  console.log(`insights: ${status ? (status.consent ? "on" : "off") : "unknown (network error)"}`);
 }
 
 async function cmdAutosync(args: string[]): Promise<void> {
@@ -278,6 +356,11 @@ async function main(): Promise<void> {
   if (cmd === "sync" || cmd === undefined) {
     selfUpdateBootCheck();
     await cmdSync();
+    return;
+  }
+
+  if (cmd === "insights") {
+    await cmdInsights(args.slice(1));
     return;
   }
 

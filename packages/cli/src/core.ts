@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RawDay } from "./ccusage.js";
+import type { InsightsPayload } from "./insights.js";
 
 export const API_BASE = process.env["CCWARRIORS_API"] ?? "https://api.ccwarriors.xyz";
 export const WEB_BASE = process.env["CCWARRIORS_WEB"] ?? "https://ccwarriors.xyz";
@@ -26,6 +27,7 @@ export interface IngestResponse {
   tier?: string;
   rank30d?: number | null;
   rankAllTime?: number | null;
+  insightsRequested?: boolean;
 }
 
 // v3 payload: raw per-tool/day/model token counts. The server prices and
@@ -54,6 +56,43 @@ export async function postIngest(
     /* non-JSON error body */
   }
   return { status: res.status, data, text };
+}
+
+export async function postInsights(
+  token: string,
+  machineId: string,
+  insights: InsightsPayload,
+): Promise<{ status: number; ok: boolean }> {
+  const res = await fetch(`${API_BASE}/insights`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ machineId, insights }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  return { status: res.status, ok: res.ok };
+}
+
+export async function setInsightsConsent(token: string, consent: boolean): Promise<{ status: number; ok: boolean }> {
+  const res = await fetch(`${API_BASE}/insights/consent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ consent }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return { status: res.status, ok: res.ok };
+}
+
+export async function getInsightsConsent(token: string): Promise<{ consent: boolean } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/insights/consent`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { consent: boolean };
+  } catch {
+    return null;
+  }
 }
 
 /** Anonymous failure beacon — fire-and-forget, never throws. Opt-out: CCWARRIORS_TELEMETRY=0. */
