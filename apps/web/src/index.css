@@ -515,6 +515,10 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .consent-disclose li.consent-never{ display:block; padding:9px 0 0; border-bottom:0;
   color:var(--bronze); font-weight:600; font-size:11px; }
 
+/* Owner management strip — rendered at the bottom of the profile page, below Rhythm. */
+.owner-controls{ margin-top:32px; }
+.owner-controls .arch-transparency{ margin-top:0; border-top:1px dashed var(--line); }
+
 /* Transparency + purge block (unlocked owner): calm, the receipt for Deep mode. */
 .arch-transparency{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--line);
   display:flex; flex-direction:column; gap:8px; }

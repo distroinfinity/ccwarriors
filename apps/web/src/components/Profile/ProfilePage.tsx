@@ -6,6 +6,7 @@ import { ArchetypeCard } from "./ArchetypeCard";
 import { InsightCards } from "./InsightCards";
 import { EfficiencyPanel } from "./EfficiencyPanel";
 import { RhythmPanel } from "./RhythmPanel";
+import { OwnerControls } from "./OwnerControls";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -47,6 +48,7 @@ export function ProfilePage({ login }: { login: string }) {
       </div>
       <InsightCards cards={cards} login={p.login} />
       <RhythmPanel profile={p} />
+      <OwnerControls profile={p} onConsentChanged={refetch} />
     </div>
   );
 }
