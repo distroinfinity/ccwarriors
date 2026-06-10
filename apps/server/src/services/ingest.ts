@@ -218,6 +218,11 @@ async function ingestRaw(
     .where(and(eq(usageDays.userId, user.id), gte(usageDays.day, isoDay(cutoffWindow))));
   const existingByKey = new Map(existing.map((r) => [dayKey(r.machineId, r.tool, r.day), r]));
   const machines = new Set(existing.map((r) => r.machineId));
+  // A brand-new machine's FIRST sync backfills ~40 days of history at once (a
+  // user enlisting their 2nd laptop/desktop). That legitimate lump must not trip
+  // the burn-rate gate below — a sync is always from one machine, so when that
+  // machine is new its whole contribution is backfill, not real-time burn.
+  const machineIsNew = !machines.has(payload.machineId);
   machines.add(payload.machineId);
   if (machines.size > MAX_MACHINES_PER_USER) {
     signals.push({ reason: "machine_count", detail: `${machines.size} machine ids` });
@@ -335,10 +340,14 @@ async function ingestRaw(
 
   // Burn-rate gate over previously-tracked tools only — a first multi-tool sync
   // legitimately jumps when codex/gemini/... appear (bounded by the gates above).
+  // Also skipped for a new machine's first sync: its backfill is legitimate and
+  // bounded by the daily-ceiling, token-shape, machine-count and sanity gates.
   const trackedNext = Object.entries(next)
     .filter(([tool]) => prevBreakdown[tool])
     .reduce((s, [, v]) => s + v.cost30d, 0);
-  const burn = checkBurnRate(Number(user.cost30d), round2(trackedNext), user.lastSyncedAt, now);
+  const burn = machineIsNew
+    ? null
+    : checkBurnRate(Number(user.cost30d), round2(trackedNext), user.lastSyncedAt, now);
   if (burn) signals.push(burn);
 
   return finalize(db, store, user, {
