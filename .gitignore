@@ -6,3 +6,6 @@ apps/web/public/cli.js
 .vercel/
 .vercel
 .DS_Store
+
+# Local-only GTM / outreach tooling — kept out of git, lives on disk
+scripts/outreach/
