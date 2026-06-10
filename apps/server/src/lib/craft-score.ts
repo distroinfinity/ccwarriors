@@ -154,53 +154,53 @@ export function pillarAutonomy(sessions: SessionRecord[]): number {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// P4 Yield / Efficiency ⭐ — outcome per token/dollar. The anti-spend-proxy.
-//   survivingLOCPerKToken = totalSurvivingLOC / max(1, windowTokens/1000)
+// P4 Yield / Efficiency ⭐ — outcome per DOLLAR. The anti-spend-proxy.
+//   survivingLOCPerDollar = totalSurvivingLOC / max(1, windowCostUsd)
 //   commitsPerDollar      = totalShippedCommits / max(1, windowCostUsd)
-//   blend 0.5*locYield + 0.3*commitYield + 0.2*modelRightSizing.
-//   modelRightSizing = 100*(1 - clamp(opusShare-0.35,0,0.65)/0.65) + small
-//   cacheReadRatio bonus.
+//   blend 0.6*locYield + 0.4*commitYield.
+//
+// TUNED ON PROD (2026-06-10, 58 real users — issue #51):
+//   - Dropped the model-right-sizing term. The median user runs ~90% Opus
+//     (p50 0.90, p90 0.98); Opus is 77% of all tokens. For Claude Code power
+//     users Opus IS the tool, so an opusShare penalty would ding ~everyone and
+//     turn Yield into a "did you use Sonnet" detector. Wrong signal.
+//   - Dropped the cache-read bonus: non-discriminating (p10 0.93, p50 0.96,
+//     p90 0.98 — everyone is cache-warm).
+//   - Denominator is DOLLARS, not tokens: 90%+ of tokens are cheap cache-reads
+//     (effective $0.76/M), so a raw token count is a misleading yield base;
+//     server-priced dollars are the honest cost.
+// Outcome-side ANCHOR LEVELS below are still provisional — they need deployed
+// deep data to fit (no surviving-LOC/commit samples exist in prod yet, #51).
 //
 // CRITICAL INVARIANT: holding outcomes (LOC, commits) fixed and RAISING
-// windowTokens/windowCostUsd must never raise P4 (it lowers or holds). Both
-// yield ratios are monotone-decreasing in their denominators, and the linear
-// anchor maps are monotone-increasing, so the composite is monotone. The model
-// term doesn't depend on spend. See craft-score.test.ts token-invariant test.
+// windowCostUsd must never raise P4. Both ratios are monotone-decreasing in
+// the dollar denominator and the anchor maps monotone-increasing, so the
+// composite is monotone-non-increasing in spend. See the token-invariant test.
 // ──────────────────────────────────────────────────────────────────────────
 
-// Anchors (placeholders): a survivingLOCPerKToken of 0.5 ≈ score 50, so the
-// linear map is score = ratio/ANCHOR*50 capped at 100 → 1.0 LOC/kTok ≈ 100.
-const LOC_PER_KTOKEN_ANCHOR = 0.5;
-// A commitsPerDollar of 0.5 ≈ score 50 (≈ $2 of spend per shipped commit) → so
-// 1.0 commit/$ ≈ 100. Coarse on purpose; this is the dollar-side cross-check.
+// Anchors (provisional, #51): survivingLOCPerDollar of 4 ≈ score 50, so
+// score = ratio/ANCHOR*50 capped 100 → 8 surviving LOC per $ ≈ 100.
+const LOC_PER_DOLLAR_ANCHOR = 4;
+// commitsPerDollar of 0.5 ≈ score 50 (≈ $2 per shipped commit) → 1.0 ≈ 100.
 const COMMITS_PER_DOLLAR_ANCHOR = 0.5;
-const OPUS_OK_SHARE = 0.35; // mirrors lib/efficiency.ts — below this, no penalty
-const OPUS_SPAN = 0.65; // 0.35..1.0 maps the penalty across its full range
-const CACHE_BONUS_MAX = 10; // up to +10 for a fully warm prompt cache
 
-/** Linear anchor map: value that should score `at` → `at` (here 50), capped 100. */
+/** Linear anchor map: value == anchor → 50, capped 100. */
 function anchorScore(value: number, anchorValue: number): number {
   return clamp((value / anchorValue) * 50);
-}
-
-export function modelRightSizing(opusShare: number, cacheReadRatio: number | null): number {
-  const base = 100 * (1 - clamp(opusShare - OPUS_OK_SHARE, 0, OPUS_SPAN) / OPUS_SPAN);
-  const bonus = (cacheReadRatio ?? 0) * CACHE_BONUS_MAX;
-  return clamp(base + bonus);
 }
 
 export function pillarYield(input: CraftInput): number {
   const totalSurvivingLoc = sum(input.sessions.map(survivingLoc));
   const totalShippedCommits = sum(input.sessions.map((s) => s.git?.commitsInWindow ?? 0));
 
-  const survivingLocPerKToken = totalSurvivingLoc / Math.max(1, input.windowTokens / 1000);
-  const commitsPerDollar = totalShippedCommits / Math.max(1, input.windowCostUsd);
+  const dollars = Math.max(1, input.windowCostUsd);
+  const survivingLocPerDollar = totalSurvivingLoc / dollars;
+  const commitsPerDollar = totalShippedCommits / dollars;
 
-  const locYield = anchorScore(survivingLocPerKToken, LOC_PER_KTOKEN_ANCHOR);
+  const locYield = anchorScore(survivingLocPerDollar, LOC_PER_DOLLAR_ANCHOR);
   const commitYield = anchorScore(commitsPerDollar, COMMITS_PER_DOLLAR_ANCHOR);
-  const rightSizing = modelRightSizing(input.opusShare, input.cacheReadRatio);
 
-  return round1(clamp(0.5 * locYield + 0.3 * commitYield + 0.2 * rightSizing));
+  return round1(clamp(0.6 * locYield + 0.4 * commitYield));
 }
 
 // ──────────────────────────────────────────────────────────────────────────

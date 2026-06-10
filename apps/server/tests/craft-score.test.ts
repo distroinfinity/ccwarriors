@@ -15,7 +15,6 @@ import {
   shipped,
   survivingLoc,
   verifiedTestSession,
-  modelRightSizing,
   type CraftInput,
   type Pillars,
 } from "../src/lib/craft-score.js";
@@ -202,21 +201,20 @@ describe("P4 Yield / Efficiency", () => {
     }
   });
 
-  it("anchor: 0.5 survivingLOC/kToken with no commits/opus contributes ~50 to its term", () => {
-    // 500 surviving LOC over 1M tokens = 0.5 LOC/kTok → locYield 50.
-    // No commits → commitYield 0. opusShare 0.35 → rightSizing 100 + cache bonus.
-    const sessions = [record({ git: git({ commitsInWindow: 1, linesAdded: 500, revertedLinesWithin14d: 0, testFilesTouched: 0 }) })];
-    const y = pillarYield(input({ sessions, windowTokens: 1_000_000, windowCostUsd: 1, opusShare: 0.35, cacheReadRatio: 0 }));
-    // 0.5*50 + 0.3*commitYield(0.5*... ) + 0.2*100. commitsPerDollar = 1/1 = 1 → 100.
-    // = 25 + 30 + 20 = 75
-    expect(y).toBeCloseTo(75, 0);
+  it("anchor: 4 survivingLOC/$ and 0.5 commits/$ blend to ~50 (dollar-denominated)", () => {
+    // 400 surviving LOC over $100 = 4 LOC/$ → locYield 50.
+    // 50 commits over $100 = 0.5 commits/$ → commitYield 50.
+    // yield = 0.6*50 + 0.4*50 = 50. Opus/cache no longer affect Yield (prod-tuned).
+    const sessions = [record({ git: git({ commitsInWindow: 50, linesAdded: 400, revertedLinesWithin14d: 0, testFilesTouched: 0 }) })];
+    const y = pillarYield(input({ sessions, windowCostUsd: 100, opusShare: 1.0, cacheReadRatio: 0 }));
+    expect(y).toBeCloseTo(50, 0);
   });
 
-  it("modelRightSizing penalizes opus over-share, rewards cache", () => {
-    expect(modelRightSizing(0.35, 0)).toBe(100);
-    expect(modelRightSizing(1.0, 0)).toBe(0);
-    expect(modelRightSizing(1.0, 1)).toBe(10); // full opus, but warm cache bonus
-    expect(modelRightSizing(0.35, 1)).toBe(100); // already capped
+  it("Yield ignores Opus share (prod: ~90% Opus is the population norm, not waste)", () => {
+    const sessions = [record({ git: git({ commitsInWindow: 10, linesAdded: 400, revertedLinesWithin14d: 0 }) })];
+    const allOpus = pillarYield(input({ sessions, windowCostUsd: 100, opusShare: 1.0 }));
+    const allSonnet = pillarYield(input({ sessions, windowCostUsd: 100, opusShare: 0.0 }));
+    expect(allOpus).toBe(allSonnet);
   });
 });
 
