@@ -73,6 +73,9 @@ const gitOutcomeSchema = z.object({
   rebaseDetected: z.boolean(),
   isMonorepo: z.boolean(),
   hasRemote: z.boolean(),
+  // Optional commit-timing histograms (old clients omit them).
+  commitHours: z.array(count).length(24).optional(),
+  commitDows: z.array(count).length(7).optional(),
 });
 
 const sessionRecordSchema = z.object({

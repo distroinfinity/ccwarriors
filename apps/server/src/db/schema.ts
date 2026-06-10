@@ -42,6 +42,10 @@ export type SessionGitOutcome = {
   rebaseDetected: boolean;
   isMonorepo: boolean;
   hasRemote: boolean;
+  // Commit-timing histograms (24 hours, 7 days-of-week), machine-local. Optional:
+  // older clients (pre-timing-upgrade) omit them, so consumers must guard.
+  commitHours?: number[]; // 24 buckets, hour-of-day commit counts
+  commitDows?: number[]; // 7 buckets, day-of-week commit counts (0 = Sunday)
 };
 
 // One uploadable per-session record (mirrors packages/cli/src/insights.ts
