@@ -29,9 +29,11 @@ export interface InsightCardInput {
 
 const round = (n: number) => Math.round(n);
 
-/** "{headline} — {body}." capped, plus the @ccwarriorsxyz attribution tail. */
+/** "{headline}. {body}." capped, plus the @ccwarriorsxyz attribution tail.
+    No em-dash (design language); body's trailing period is stripped to avoid "..". */
 function shareText(headline: string, body: string): string {
-  const lead = `${headline} — ${body}`;
+  const cleanBody = body.replace(/[.\s]+$/, "");
+  const lead = `${headline}. ${cleanBody}`;
   const trimmed = lead.length > 180 ? `${lead.slice(0, 177)}...` : lead;
   return `${trimmed}. My build profile on @ccwarriorsxyz, extended from YC Paxel.`;
 }
@@ -94,6 +96,7 @@ function card(
   body: string,
   stat?: string,
 ): InsightCard {
+  headline = headline.replace(/\s+/g, " ").trim(); // collapse any accidental doubles
   return { key, question, headline, body, stat, shareText: shareText(headline, body) };
 }
 
