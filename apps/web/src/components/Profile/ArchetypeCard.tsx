@@ -388,7 +388,20 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           <div className="arch-id">
             <img className="arch-avatar" src={profile.avatarUrl} alt={profile.login} crossOrigin="anonymous" />
             <div>
-              <div className="arch-login">{profile.login}</div>
+              <div className="arch-login">
+                {profile.login}
+                <a
+                  className="arch-gh"
+                  href={`https://github.com/${encodeURIComponent(profile.login)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`View ${profile.login} on GitHub`}
+                  title="View on GitHub"
+                  data-noexport="true"
+                >
+                  <PixelGlyph name="github" size={13} />
+                </a>
+              </div>
               <div className="arch-rank mono">
                 {profile.underReview ? "rank —" : profile.rank30d ? `rank #${profile.rank30d}` : "unranked"} &middot;{" "}
                 <span className="arch-tier">{tierLabel(profile.tier)}</span>
