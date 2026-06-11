@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the autosync daemon survive a broken upstream ccusage by falling back to a known-good version, stop it flapping when sync is hard-down, and stop the self-updater from rolling back good builds when the failure is external (ccusage/network/server).
+**Goal:** Make the autosync daemon survive a broken upstream ccusage by falling back to a known-good version, stop it flapping when sync is hard-down, recover from a stale-token 401, stop the self-updater from rolling back good builds for external reasons, and make rollbacks observable.
 
-**Architecture:** Three CLI changes (`ccusage.ts` version fallback, new `backoff.ts` wired into `daemon.ts`, `selfupdate.ts` `markBuildAlive`) plus one server change (new non-paging `ccusage_fallback` telemetry event). All TDD with vitest. Battle-tested locally against this machine's real broken `ccusage@20.0.10` before any PR.
+**Architecture:** CLI changes (`ccusage.ts` version fallback with broadened detection, new `backoff.ts` wired into `daemon.ts`, daemon 401 re-auth, `selfupdate.ts` `markBuildAlive` + async rollback-telemetry flush awaited in `cli.ts`) plus one server change (non-paging `ccusage_fallback` + `auth_expired` telemetry events). All TDD with vitest. Battle-tested locally against this machine's real broken `ccusage@20.0.10` before any PR.
 
 **Tech Stack:** TypeScript (NodeNext ESM), vitest 2.x, tsup bundling, Hono + zod (server). Package manager: pnpm workspace.
 
@@ -29,7 +29,7 @@ Expected: on branch `fix/ccusage-resilience`, clean tree (the design spec is alr
 
 ---
 
-### Task 1: Server — add non-paging `ccusage_fallback` telemetry event
+### Task 1: Server — add non-paging `ccusage_fallback` + `auth_expired` events
 
 **Files:**
 - Modify: `apps/server/src/routes/telemetry.ts` (event enum, lines 9-29)
@@ -40,16 +40,15 @@ Expected: on branch `fix/ccusage-resilience`, clean tree (the design spec is alr
 Add this `it(...)` block inside the `describe("telemetry endpoint", ...)` in `apps/server/tests/telemetry.test.ts`, right after the `"reports sync failures..."` test:
 
 ```ts
-  it("accepts ccusage_fallback without counting it as a failure", async () => {
-    await app.request("/telemetry", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        event: "ccusage_fallback",
-        distinctId: "t-5",
-        props: { os: "darwin", from: "ccusage@20", to: "ccusage@20.0.6" },
-      }),
-    });
+  it("accepts ccusage_fallback and auth_expired without counting them as failures", async () => {
+    for (const event of ["ccusage_fallback", "auth_expired"]) {
+      const post = await app.request("/telemetry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event, distinctId: "t-5", props: { os: "darwin" } }),
+      });
+      expect(post.status).toBe(200);
+    }
     const res = await app.request("/telemetry/failures");
     const body = (await res.json()) as FailureStats;
     expect(body.failuresLast24h).toBe(0);
@@ -59,29 +58,11 @@ Add this `it(...)` block inside the `describe("telemetry endpoint", ...)` in `ap
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `pnpm --filter server test -- telemetry`
-Expected: FAIL — the POST returns 400 (event not in enum), so `failuresLast24h` is 0 but the request was rejected; the assertion that follows a rejected event still passes 0, so to make the failure explicit also assert the POST status. Update the test to capture and assert status:
+Expected: FAIL with `expected 400 to be 200` — the events aren't in the enum yet, so the POST is rejected.
 
-```ts
-    const post = await app.request("/telemetry", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        event: "ccusage_fallback",
-        distinctId: "t-5",
-        props: { os: "darwin", from: "ccusage@20", to: "ccusage@20.0.6" },
-      }),
-    });
-    expect(post.status).toBe(200);
-    const res = await app.request("/telemetry/failures");
-    const body = (await res.json()) as FailureStats;
-    expect(body.failuresLast24h).toBe(0);
-```
-Re-run: `pnpm --filter server test -- telemetry`
-Expected: FAIL with `expected 400 to be 200`.
+- [ ] **Step 3: Add the events to the enum**
 
-- [ ] **Step 3: Add the event to the enum**
-
-In `apps/server/src/routes/telemetry.ts`, in the `z.enum([...])` inside `bodySchema`, add the new event immediately before the `"autosync_off_failed"` line:
+In `apps/server/src/routes/telemetry.ts`, in the `z.enum([...])` inside `bodySchema`, add the two new events immediately before the `"autosync_off_failed"` line:
 
 ```ts
     "self_update_applied",
@@ -90,11 +71,14 @@ In `apps/server/src/routes/telemetry.ts`, in the `z.enum([...])` inside `bodySch
     // crashed at load. Observability, not a failure — deliberately NOT added to
     // `failureEvents`, so it never enters the rolling window or pages.
     "ccusage_fallback",
+    // Daemon hit a 401 with no fresher token on disk and paused autosync until
+    // the user re-logs-in. User-specific, not prod breakage — also non-paging.
+    "auth_expired",
     // `autosync off` couldn't kill the daemon (macOS launchctl edge).
     "autosync_off_failed",
 ```
 
-Do NOT add it to the `failureEvents` array (leave that list unchanged).
+Do NOT add either to the `failureEvents` array (leave that list unchanged).
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -105,7 +89,7 @@ Expected: PASS (all telemetry tests green).
 
 ```bash
 git add apps/server/src/routes/telemetry.ts apps/server/tests/telemetry.test.ts
-git commit -m "feat(telemetry): add non-paging ccusage_fallback event"
+git commit -m "feat(telemetry): add non-paging ccusage_fallback + auth_expired events"
 ```
 
 ---
@@ -133,7 +117,12 @@ const nativeCrash = () =>
     stderr: "dyld[1]: Library not loaded: /nix/store/x-libiconv.2.dylib (no such file)",
   });
 
-describe("invokeCcusage native-failure fallback", () => {
+const etargetCrash = () =>
+  Object.assign(new Error("Command failed: npx --yes ccusage@20 daily"), {
+    stderr: "npm error code ETARGET\nnpm error notarget No matching version found for ccusage@20",
+  });
+
+describe("invokeCcusage broken-ccusage fallback", () => {
   beforeEach(() => resetCcusageStateForTest());
 
   it("uses the primary when healthy and never calls the fallback", async () => {
@@ -155,6 +144,16 @@ describe("invokeCcusage native-failure fallback", () => {
     expect(run).toHaveBeenNthCalledWith(2, "ccusage@20.0.6", ["daily", "--json"]);
   });
 
+  it("falls back when npm cannot resolve the primary (ETARGET)", async () => {
+    const run = vi.fn(async (pkg: string, _args: string[]) => {
+      if (pkg === "ccusage@20") throw etargetCrash();
+      return "{}";
+    });
+    const out = await invokeCcusage(["daily"], run as unknown as CcusageRunner);
+    expect(out).toBe("{}");
+    expect(run).toHaveBeenNthCalledWith(2, "ccusage@20.0.6", ["daily"]);
+  });
+
   it("memoizes the fallback for the rest of the process", async () => {
     const run = vi.fn(async (pkg: string, _args: string[]) => {
       if (pkg === "ccusage@20") throw nativeCrash();
@@ -166,7 +165,7 @@ describe("invokeCcusage native-failure fallback", () => {
     expect(run).toHaveBeenLastCalledWith("ccusage@20.0.6", ["--version"]);
   });
 
-  it("throws when both primary and fallback crash", async () => {
+  it("throws when both primary and fallback are broken", async () => {
     const run = vi.fn(async (_pkg: string, _args: string[]) => {
       throw nativeCrash();
     });
@@ -174,7 +173,7 @@ describe("invokeCcusage native-failure fallback", () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
-  it("does NOT fall back on a non-native error", async () => {
+  it("does NOT fall back on a non-ccusage error", async () => {
     const run = vi.fn(async (_pkg: string, _args: string[]) => {
       throw new Error("some transient network thing");
     });
@@ -255,26 +254,31 @@ const defaultRunner: CcusageRunner = async (pkg, args) => {
   return stdout;
 };
 
-/** A native load/exec crash of the prebuilt binary — distinct from "no usage". */
-function isNativeFailure(err: unknown): boolean {
+/**
+ * The primary ccusage is unusable — distinct from "no usage". Covers native
+ * load/exec crashes of the prebuilt binary (the nix AND homebrew dyld variants
+ * seen in PostHog, plus "native binary is not available") and npm failing to
+ * resolve `ccusage@20` (ETARGET). The exact-pinned fallback can clear both.
+ */
+function isCcusageBroken(err: unknown): boolean {
   const e = err as { stderr?: unknown; message?: unknown; signal?: unknown };
   if (e && e.signal) return true; // killed by a signal (segfault/abort)
   const text = `${typeof e?.stderr === "string" ? e.stderr : ""}\n${typeof e?.message === "string" ? e.message : ""}`;
-  return /dyld|Library not loaded|image not found|Bad CPU type|cannot execute binary|native binary is not (available|executable)/i.test(
+  return /dyld|Library not loaded|image not found|Bad CPU type|cannot execute binary|native binary is not (available|executable)|ETARGET|No matching version/i.test(
     text,
   );
 }
 
 /**
- * Invoke ccusage, degrading to the known-good fallback ONCE if the primary's
- * native binary crashes. Returns raw stdout. Exported for unit testing via the
- * injectable runner.
+ * Invoke ccusage, degrading to the known-good fallback ONCE if the primary is
+ * broken (native crash or npm-resolution failure). Returns raw stdout. Exported
+ * for unit testing via the injectable runner.
  */
 export async function invokeCcusage(args: string[], run: CcusageRunner = defaultRunner): Promise<string> {
   try {
     return await run(activeSpec, args);
   } catch (err) {
-    if (activeSpec === CCUSAGE_PKG && isNativeFailure(err)) {
+    if (activeSpec === CCUSAGE_PKG && isCcusageBroken(err)) {
       activeSpec = CCUSAGE_FALLBACK_PKG;
       if (!fallbackNotified) {
         fallbackNotified = true;
@@ -337,7 +341,7 @@ Expected: no errors. (If tsc flags an unused `IS_WIN` import — it is still use
 
 ```bash
 git add packages/cli/src/ccusage.ts packages/cli/tests/ccusage.test.ts
-git commit -m "feat(cli): fall back to known-good ccusage when the native binary crashes"
+git commit -m "feat(cli): fall back to known-good ccusage when the primary is broken (dyld crash or ETARGET)"
 ```
 
 ---
@@ -541,11 +545,12 @@ git commit -m "feat(cli): back off the sync daemon after hard failures"
 
 ---
 
-### Task 4: CLI — decouple self-update rollback from external health
+### Task 4: CLI — decouple self-update rollback from external health + flush rollback telemetry
 
 **Files:**
-- Modify: `packages/cli/src/selfupdate.ts` (add `markBuildAlive` after `markUpdateSuccess`, line 111)
+- Modify: `packages/cli/src/selfupdate.ts` (add `markBuildAlive` after `markUpdateSuccess` line 111; make `selfUpdateBootCheck` async + await the rollback beacon)
 - Modify: `packages/cli/src/daemon.ts` (import; `syncNow` `finally`, lines 108-114)
+- Modify: `packages/cli/src/cli.ts` (await `selfUpdateBootCheck()` at lines 353, 364, 370)
 - Test: `packages/cli/tests/selfupdate.test.ts` (new)
 
 - [ ] **Step 1: Write the failing test**
@@ -677,9 +682,225 @@ git add packages/cli/src/selfupdate.ts packages/cli/src/daemon.ts packages/cli/t
 git commit -m "fix(cli): don't roll back a good build when sync fails for external reasons"
 ```
 
+- [ ] **Step 8: Flush the rollback telemetry before exit — make `selfUpdateBootCheck` async**
+
+`self_update_rollback` has 0 events in PostHog because the beacon is fire-and-forget and `process.exit(1)` runs on the next line. In `packages/cli/src/selfupdate.ts`, change the signature (line 70) from:
+
+```ts
+export function selfUpdateBootCheck(): void {
+```
+to:
+```ts
+export async function selfUpdateBootCheck(): Promise<void> {
+```
+
+Then in the rollback branch, change (lines ~79-84):
+
+```ts
+      copyFileSync(prevPath(cliPath), cliPath);
+      unlinkSync(markerPath(cliPath));
+      void postTelemetry("self_update_rollback", { fromBuild: marker.fromBuild, toBuild: marker.buildId });
+      console.error(`ccwarriors: build ${marker.buildId} failed to sync — rolled back to ${marker.fromBuild}`);
+      // Exit non-zero: launchd relaunches into the restored bundle; an
+      // interactive user sees the message and can simply re-run.
+      process.exit(1);
+```
+to:
+```ts
+      copyFileSync(prevPath(cliPath), cliPath);
+      unlinkSync(markerPath(cliPath));
+      console.error(`ccwarriors: build ${marker.buildId} failed to sync — rolled back to ${marker.fromBuild}`);
+      // Await the beacon (4s timeout) so the rollback is actually observable —
+      // a fire-and-forget here never flushed before the exit below.
+      await postTelemetry("self_update_rollback", { fromBuild: marker.fromBuild, toBuild: marker.buildId });
+      // Exit non-zero: launchd relaunches into the restored bundle; an
+      // interactive user sees the message and can simply re-run.
+      process.exit(1);
+```
+
+- [ ] **Step 9: Await `selfUpdateBootCheck()` at its three call sites**
+
+In `packages/cli/src/cli.ts`, the `watch` (line 353), `daemon` (line 364), and `sync` (line 370) blocks call `selfUpdateBootCheck();` un-awaited. Change each of the three to:
+
+```ts
+    await selfUpdateBootCheck();
+```
+
+(They are already inside `async function main()`, so `await` is valid.)
+
+- [ ] **Step 10: Typecheck + full CLI tests**
+
+Run: `pnpm --filter claude-warriors typecheck && pnpm --filter claude-warriors test`
+Expected: no type errors (the `Promise<void>` return is now awaited everywhere); all CLI tests pass. The rollback-exit path itself isn't unit-tested (it calls `process.exit`); it's exercised in the battle-test and verified by the typecheck that all callers await.
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add packages/cli/src/selfupdate.ts packages/cli/src/cli.ts
+git commit -m "fix(cli): flush self_update_rollback telemetry before exit"
+```
+
 ---
 
-### Task 5: Full verify + local battle-test (REQUIRED before PR)
+### Task 5: CLI — daemon 401 re-auth
+
+**Files:**
+- Create: `packages/cli/src/authstate.ts` (pure `resolveAuthAction`)
+- Test: `packages/cli/tests/authstate.test.ts` (new)
+- Modify: `packages/cli/src/daemon.ts` (mutable `token`; `reloadToken`; `authPaused`; 401 branch in `syncNow`; `schedule` + heartbeat guards)
+
+- [ ] **Step 1: Write the failing test**
+
+Create `packages/cli/tests/authstate.test.ts`:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { resolveAuthAction } from "../src/authstate.js";
+
+describe("resolveAuthAction", () => {
+  it("resumes when a different, non-null token is on disk", () => {
+    expect(resolveAuthAction("old-token", "new-token")).toBe("resume");
+  });
+  it("pauses when the disk token is unchanged", () => {
+    expect(resolveAuthAction("same-token", "same-token")).toBe("pause");
+  });
+  it("pauses when there is no token on disk", () => {
+    expect(resolveAuthAction("old-token", null)).toBe("pause");
+  });
+});
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `pnpm --filter claude-warriors test -- authstate`
+Expected: FAIL — `../src/authstate.js` does not exist.
+
+- [ ] **Step 3: Create `authstate.ts`**
+
+Create `packages/cli/src/authstate.ts`:
+
+```ts
+// The daemon got a 401. If a newer token is on disk (the user re-logged-in
+// elsewhere) we adopt it and resume; otherwise the token is genuinely expired
+// and we pause until a re-login lands.
+export function resolveAuthAction(currentToken: string, diskToken: string | null): "resume" | "pause" {
+  return diskToken && diskToken !== currentToken ? "resume" : "pause";
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `pnpm --filter claude-warriors test -- authstate`
+Expected: PASS (3 tests).
+
+- [ ] **Step 5: Wire 401 handling into the daemon — imports + state + mutable token**
+
+In `packages/cli/src/daemon.ts`, add to the import added in Task 3:
+
+```ts
+import { nextBackoffMs, shouldSync } from "./backoff.js";
+import { resolveAuthAction } from "./authstate.js";
+```
+
+`loadConfig` is already imported from `./config.js`. Change the token binding (currently `const token = cfg.token;`, around line 34) to mutable, and add auth state next to `nextAllowedSyncAt`:
+
+```ts
+  let token = cfg.token;
+```
+```ts
+  // Set true after a 401 with no fresher token on disk; the heartbeat clears it
+  // when a re-login appears. Suppresses syncs without thrashing launchd.
+  let authPaused = false;
+```
+
+Add a token-refresh helper inside `runDaemon` (near `syncNow`):
+
+```ts
+  async function reloadToken(): Promise<string | null> {
+    try {
+      const c = await loadConfig();
+      return c?.token ?? null;
+    } catch {
+      return null;
+    }
+  }
+```
+
+- [ ] **Step 6: Add the 401 branch in `syncNow`**
+
+In `syncNow`, the `postIngest` result is handled by `if (res.data?.ok) … else if (res.status === 429) … else …`. Insert a dedicated 401 branch BEFORE the final `else` (between the 429 branch and the generic failure `else`):
+
+```ts
+      } else if (res.status === 401) {
+        // Token rotated/expired. Adopt a fresher on-disk token (user re-logged-in
+        // elsewhere) and retry without penalty; otherwise pause until re-login.
+        const disk = await reloadToken();
+        if (resolveAuthAction(token, disk) === "resume") {
+          token = disk as string;
+          log("token refreshed from disk — retrying");
+          schedule(`auth-refresh ${reason}`);
+        } else if (!authPaused) {
+          authPaused = true;
+          log("token expired — run `ccwarriors login` to re-enable autosync");
+          void postTelemetry("auth_expired", { reason });
+        }
+```
+
+(The existing generic `else` that does `failStreak += 1` / backoff now only handles non-401, non-429 statuses.)
+
+- [ ] **Step 7: Gate `schedule()` and the heartbeat on `authPaused` (with auto-resume)**
+
+In `schedule()` (already gated on backoff from Task 3), add an auth guard as the first line of the body:
+
+```ts
+  function schedule(reason: string): void {
+    if (authPaused) return; // paused on auth — heartbeat handles recovery
+    // Batch, don't reset: fire DEBOUNCE_MS after the FIRST event in a burst.
+```
+
+Replace the heartbeat `setInterval` — which after Task 3 reads:
+
+```ts
+  setInterval(() => {
+    if (shouldSync(Date.now(), nextAllowedSyncAt)) void syncNow("heartbeat");
+    void checkForUpdate();
+  }, Math.max(1, heartbeatMin) * 60_000);
+```
+with an async callback that also recovers from `authPaused`:
+```ts
+  setInterval(() => {
+    void (async () => {
+      if (authPaused) {
+        const disk = await reloadToken();
+        if (resolveAuthAction(token, disk) === "resume") {
+          token = disk as string;
+          authPaused = false;
+          log("re-authenticated — resuming autosync");
+        } else {
+          return; // still paused; don't sync
+        }
+      }
+      if (shouldSync(Date.now(), nextAllowedSyncAt)) void syncNow("heartbeat");
+    })();
+    void checkForUpdate();
+  }, Math.max(1, heartbeatMin) * 60_000);
+```
+
+- [ ] **Step 8: Typecheck + full CLI tests**
+
+Run: `pnpm --filter claude-warriors typecheck && pnpm --filter claude-warriors test`
+Expected: no type errors; all CLI tests pass (ccusage + backoff + selfupdate + authstate).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add packages/cli/src/authstate.ts packages/cli/tests/authstate.test.ts packages/cli/src/daemon.ts
+git commit -m "feat(cli): recover the daemon from a 401 instead of backing off forever"
+```
+
+---
+
+### Task 6: Full verify + local battle-test (REQUIRED before PR)
 
 **Files:** none (build + manual verification)
 
@@ -722,13 +943,30 @@ curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/failures | python3 -m json.
 ```
 Expected: no NEW `sync_failed` darwin entries accumulating from the battle-test window (the daemon now succeeds via fallback). `ccusage_fallback` is non-paging so it won't appear here — that's correct; it's visible in PostHog/Railway logs.
 
-- [ ] **Step 5: Record battle-test results**
+- [ ] **Step 5: Battle-test the daemon 401 re-auth path**
 
-Capture the key lines from `/tmp/ccw-battletest.log` (the `synced` line + the flap count) to paste into the PR description as evidence.
+Force a 401 by pointing the daemon at a junk token via a throwaway config home, then confirm it pauses (not flaps) and fires `auth_expired`. This uses an isolated `CCWARRIORS_HOME` so the real credentials are untouched.
+
+Run:
+```bash
+BTH="$(mktemp -d)"; mkdir -p "$BTH"
+# Minimal enlisted config with a deliberately invalid token.
+printf '{"token":"invalid-token-for-battletest","login":"battletest"}\n' > "$BTH/config.json"
+CCWARRIORS_HOME="$BTH" CCWARRIORS_NO_UPDATE=1 node packages/cli/dist/cli.js daemon 1 > /tmp/ccw-401test.log 2>&1 &
+BT=$!; sleep 20; kill "$BT" 2>/dev/null || true
+echo "=== expect a single 'token expired' pause, not a flap ==="
+grep -E "token expired|re-authenticated|sync skipped" /tmp/ccw-401test.log | head
+rm -rf "$BTH"
+```
+Expected: one `token expired — run \`ccwarriors login\`…` line (the pause), and NOT a repeating burst of 401 sync attempts. (Confirm the config path/shape matches `loadConfig` in `packages/cli/src/config.ts`; adjust the file name/fields if it differs.)
+
+- [ ] **Step 6: Record battle-test results**
+
+Capture the key lines from `/tmp/ccw-battletest.log` (the `synced` line + the flap count) and `/tmp/ccw-401test.log` (the single pause line) to paste into the PR description as evidence.
 
 ---
 
-### Task 6: Open the PR (only after Task 5 passes)
+### Task 7: Open the PR (only after Task 6 passes)
 
 **Files:** none (git/gh)
 
@@ -744,7 +982,7 @@ git push -u origin fix/ccusage-resilience
 Run:
 ```bash
 gh pr create --repo distroinfinity/ccwarriors --base main --head fix/ccusage-resilience \
-  --title "fix(cli): survive broken upstream ccusage + stop false self-update rollbacks" \
+  --title "fix(cli): survive broken upstream ccusage, recover from 401, stop false self-update rollbacks" \
   --body "$(cat <<'EOF'
 ## What
 
@@ -753,32 +991,46 @@ published darwin-arm64 prebuilt links a dead `/nix/store/…libiconv` and crashe
 Every sync failed → `sync_failed` telemetry burst (all darwin) → PostHog alert. Installs
 were never affected (`installFailuresLastHour: 0`, all prod health checks green).
 
+PostHog (7-day) confirmed the breakdown: 84 transient `fetch failed`, ~110 ccusage
+failures (16 explicit dyld crashes — nix AND homebrew variants — 9 ETARGET, rest truncated),
+6 stale-token 401s, plus 552 `self_update_applied` across 48 builds (~12 machines). The
+self-update rollback path has 0 events because its telemetry never flushed before exit.
+
 ## Changes
-- **ccusage fallback** (`packages/cli/src/ccusage.ts`): try `ccusage@20`; on a native
-  load/exec crash, degrade once to the known-good `ccusage@20.0.6` and reuse it for the
-  process. Latest features when healthy, automatic recovery when a bad patch ships.
+- **ccusage fallback** (`packages/cli/src/ccusage.ts`): try `ccusage@20`; if the primary is
+  broken — native load/exec crash (nix or homebrew dyld) OR npm ETARGET — degrade once to the
+  known-good `ccusage@20.0.6` and reuse it for the process. Latest features when healthy,
+  automatic recovery when a bad patch ships.
 - **daemon backoff** (`packages/cli/src/backoff.ts` + `daemon.ts`): exponential cooldown
   (1m→5m→25m, cap 30m) after hard failures — no more ~15s flapping.
+- **daemon 401 re-auth** (`packages/cli/src/authstate.ts` + `daemon.ts`): on a 401 the daemon
+  adopts a fresher on-disk token if the user re-logged-in, else pauses (one `auth_expired`)
+  and auto-resumes when a re-login lands — instead of backing off forever on a stale token.
 - **self-update decoupling** (`selfupdate.ts` + `daemon.ts`): `markBuildAlive()` clears the
   rollback marker once the new bundle proves its daemon path runs, so a good build is no
   longer rolled back when ccusage/network/server is down. Genuine boot crashes still roll back.
-- **telemetry** (`apps/server/src/routes/telemetry.ts`): non-paging `ccusage_fallback` event
-  for early warning of the next bad upstream patch.
+- **rollback observability** (`selfupdate.ts` + `cli.ts`): `selfUpdateBootCheck` is now async
+  and awaits the `self_update_rollback` beacon before `process.exit` (it never flushed before).
+- **telemetry** (`apps/server/src/routes/telemetry.ts`): non-paging `ccusage_fallback` +
+  `auth_expired` events for early warning of bad upstream patches / expired tokens.
 
 ## Testing
-- New vitest suites: ccusage fallback (5), backoff (5), selfupdate markBuildAlive (3); server
-  telemetry enum test. `pnpm verify` green.
+- New vitest suites: ccusage fallback (6, incl. ETARGET), backoff (5), authstate (3),
+  selfupdate markBuildAlive (3); server telemetry enum test. `pnpm verify` green.
 - Battle-tested locally against this machine's real broken `ccusage@20.0.10`: built daemon
-  fell back to 20.0.6 and synced successfully, no flapping. (Evidence below.)
+  fell back to 20.0.6 and synced successfully, no flapping; forced 401 paused once and didn't
+  flap. (Evidence below.)
 
 ## Battle-test evidence
 ```
-<paste the `synced (...)` line and the flap count from /tmp/ccw-battletest.log>
+<paste the `synced (...)` line + flap count from /tmp/ccw-battletest.log, and the
+single `token expired` line from /tmp/ccw-401test.log>
 ```
 
 ## Follow-up
 - Upstream issue to file on `ryoppippi/ccusage`: `@ccusage/ccusage-darwin-arm64@20.0.10`
   prebuilt links a dead nix libiconv rpath.
+- Add `machineId` to daemon telemetry (today daemon events are anonymous → 1 person_id).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
@@ -791,7 +1043,9 @@ EOF
 
 ## Self-review notes
 
-- **Spec coverage:** Component 1 → Task 2; Component 2 → Task 3; Component 3 → Task 4; Component 4 → Task 1; battle-test rollout rule → Task 5; PR-not-merge rule → Task 6. All covered.
-- **`ccusage_fallback` paging:** added to the enum only, NOT to `failureEvents` — matches the spec ("never enters the rolling window").
-- **Type/name consistency:** `invokeCcusage`, `resetCcusageStateForTest`, `CcusageRunner`, `nextBackoffMs`, `shouldSync`, `markBuildAlive` are defined in the task that first references them and used identically thereafter.
+- **Spec coverage:** Component 1 → Task 2 (incl. ETARGET); Component 2 → Task 3; Component 3 → Task 4 (steps 1-7); Component 4 (`ccusage_fallback` + `auth_expired`) → Task 1; Component 5 (daemon 401 re-auth) → Task 5; Component 6 (rollback flush) → Task 4 (steps 8-11); battle-test rollout rule → Task 6; PR-not-merge rule → Task 7. All covered.
+- **Telemetry paging:** `ccusage_fallback` and `auth_expired` added to the enum only, NOT to `failureEvents` — matches the spec ("never enters the rolling window").
+- **Type/name consistency:** `invokeCcusage`, `resetCcusageStateForTest`, `CcusageRunner`, `isCcusageBroken`, `nextBackoffMs`, `shouldSync`, `markBuildAlive`, `resolveAuthAction` are defined in the task that first references them and used identically thereafter. (Detection fn renamed `isNativeFailure` → `isCcusageBroken` consistently in Task 2.)
+- **daemon.ts edit ordering:** Tasks 3, 4 (step 5), and 5 all modify `daemon.ts`. They are applied in order; Task 5's heartbeat block explicitly supersedes the Task-3 heartbeat edit (noted inline). The 401 branch in `syncNow` sits between the existing 429 branch and the generic failure `else`.
 - **Backoff curve:** spec said "~1m→5m→15m, cap 30m"; implemented as factor-5 (1m→5m→25m→cap 30m) — simpler closed form, same shape and cap; tests pin the exact values.
+- **Mutable token:** `const token` → `let token` in the daemon; the closures (`syncNow`, heartbeat) read the current binding, so an adopted token takes effect on the next cycle.
