@@ -25,6 +25,17 @@ const PILLAR_LABEL: Record<(typeof PILLAR_ORDER)[number], string> = {
   throughput: "THROUGHPUT",
 };
 
+// Plain-language pillar explanations (#58). kind: outcome pillars are measured
+// against real git results; behavioral pillars from how sessions are run.
+const PILLAR_INFO: Record<(typeof PILLAR_ORDER)[number], { weight: string; kind: "outcome" | "behavioral"; tip: string }> = {
+  verification: { weight: "22%", kind: "outcome", tip: "Do long runs survive? Tests touched in shipping sessions, and how little of your work gets reverted." },
+  yield: { weight: "22%", kind: "outcome", tip: "Verified output per dollar. Surviving lines and commits against your spend." },
+  direction: { weight: "16%", kind: "behavioral", tip: "Do your instructions land? Crisp mid-length specs, and sessions that explore the code before shipping." },
+  autonomy: { weight: "16%", kind: "behavioral", tip: "How long the agent runs unsupervised, counted only when that work survives." },
+  orchestration: { weight: "12%", kind: "behavioral", tip: "Parallel subagents and model range that lead to shipped work, not just spawns." },
+  throughput: { weight: "12%", kind: "outcome", tip: "Sustained shipping pace. Surviving lines and commits per active day." },
+};
+
 // A response has the Craft Score headline only when the server sent a numeric
 // craftScore + pillars (deep insights, modern server). Otherwise fall back to
 // the legacy archetype + axes hero.
@@ -39,16 +50,70 @@ function PillarBars({ pillars }: { pillars: ProfilePillars }) {
   const sorted = [...PILLAR_ORDER].sort((a, b) => pillars[b] - pillars[a]);
   return (
     <div className="axes mono">
-      {sorted.map((pillar, i) => (
-        <div className="axis" key={pillar}>
-          <span className="axis-k pillar-k">{PILLAR_LABEL[pillar]}</span>
-          <span className="axis-track">
-            <span className={`axis-fill f${Math.min(i, 2)}`} style={{ width: `${pillars[pillar]}%` }} />
-          </span>
-          <b className="axis-v">{Math.round(pillars[pillar])}</b>
-        </div>
-      ))}
+      {sorted.map((pillar, i) => {
+        const info = PILLAR_INFO[pillar];
+        return (
+          // Hover or keyboard-focus a row to reveal what the pillar measures (#58).
+          <div className="axis pillar-row" key={pillar} tabIndex={0}>
+            <span className="axis-k pillar-k">{PILLAR_LABEL[pillar]}</span>
+            <span className="axis-track">
+              <span className={`axis-fill f${Math.min(i, 2)}`} style={{ width: `${pillars[pillar]}%` }} />
+            </span>
+            <b className="axis-v">{Math.round(pillars[pillar])}</b>
+            <span className="pillar-tip" role="tooltip">
+              <span className="pillar-tip-head">
+                <b>{PILLAR_LABEL[pillar]}</b>
+                <span className="pillar-tip-meta">{info.weight} of score · {info.kind}</span>
+              </span>
+              {info.tip}
+            </span>
+          </div>
+        );
+      })}
     </div>
+  );
+}
+
+// "How the Craft Score works" — the plain-language expander (#58).
+function CraftExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="craft-explain" data-noexport="true">
+      <button className="linklike" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        {open ? "Hide how the score works" : "How the Craft Score works"}
+      </button>
+      {open && (
+        <div className="craft-explain-body">
+          <p>
+            Craft Score is a weighted mean of six pillars: <b>Verification</b> and <b>Yield</b> carry 22% each,{" "}
+            <b>Direction</b> and <b>Autonomy</b> 16%, <b>Orchestration</b> and <b>Throughput</b> 12%. A spiky
+            profile pulls the score down, so being elite at one pillar can't hide weak ones.
+          </p>
+          <p>
+            Outcome pillars (Verification, Yield, Throughput) are measured against your real git results:
+            commits, surviving lines, tests, reverts. Behavioral pillars (Direction, Autonomy, Orchestration)
+            come from how you run your sessions. Hover any bar for what it measures.
+          </p>
+          <p>
+            <b>LOCAL-GIT VERIFIED</b> means the outcomes come from real commits on your machine (uploaded as
+            counts and salted hashes, never code). <b>GITHUB-LINKED</b> means your public GitHub activity
+            corroborates the same window.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small-sample marker: scores are real but not yet rank-stable. Shown while
+// the sample is under 10 sessions (the percentile-pool floor).
+function EarlyReadBadge({ insights }: { insights: ProfileInsights }) {
+  const n = insights.sampleSessions;
+  if (!insights.provisional || typeof n !== "number" || n >= 10) return null;
+  return (
+    <span className="trust-badge early mono">
+      EARLY READ · {n} SESSION{n === 1 ? "" : "S"}
+    </span>
   );
 }
 
@@ -60,24 +125,36 @@ function CraftScoreHero({
   archetype: string;
 }) {
   const tier1 = insights.trustTier === 1;
+  const tier = insights.craftTier;
   return (
     <div className="craft">
       <div className="craft-top">
         <div className="craft-num-wrap">
           <span className="craft-label mono">CRAFT SCORE</span>
-          <span className="craft-score mono">{Math.round(insights.craftScore)}</span>
+          <span className={`craft-score mono${tier ? ` tier-${tier.key}` : ""}`}>
+            {Math.round(insights.craftScore)}
+          </span>
+          {tier && <span className={`craft-tier px tier-${tier.key}`}>{tier.name.toUpperCase()}</span>}
         </div>
         <div className="craft-badges">
           <span className={`trust-badge mono${tier1 ? " t1" : " t0"}`}>
             {tier1 && <PixelGlyph name="check" size={9} />}
             {tier1 ? "LOCAL-GIT VERIFIED" : "UNVERIFIED"}
           </span>
+          {insights.githubVerified && (
+            <span className="trust-badge t1 mono">
+              <PixelGlyph name="check" size={9} />
+              GITHUB-LINKED
+            </span>
+          )}
+          <EarlyReadBadge insights={insights} />
         </div>
       </div>
       <div className="craft-flavor">
         plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
       </div>
       <PillarBars pillars={insights.pillars} />
+      <CraftExplainer />
     </div>
   );
 }
@@ -132,10 +209,10 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
   return (
     <div className="arch-locked pending">
       <span className="arch-pulse" aria-hidden="true" />
-      <p className="arch-pending-h">Forging your archetype…</p>
+      <p className="arch-pending-h">Building your profile…</p>
       <p>
-        Your next sync forges this from local session counts. Autosync usually lands it within minutes,
-        and this page updates itself the moment it does. To see it in seconds, run:
+        Your first sync fills this in from your local sessions — usually within minutes, and this page
+        updates itself the moment it lands. To see it in seconds, run:
       </p>
       <div className="arch-skip">
         <code className="mono">ccwarriors insights on</code>
@@ -158,10 +235,13 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
 const DEEP_UPLOADS: Array<{ k: string; v: string }> = [
   { k: "Per-session counts", v: "prompts, tool calls, plan-mode turns" },
   { k: "Timing summaries", v: "session length, active hours, gaps" },
-  { k: "Model names", v: "which models you ran, nothing about the chats" },
+  { k: "Model names", v: "which models you ran" },
   { k: "Hashed git outcomes", v: "commits, lines, tests as salted hashes" },
+  { k: "Your top prompts", v: "the short prompts you repeat most, secrets stripped" },
+  { k: "Redacted transcripts", v: "power your story page — analyzed once, then deleted" },
 ];
-const DEEP_NEVER = "Never your prompts, code, file paths, or repo names.";
+const DEEP_NEVER =
+  "Never your code, file contents, file paths, or repo names. Secrets are stripped on your machine before anything leaves it.";
 
 export function DisclosureList() {
   return (
@@ -187,11 +267,13 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${API_HTTP}/insights/mode`, {
+      // One call: deep on + the v2 disclosure acknowledged (the list above IS
+      // the full v2 disclosure). The CLI adopts this ack on its next sync.
+      const r = await fetch(`${API_HTTP}/insights/consent`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "deep" }),
+        body: JSON.stringify({ consent: true, consentVersion: 2 }),
       });
       if (!r.ok) {
         setError("Could not switch on Deep mode. Try again after refreshing your session.");
@@ -205,13 +287,12 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     }
   };
 
+  // "forging" now means exactly one thing: consented, but no data has landed
+  // yet. The pending panel polls and swaps the card in live the moment the
+  // first sync arrives. (Old servers still emit forging for <10 sessions
+  // during the deploy window — polling degrades gracefully there too.)
   if (locked.reason === "forging") {
-    return (
-      <div className="arch-locked">
-        <PixelGlyph name="diamond" size={13} />
-        <p>Archetype forging. Under 10 sessions in the window so far. Keep coding.</p>
-      </div>
-    );
+    return <PendingPanel onPoll={onConsentChanged} />;
   }
 
   // Owner already consented but no data has landed yet: processing, not idle.
@@ -281,7 +362,13 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
     setExporting(true);
     try {
       const fontEmbedCSS = await getFontEmbedCSS(cardRef.current);
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 4, cacheBust: true, fontEmbedCSS });
+      const dataUrl = await toPng(cardRef.current, {
+        pixelRatio: 4,
+        cacheBust: true,
+        fontEmbedCSS,
+        // Keep interactive chrome (explainer, tooltips) out of the share image.
+        filter: (node) => !(node instanceof HTMLElement && node.dataset.noexport === "true"),
+      });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `ccwarriors-${profile.login}-${insights && hasCraftScore(insights) ? "craft-score" : "archetype"}.png`;
@@ -323,6 +410,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
                 {insights.trait ? `${insights.trait} · ` : ""}
                 {insights.growthEdge}
               </div>
+              <EarlyReadBadge insights={insights} />
               <AxisBars insights={insights} />
             </>
           )
@@ -341,6 +429,11 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           <button className="btn g" onClick={downloadCard} disabled={exporting}>
             {exporting ? "Exporting…" : "Download card"}
           </button>
+          {insights.cards.some((c) => c.key === "story") && (
+            <a className="btn story-btn" href={`/${encodeURIComponent(profile.login)}/story`}>
+              Read your story →
+            </a>
+          )}
         </div>
       )}
     </div>

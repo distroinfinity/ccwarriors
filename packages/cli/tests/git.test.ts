@@ -260,6 +260,13 @@ describe("readGitOutcome", () => {
           expect(Number.isInteger(item)).toBe(true);
           expect(item as number).toBeGreaterThanOrEqual(0);
         }
+      } else if (key === "commitKinds") {
+        // fix/feature/refactor/other classification — counts only, never subjects
+        for (const n of Object.values(value as Record<string, unknown>)) {
+          expect(typeof n).toBe("number");
+          expect(Number.isInteger(n)).toBe(true);
+          expect(n as number).toBeGreaterThanOrEqual(0);
+        }
       } else {
         expect(typeof value).toBe("number");
       }

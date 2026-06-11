@@ -1,0 +1,1 @@
+ALTER TABLE "user_deep_sessions" ADD COLUMN "extras" jsonb;

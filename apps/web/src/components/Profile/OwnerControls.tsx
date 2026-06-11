@@ -3,6 +3,52 @@ import { API_HTTP } from "../../api";
 import type { Profile } from "../../useProfile";
 import { DisclosureList } from "./ArchetypeCard";
 
+// Pre-v2 deep users: one disclosed click unlocks the story tier. The CLI
+// adopts the ack from the server on its next sync — nothing to run.
+function UpgradeBanner({ onConsentChanged }: { onConsentChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const unlock = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await fetch(`${API_HTTP}/insights/consent`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ consentVersion: 2 }),
+      });
+      if (!r.ok) {
+        setError("Could not unlock. Refresh your session and try again.");
+        return;
+      }
+      onConsentChanged();
+    } catch {
+      setError("Could not unlock. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="consent-upgrade">
+      <div className="consent-upgrade-text">
+        <b>Deep mode grew: your story is waiting.</b>
+        <p>
+          One more yes adds two things to what we extract: your most-repeated short prompts, and redacted
+          transcripts that write your story page (analyzed once, then deleted). Secrets are stripped on your
+          machine before anything leaves it. Your next sync picks this up automatically.
+        </p>
+      </div>
+      <button className="btn x" onClick={unlock} disabled={busy}>
+        {busy ? "Unlocking…" : "Unlock my story"}
+      </button>
+      {error && <p className="arch-error">{error}</p>}
+    </div>
+  );
+}
+
 export function OwnerControls({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
@@ -64,11 +110,15 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
     }
   };
 
+  const isPublic = profile.owner.visibility === "public";
+  const needsV2 = (profile.owner.consentVersion ?? 1) < 2;
   return (
     <div className="owner-controls">
+      {needsV2 && <UpgradeBanner onConsentChanged={onConsentChanged} />}
       <div className="arch-transparency">
         <div className="trans-status mono">
-          Deep insights on &middot; {profile.owner.machineCount} machine
+          Profile: <b className={isPublic ? "vis-public" : "vis-private"}>{isPublic ? "Public" : "Private"}</b>
+          {" "}&middot; deep insights on &middot; {profile.owner.machineCount} machine
           {profile.owner.machineCount === 1 ? "" : "s"}
         </div>
 
@@ -83,9 +133,11 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
 
         <div className="trans-actions">
           <span className="trans-vis mono">
-            {profile.owner.visibility === "public" ? "Visible to everyone" : "Hidden from others"} &middot;{" "}
+            {isPublic
+              ? "Anyone can see this profile and its stats."
+              : "Only you can see these stats. You stay on the leaderboard."}{" "}
             <button className="linklike" onClick={toggleVisibility} disabled={visibilityBusy}>
-              {visibilityBusy ? "updating" : `make ${profile.owner.visibility === "public" ? "private" : "public"}`}
+              {visibilityBusy ? "updating" : `make ${isPublic ? "private" : "public"}`}
             </button>
           </span>
           {visibilityError ? <span className="arch-error">{visibilityError}</span> : null}
@@ -111,7 +163,7 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
             </span>
           ) : (
             <button className="linklike purge-start" onClick={purge}>
-              Purge and go private
+              Purge all my insights data
             </button>
           )}
           {purgeError ? <span className="arch-error"> · {purgeError}</span> : null}

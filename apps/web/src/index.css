@@ -268,6 +268,10 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .btn{ display:block; width:100%; text-align:center; padding:12px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; border:1px solid var(--line); }
 .btn.x{ background:var(--ink); color:var(--bg); border-color:var(--ink); margin-top:14px; } .btn.x:hover{ opacity:.85; }
 .btn.g{ background:transparent; color:var(--ink); margin-top:9px; } .btn.g:hover{ background:var(--segoff); }
+/* The story doorway: terracotta-outlined, unmistakably the special one. */
+.btn.story-btn{ display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
+  color:var(--or); border-color:var(--or); background:color-mix(in srgb,var(--or) 6%, transparent); }
+.btn.story-btn:hover{ background:var(--or); color:var(--bg); }
 
 /* ── Sponsor — "fuel the board" funding section above the footer ─────────── */
 /* Generous top gap (no rule) so the funding section sits clearly below the board. */
@@ -433,6 +437,41 @@ html[data-theme="dark"] .arch-name{ color:var(--ink); }
 .craft-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
 .craft-num-wrap{ display:flex; flex-direction:column; }
 .craft-label{ font-size:10px; letter-spacing:.22em; color:var(--muted); }
+/* Pixelify utility (brand display type). */
+.px{ font-family:'Pixelify Sans',monospace; }
+/* Forge tiers: ink → bronze → terracotta → ember. The score wears its band. */
+.tier-apprentice{ color:var(--muted); }
+.tier-journeyman{ color:var(--bronze); }
+.tier-artisan{ color:var(--or); }
+.tier-mastersmith{ color:#8C2F1B; text-shadow:0 0 16px color-mix(in srgb,var(--or) 40%,transparent); }
+html[data-theme="dark"] .tier-mastersmith{ color:#E8845C; }
+.craft-tier{ font-size:13px; letter-spacing:.08em; margin-top:4px; }
+
+/* ── Pillar tooltips + score explainer (#58): progressive disclosure ───────── */
+.pillar-row{ position:relative; cursor:help; outline:none; }
+.pillar-tip{ display:none; position:absolute; left:0; bottom:calc(100% + 6px); z-index:5;
+  width:min(300px, 92%); padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  background:var(--panel); color:var(--muted); font-family:'Geist',system-ui,sans-serif;
+  font-size:11.5px; line-height:1.5; letter-spacing:0; text-transform:none;
+  box-shadow:0 2px 4px rgba(22,20,15,.06), 0 12px 28px rgba(22,20,15,.14); }
+html[data-theme="dark"] .pillar-tip{ background:#1a1b1f; box-shadow:0 12px 28px rgba(0,0,0,.55); }
+.pillar-row:hover .pillar-tip, .pillar-row:focus .pillar-tip{ display:block; }
+.pillar-tip-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:4px; }
+.pillar-tip-head b{ font-size:10px; letter-spacing:.12em; color:var(--ink); }
+.pillar-tip-meta{ font-size:9.5px; letter-spacing:.04em; color:var(--bronze); white-space:nowrap; }
+.craft-explain{ margin-top:14px; }
+.craft-explain > .linklike{ font-size:11px; color:var(--muted); }
+.craft-explain > .linklike:hover{ color:var(--or); }
+.craft-explain-body{ margin-top:10px; padding:12px 14px; border:1px solid var(--line); border-radius:8px;
+  background:var(--segoff); }
+.craft-explain-body p{ font-size:12px; line-height:1.6; color:var(--muted); margin:0 0 8px; }
+.craft-explain-body p:last-child{ margin-bottom:0; }
+.craft-explain-body b{ color:var(--ink); font-weight:600; }
+/* Tier color wins over the dark theme's plain-ink score. */
+html[data-theme="dark"] .craft-score.tier-apprentice{ color:var(--muted); }
+html[data-theme="dark"] .craft-score.tier-journeyman{ color:var(--bronze); }
+html[data-theme="dark"] .craft-score.tier-artisan{ color:var(--or); }
+html[data-theme="dark"] .craft-score.tier-mastersmith{ color:#E8845C; }
 .craft-score{ font-size:clamp(58px,12vw,80px); line-height:.92; font-weight:600;
   font-variant-numeric:tabular-nums; letter-spacing:-.02em; color:var(--or); margin-top:2px; }
 html[data-theme="dark"] .craft-score{ color:var(--ink); }
@@ -442,6 +481,8 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .trust-badge.t1{ color:var(--or); border:1px solid var(--or);
   background:color-mix(in srgb, var(--or) 6%, transparent); }
 .trust-badge.t0{ color:var(--muted); border:1px solid var(--line); background:var(--segoff); }
+.trust-badge.early{ color:var(--bronze); border:1px dashed var(--bronze);
+  background:color-mix(in srgb, var(--bronze) 5%, transparent); margin-top:6px; }
 .provisional-chip{ font-size:10px; letter-spacing:.02em; color:var(--bronze);
   border:1px dashed var(--line); border-radius:999px; padding:3px 9px; max-width:220px; text-align:right; }
 .craft-flavor{ font-family:'Pixelify Sans'; font-size:15px; letter-spacing:.04em; color:var(--muted);
@@ -461,7 +502,9 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 
 .arch-foot{ display:flex; justify-content:space-between; margin-top:18px; padding-top:12px;
   border-top:1px dashed var(--line); font-size:10.5px; color:var(--muted); }
-.arch-actions{ display:flex; gap:10px; margin-top:12px; }
+.arch-actions{ display:flex; gap:10px; margin-top:12px; align-items:stretch; }
+/* Equal thirds, equal height — neutralize .btn.g's stray margin in this row. */
+.arch-actions .btn{ flex:1 1 0; margin-top:0; padding:12px; }
 .arch-owner{ margin-top:10px; font-size:11px; color:var(--muted); }
 .linklike{ background:none; border:0; padding:0; font:inherit; color:var(--ink);
   text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
@@ -523,6 +566,8 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .arch-transparency{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--line);
   display:flex; flex-direction:column; gap:8px; }
 .trans-status{ font-size:11px; color:var(--muted); }
+.trans-status .vis-public{ color:var(--up); }
+.trans-status .vis-private{ color:var(--bronze); }
 .trans-verified{ color:var(--or); font-weight:600; letter-spacing:.06em; }
 .trans-toggle{ align-self:flex-start; font-size:11px; color:var(--muted); }
 .arch-transparency .consent-disclose{ margin-top:2px; }
@@ -564,25 +609,33 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 html[data-theme="dark"] .deck-card{ background:linear-gradient(180deg,#17171a,#121215);
   box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 12px 30px rgba(0,0,0,.45); }
 
-/* Halftone band: the signature texture. Dots sit on a tinted ground, a hairline
-   rule below grounds them against the body. */
-.deck-band{ position:relative; height:96px; overflow:hidden;
-  background:color-mix(in srgb,var(--or) 7%, var(--panel));
-  border-bottom:1px solid var(--line); }
-html[data-theme="dark"] .deck-band{ background:color-mix(in srgb,var(--or) 9%, #15151a); }
-.deck-band svg{ position:absolute; inset:0; width:100%; height:100%; opacity:.85; }
-html[data-theme="dark"] .deck-band svg{ opacity:.72; }
-/* The optional stat: a big mono accent stamped onto the texture. */
-.deck-stat{ position:absolute; right:13px; bottom:9px; font-size:26px; font-weight:600;
-  letter-spacing:-.02em; color:var(--or); line-height:1;
-  text-shadow:0 1px 0 color-mix(in srgb,var(--panel) 80%, transparent); }
-html[data-theme="dark"] .deck-stat{ color:var(--ink); text-shadow:0 1px 3px rgba(0,0,0,.5); }
+/* The signature halftone retreats to a masked corner accent — texture as a
+   wax seal, never behind text (the old full-width band drowned the stat). */
+.deck-corner{ position:absolute; top:0; right:0; width:96px; height:96px; pointer-events:none;
+  mask-image:radial-gradient(120% 120% at 100% 0%, #000 30%, transparent 72%);
+  -webkit-mask-image:radial-gradient(120% 120% at 100% 0%, #000 30%, transparent 72%); }
+.deck-corner svg{ position:absolute; inset:0; width:100%; height:100%; opacity:.5; }
+html[data-theme="dark"] .deck-corner svg{ opacity:.4; }
+/* The stat earns a solid ink plate — maximum contrast, unmistakably the number. */
+.deck-plate{ align-self:flex-start; background:var(--ink); color:var(--bg); border-radius:6px;
+  padding:5px 12px; font-size:24px; font-weight:700; letter-spacing:-.02em; line-height:1.15;
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
+/* Owner pin toggle (top-left, opposite the corner texture). */
+.deck-pin{ position:absolute; top:9px; left:10px; z-index:2; font:inherit; font-size:9.5px;
+  letter-spacing:.06em; padding:3px 8px; border-radius:999px; cursor:pointer;
+  border:1px dashed var(--line); background:var(--panel); color:var(--muted);
+  opacity:0; transition:opacity .15s, color .15s, border-color .15s; }
+.deck-card:hover .deck-pin{ opacity:1; }
+.deck-pin.on{ opacity:1; color:var(--or); border:1px solid var(--or); }
+.deck-pin:hover{ color:var(--or); border-color:var(--or); }
 
-.deck-body{ padding:15px 16px 14px; display:flex; flex-direction:column; gap:7px; flex:1; }
-.deck-q{ font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); }
-.deck-head{ font-family:'Geist Mono',monospace; font-size:17px; line-height:1.18;
+.deck-body{ padding:16px 16px 14px; display:flex; flex-direction:column; gap:8px; flex:1; }
+.deck-q{ font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+  padding-right:56px; /* clear the corner texture */ }
+.deck-head{ font-family:'Geist Mono',monospace; font-size:18px; line-height:1.2;
   font-weight:700; letter-spacing:-.02em; color:var(--ink); }
-.deck-text{ font-size:12px; line-height:1.5; color:var(--muted); margin:0; }
+.deck-text{ font-size:12.5px; line-height:1.55; color:color-mix(in srgb,var(--muted) 78%,var(--ink)); margin:0; }
 
 /* Footer affordances — excluded from the PNG export via data-noexport. */
 .deck-foot{ display:flex; gap:7px; padding:0 16px 14px; }
@@ -598,6 +651,7 @@ html[data-theme="dark"] .deck-stat{ color:var(--ink); text-shadow:0 1px 3px rgba
 .eff-letter{ font-size:34px; font-weight:700; color:var(--or); }
 .eff-sub{ font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .eff-mix{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); }
+.gh-meta{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
 
 .rhythm{ margin-top:18px; }
 .heatmap{ display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,10px); gap:3px; overflow-x:auto; padding-bottom:4px; }
@@ -612,3 +666,45 @@ html[data-theme="dark"] .deck-stat{ color:var(--ink); text-shadow:0 1px 3px rgba
 .profile-404 p{ color:var(--muted); margin-bottom:18px; }
 .profile-skel{ min-height:420px; background:var(--segoff); animation:pulse 1.2s ease-in-out infinite; margin-top:26px; }
 @keyframes pulse{ 0%,100%{ opacity:.55; } 50%{ opacity:.9; } }
+
+/* ── Story page (#50): editorial dossier ─────────────────────────────────── */
+.story{ max-width:680px; margin:0 auto; padding:28px 0 48px; }
+/* The global `header` element rule is flex/space-between — reset it here. */
+.story-head{ display:block; padding:0; }
+.story-kicker{ font-size:10px; letter-spacing:.18em; color:var(--bronze); margin:0 0 14px; }
+.story-id{ display:flex; align-items:center; gap:14px; margin-bottom:18px; }
+.story-avatar{ width:52px; height:52px; border-radius:10px; background:var(--avbg); }
+.story-h{ font-size:clamp(30px,6vw,44px); letter-spacing:.03em; margin:0; line-height:1; }
+.story-lede{ font-size:19px; line-height:1.55; color:var(--ink); margin:0 0 8px; }
+.story-sec{ margin-top:34px; }
+.story-body{ font-size:14.5px; line-height:1.65; color:var(--muted); margin:6px 0 0; }
+.story-item{ margin-top:14px; }
+.story-item b{ font-size:14.5px; }
+.story-cols{ display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+@media (max-width:640px){ .story-cols{ grid-template-columns:1fr; } }
+.story-patterns{ list-style:none; margin:0; padding:0; }
+.story-patterns li{ display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
+.story-patterns li:last-child{ border-bottom:none; }
+.pattern-count{ flex:0 0 52px; font-size:20px; font-weight:700; color:var(--or); }
+.pattern-name{ font-size:15px; }
+.story-stamps{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; margin-top:12px; }
+.story-stamp{ border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--panel);
+  box-shadow:0 1px 2px rgba(22,20,15,.04); }
+.stamp-name{ display:block; font-size:14px; color:var(--or); letter-spacing:.05em; }
+.stamp-evidence{ font-size:10px; color:var(--muted); }
+.story-cryptic blockquote{ font-size:22px; color:var(--ink); margin:10px 0 0; padding-left:14px;
+  border-left:3px solid var(--or); }
+.story-foot{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;
+  margin-top:44px; padding-top:16px; border-top:1px solid var(--line); font-size:11px; color:var(--muted); }
+.story-empty{ text-align:left; padding-top:48px; }
+.deck-card-story{ text-decoration:none; color:inherit; border-color:var(--or); display:flex; flex-direction:column; }
+.deck-card-story .deck-share{ color:var(--or); }
+
+/* ── v2 upgrade banner: pre-existing deep users unlock the story tier ─────── */
+.consent-upgrade{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:14px;
+  padding:14px 16px; border:1px solid var(--or); border-radius:10px;
+  background:color-mix(in srgb,var(--or) 5%, var(--panel)); }
+.consent-upgrade-text{ flex:1 1 320px; }
+.consent-upgrade-text b{ font-size:13px; }
+.consent-upgrade-text p{ font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0; }
+.consent-upgrade .btn{ flex:0 0 auto; width:auto; padding:11px 18px; margin:0; }

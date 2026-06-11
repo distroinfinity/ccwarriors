@@ -46,6 +46,9 @@ export type SessionGitOutcome = {
   // older clients (pre-timing-upgrade) omit them, so consumers must guard.
   commitHours?: number[]; // 24 buckets, hour-of-day commit counts
   commitDows?: number[]; // 7 buckets, day-of-week commit counts (0 = Sunday)
+  // fix/feature/refactor/other counts from commit subjects (counts only;
+  // optional — older clients omit).
+  commitKinds?: { fixes: number; features: number; refactors: number; other: number };
 };
 
 // One uploadable per-session record (mirrors packages/cli/src/insights.ts
@@ -67,13 +70,21 @@ export type SessionRecord = {
   model: string | null;
   timing: { events: number; medianGapMs: number; p10GapMs: number; subSecondFraction: number };
   git: SessionGitOutcome | null;
+  // New deep signals — optional: older clients omit them.
+  thankYous?: number;
+  wordTotal?: number;
+  recovery?: { loops: number; medianBreakoutMs: number };
+  extensions?: Record<string, number>;
 };
 
 // The deep payload the client sends (mirrors packages/cli/src/insights.ts
-// InsightsDeepPayload exactly).
+// InsightsDeepPayload exactly). New fields optional for older clients.
 export type InsightsDeepPayload = {
   windowDays: number;
   sessions: SessionRecord[];
+  maxConcurrentSessions?: number;
+  // The only TEXT field — present only under consent v2, redacted client-side.
+  topPrompt?: { text: string; count: number; sessions: number } | null;
 };
 
 // Aggregate behavioral counts extracted locally by the CLI from session JSONL.
@@ -130,6 +141,17 @@ export const users = pgTable("users", {
   // replaying the pillar math. Null when mode is off or there's no deep data.
   craftScore: numeric("craft_score"),
   trustTier: integer("trust_tier"), // 0 unverified | 1 local-git
+  // GitHub OAuth access token, persisted at login for server-side PUBLIC-data
+  // reads (5000 req/h/token). Scope is read:user only — blast radius of a leak
+  // is rate-limit theft, not data access. Nulled on a 401 (revoked).
+  githubAccessToken: text("github_access_token"),
+  // Deep-mode disclosure version the user last acknowledged. The CLI shows a
+  // one-time notice when the server's CONSENT_VERSION is newer (deep scope
+  // expanded — e.g. v2 added prompt-text extracts + redacted transcripts).
+  // Null = consented before versioning existed (treated as v1).
+  consentVersion: integer("consent_version"),
+  // Owner-curated deck order: up to 4 card keys pinned to the front.
+  pinnedCards: jsonb("pinned_cards").$type<string[]>(),
 });
 
 export const snapshots = pgTable("snapshots", {
@@ -231,8 +253,95 @@ export const userDeepSessions = pgTable(
     sessions: jsonb("sessions").$type<SessionRecord[]>().notNull(),
     windowDays: bigint("window_days", { mode: "number" }).notNull().default(40),
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+    // Payload-level signals that aren't per-session (older clients omit).
+    extras: jsonb("extras").$type<{
+      maxConcurrentSessions?: number;
+      topPrompt?: { text: string; count: number; sessions: number } | null;
+    }>(),
   },
   (t) => [uniqueIndex("user_deep_sessions_user_machine").on(t.userId, t.machineId)],
+);
+
+// ── GitHub public stats (issue #48, public-only subset) ─────────────────────
+// Verified-by-GitHub public footprint, fetched server-side with the user's own
+// OAuth token (or a server PAT fallback). Card doctrine applies downstream:
+// a missing block means "no data", never fabricated zeros.
+export type GithubStats = {
+  login: string;
+  accountCreatedAt: string; // ISO
+  followers: number;
+  publicRepos: number;
+  totalStars: number; // sum over top-100 owned public repos by stars
+  topLanguages: Array<{ name: string; repos: number }>; // primaryLanguage, top 5
+  mergedPublicPrs: number;
+  reviewsLastYear: number;
+  commitsLastYear: number;
+  contributionsLastYear: number;
+  currentStreakDays: number;
+  longestStreakDays: number;
+  reposContributedTo: number; // repos the user doesn't own
+  windowCommits: number; // commit contributions in the last 40 days
+  windowPrs?: number; // PR contributions in the last 40 days (absent on pre-#55 rows)
+};
+
+// One row per user, upserted by the background refresher. `data` survives
+// later failed fetches (serve-stale-forever); `status` + `fetchedAt` drive
+// the retry backoff.
+export const githubStats = pgTable(
+  "github_stats",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    status: text("status").notNull().default("ok"), // ok | error
+    data: jsonb("data").$type<GithubStats>(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("github_stats_user").on(t.userId)],
+);
+
+// ── Story (issue #50: transcript-LLM narrative) ──────────────────────────────
+// The derived narrative document. Raw transcripts are processed then PURGED —
+// only this derived doc persists (the documented promise).
+export type StoryDoc = {
+  narrative: string; // the headline paragraph
+  whatYouBuilt: string;
+  decisionPatterns: Array<{ name: string; count: number; evidence: string }>;
+  strengths: Array<{ title: string; detail: string }>;
+  growthAreas: Array<{ title: string; detail: string }>;
+  aiArchetypes: Array<{ name: string; blurb: string; evidence: number }>;
+  crypticPrompt: string | null; // most cryptic prompt, LLM-picked (already redacted client-side)
+  sessionsAnalyzed: number;
+};
+
+export const userStories = pgTable(
+  "user_stories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    doc: jsonb("doc").$type<StoryDoc>().notNull(),
+    model: text("model").notNull().default(""),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("user_stories_user").on(t.userId)],
+);
+
+// Transient transcript payloads awaiting story generation. Rows are DELETED
+// after the story is generated (or after TTL) — never retained.
+export const storySources = pgTable(
+  "story_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    payload: jsonb("payload").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("story_sources_user").on(t.userId)],
 );
 
 export type User = typeof users.$inferSelect;

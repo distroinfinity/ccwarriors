@@ -57,6 +57,27 @@
       "when": 1781011466931,
       "tag": "0007_crazy_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781121960259,
+      "tag": "0008_silly_boom_boom",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781161984088,
+      "tag": "0009_milky_lady_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781162961293,
+      "tag": "0010_eminent_katie_power",
+      "breakpoints": true
     }
   ]
 }

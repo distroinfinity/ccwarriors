@@ -6,6 +6,7 @@ import { users, orgMembers, userInsights } from "./db/schema.js";
 import { LeaderboardStore } from "./lib/leaderboard-store.js";
 import { InsightsStore } from "./lib/insights-store.js";
 import { createApp } from "./app.js";
+import { generateStory } from "./lib/story.js";
 import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
@@ -141,6 +142,11 @@ async function main() {
     auth: authDeps,
     donate: donateDeps,
     discord: discordDeps,
+    githubToken: cfg.githubToken,
+    storyGenerate: cfg.anthropicApiKey
+      ? (login, source) =>
+          generateStory({ apiKey: cfg.anthropicApiKey!, model: cfg.storyModel }, login, source)
+      : undefined,
   });
 
   const server = serve({ fetch: app.fetch, port: cfg.port }, (info) => {
