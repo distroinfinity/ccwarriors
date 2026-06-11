@@ -6,7 +6,26 @@ const execFileAsync = promisify(execFile);
 
 // Pinned major: we own the collection path. ccusage ships breaking output
 // changes in majors; bumping this requires a CLI release (self-update ships it).
-const CCUSAGE_PKG = "ccusage@20";
+// Overridable via env so ops can pin in an emergency and the battle-test can
+// force a known-broken version (e.g. CCWARRIORS_CCUSAGE_PKG=ccusage@20.0.10).
+const CCUSAGE_PKG = process.env["CCWARRIORS_CCUSAGE_PKG"] ?? "ccusage@20";
+// Known-good fallback. Some published ccusage patches ship a broken native
+// prebuilt — e.g. 20.0.10 darwin-arm64 links a dead /nix/store libiconv and
+// crashes at load (fixed upstream in 20.0.11). When the primary is broken we
+// degrade to this pinned build (its native binary links /usr/lib/libiconv).
+const CCUSAGE_FALLBACK_PKG = "ccusage@20.0.6";
+
+// Which spec we invoke. Flips to the fallback for the rest of the process the
+// first time the primary's native binary crashes, so we never re-spawn a
+// known-broken ccusage.
+let activeSpec = CCUSAGE_PKG;
+let fallbackNotified = false;
+
+/** Test-only: restore module state between tests. */
+export function resetCcusageStateForTest(): void {
+  activeSpec = CCUSAGE_PKG;
+  fallbackNotified = false;
+}
 
 // How many days of raw history we ship. The server prices days and ignores
 // anything outside its own 40-day window; 40 here keeps the two aligned.
@@ -49,14 +68,56 @@ function yyyymmdd(date: Date): string {
 
 const IS_WIN = process.platform === "win32";
 
-async function runCcusage(args: string[]): Promise<unknown> {
-  // Windows: npx is npx.cmd and needs a shell to spawn.
+export type CcusageRunner = (pkg: string, args: string[]) => Promise<string>;
+
+// Windows: npx is npx.cmd and needs a shell to spawn.
+const defaultRunner: CcusageRunner = async (pkg, args) => {
   const { stdout } = await execFileAsync(
     IS_WIN ? "npx.cmd" : "npx",
-    ["--yes", CCUSAGE_PKG, ...args],
+    ["--yes", pkg, ...args],
     { timeout: CMD_TIMEOUT_MS, shell: IS_WIN, maxBuffer: 32 * 1024 * 1024 },
   );
-  return JSON.parse(stdout) as unknown;
+  return stdout;
+};
+
+/**
+ * The primary ccusage is unusable — distinct from "no usage". Covers native
+ * load/exec crashes of the prebuilt binary (the nix AND homebrew dyld variants
+ * seen in PostHog, plus "native binary is not available") and npm failing to
+ * resolve `ccusage@20` (ETARGET). The exact-pinned fallback can clear both.
+ */
+function isCcusageBroken(err: unknown): boolean {
+  const e = err as { stderr?: unknown; message?: unknown; signal?: unknown };
+  if (e && e.signal) return true; // killed by a signal (segfault/abort)
+  const text = `${typeof e?.stderr === "string" ? e.stderr : ""}\n${typeof e?.message === "string" ? e.message : ""}`;
+  return /dyld|Library not loaded|image not found|Bad CPU type|cannot execute binary|native binary is not (available|executable)|ETARGET|No matching version/i.test(
+    text,
+  );
+}
+
+/**
+ * Invoke ccusage, degrading to the known-good fallback ONCE if the primary is
+ * broken (native crash or npm-resolution failure). Returns raw stdout. Exported
+ * for unit testing via the injectable runner.
+ */
+export async function invokeCcusage(args: string[], run: CcusageRunner = defaultRunner): Promise<string> {
+  try {
+    return await run(activeSpec, args);
+  } catch (err) {
+    if (activeSpec === CCUSAGE_PKG && isCcusageBroken(err)) {
+      activeSpec = CCUSAGE_FALLBACK_PKG;
+      if (!fallbackNotified) {
+        fallbackNotified = true;
+        void postTelemetry("ccusage_fallback", { from: CCUSAGE_PKG, to: CCUSAGE_FALLBACK_PKG });
+      }
+      return await run(activeSpec, args);
+    }
+    throw err;
+  }
+}
+
+async function runCcusage(args: string[]): Promise<unknown> {
+  return JSON.parse(await invokeCcusage(args)) as unknown;
 }
 
 const num = (v: unknown): number =>
@@ -198,15 +259,11 @@ export async function readUsage(): Promise<UsageCollection> {
     throw new Error(`usage collection failed for: ${failedTools.join(", ")}`);
   }
 
-  // Best-effort version read (cached npx → fast).
+  // Best-effort version read (cached npx → fast). Uses the active spec so the
+  // reported version matches whatever actually collected the data.
   let ccusageVersion = "";
   try {
-    const { stdout } = await execFileAsync(
-      IS_WIN ? "npx.cmd" : "npx",
-      ["--yes", CCUSAGE_PKG, "--version"],
-      { timeout: 30_000, shell: IS_WIN },
-    );
-    ccusageVersion = stdout.trim();
+    ccusageVersion = (await invokeCcusage(["--version"])).trim();
   } catch {
     // optional — ignore
   }
