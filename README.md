@@ -22,6 +22,17 @@ totals are read locally, and you're on the board. Re-sync anytime with `ccwarrio
 Only two numbers ever leave your machine: your 30-day and all-time cost totals.
 No code, no prompts, no project data.
 
+## README badge
+
+Put your live rank in your GitHub profile README — replace `YOUR_LOGIN`:
+
+```md
+[![CCWarriors](https://api.ccwarriors.xyz/badge/YOUR_LOGIN.svg)](https://ccwarriors.xyz/YOUR_LOGIN?ref=badge)
+```
+
+Rank, tier, and 30-day burn, refreshed hourly. Or hit **Copy README badge**
+on your card at [ccwarriors.xyz](https://ccwarriors.xyz).
+
 ## How it works
 
 ```
