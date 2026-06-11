@@ -9,6 +9,13 @@ apps/web/public/cli.js
 
 # Local-only GTM / outreach tooling — kept out of git, lives on disk
 scripts/outreach/
+scripts/shoutout-cards.mjs
+assets/20*/
+assets/youtube-thumbnail-*
+assets/x-cover-*
+assets/manu.jpeg
+output/
+tmp/
 
 # Superpowers Claude plan/spec scratch files — local-only, not committed
 docs/superpowers/
