@@ -39,7 +39,10 @@ query($login: String!, $from: DateTime!) {
         weeks { contributionDays { date contributionCount } }
       }
     }
-    windowContrib: contributionsCollection(from: $from) { totalCommitContributions }
+    windowContrib: contributionsCollection(from: $from) {
+      totalCommitContributions
+      totalPullRequestContributions
+    }
   }
 }`;
 
@@ -136,9 +139,11 @@ export async function fetchGithubStats(
       | { totalContributions?: unknown; weeks?: Array<{ contributionDays?: CalendarDay[] }> }
       | undefined;
     const contributionsLastYear = num(calendar?.totalContributions);
-    const windowCommits = num(
-      (u["windowContrib"] as Record<string, unknown> | undefined)?.["totalCommitContributions"],
-    );
+    const windowBlock = u["windowContrib"] as Record<string, unknown> | undefined;
+    const windowCommits = num(windowBlock?.["totalCommitContributions"]);
+    // Older fixtures/rows may lack PR contributions — degrade to 0-or-absent,
+    // never fail the whole parse over the newest field.
+    const windowPrs = num(windowBlock?.["totalPullRequestContributions"]);
 
     if (
       typeof createdAt !== "string" ||
@@ -193,6 +198,7 @@ export async function fetchGithubStats(
         longestStreakDays: streaks.longest,
         reposContributedTo: contributedTo,
         windowCommits,
+        ...(windowPrs !== null ? { windowPrs } : {}),
       },
     };
   } catch (err) {

@@ -1,8 +1,8 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { eq, sql } from "drizzle-orm";
 import type { DB } from "../db/index.js";
-import { users, usageDays, orgMembers } from "../db/schema.js";
+import { users, usageDays, orgMembers, userStories } from "../db/schema.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import type { InsightsStore } from "../lib/insights-store.js";
 import { readSessionToken } from "../lib/session.js";
@@ -19,9 +19,9 @@ import {
   MIN_SESSIONS,
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
-import { computeCraftForUser } from "../lib/craft-score-service.js";
-import type { Pillars } from "../lib/craft-score.js";
-import { buildInsightCards, type InsightCard } from "../lib/insight-cards.js";
+import { computeCraftForUser, loadDeepExtras } from "../lib/craft-score-service.js";
+import { tierOf, type CraftTier, type Pillars } from "../lib/craft-score.js";
+import { applyPins, buildInsightCards, type InsightCard } from "../lib/insight-cards.js";
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
 
@@ -40,6 +40,36 @@ const LOGIN_RE = /^[a-zA-Z0-9-]{1,39}$/; // GitHub login charset
 
 export function profileRoute(deps: ProfileDeps) {
   const app = new Hono();
+
+  function ownerOf(c: Context, githubId: string | undefined): boolean {
+    if (!deps.sessionSecret || !githubId) return false;
+    const cookie = getCookie(c, "ccw_session");
+    const session = cookie ? readSessionToken(cookie, deps.sessionSecret) : null;
+    return !!session && session.githubId === githubId;
+  }
+
+  // The story page (#50): the LLM-derived narrative. Public data when the
+  // profile is public; private profiles serve it to the owner only.
+  app.get("/:login/story", async (c) => {
+    const raw = c.req.param("login");
+    if (!LOGIN_RE.test(raw)) return c.json({ error: "not_found" }, 404);
+    const [user] = await deps.db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.githubLogin}) = ${raw.toLowerCase()}`);
+    if (!user) return c.json({ error: "not_found" }, 404);
+    const isOwner = ownerOf(c, user.githubId);
+    if (user.insightsVisibility === "private" && !isOwner) return c.json({ error: "not_found" }, 404);
+    const [story] = await deps.db.select().from(userStories).where(eq(userStories.userId, user.id));
+    if (!story) return c.json({ error: "no_story" }, 404);
+    c.header("Cache-Control", isOwner ? "private, no-store" : "public, max-age=300");
+    return c.json({
+      login: user.githubLogin,
+      avatarUrl: user.avatarUrl,
+      story: story.doc,
+      generatedAt: story.generatedAt.toISOString(),
+    });
+  });
 
   app.get("/:login", async (c) => {
     const raw = c.req.param("login");
@@ -102,11 +132,13 @@ export function profileRoute(deps: ProfileDeps) {
           habits: ReturnType<typeof habitStats>;
           growthEdge: string;
           craftScore: number | null;
+          craftTier: CraftTier | null;
           pillars: Pillars | null;
           trustTier: 0 | 1 | null;
           provisional: boolean;
           sampleSessions: number;
           githubVerified: boolean;
+          pinnedCards: string[];
           cards: InsightCard[];
         };
     if (!user?.insightsConsent) {
@@ -135,11 +167,19 @@ export function profileRoute(deps: ProfileDeps) {
       // provisional until the deep population crosses PERCENTILE_MIN_POPULATION
       // (single-pool percentiles are a #51 refinement); pillars stay calibrated.
       const craft = user ? await computeCraftForUser(deps.db, user.id) : null;
+      const extras = user && craft ? await loadDeepExtras(deps.db, user.id) : null;
       const archetype = archetypeOf(axes);
       // Paxel-style insight deck. Built from the deep sessions craft already
       // loaded; cards self-guard and emit only when their real signal exists.
       // Empty when there's no deep data (aggregate-only insights).
-      const cards = craft
+      const pins = user.pinnedCards ?? [];
+      // Story teaser: when a derived story exists, the deck leads with a card
+      // linking to /:login/story.
+      const [story] = await deps.db
+        .select({ doc: userStories.doc })
+        .from(userStories)
+        .where(eq(userStories.userId, user.id));
+      const baseCards = craft
         ? buildInsightCards({
             sessions: craft.input.sessions,
             merged,
@@ -147,6 +187,7 @@ export function profileRoute(deps: ProfileDeps) {
             archetype,
             pillars: craft.pillars,
             github,
+            extras,
             rhythm: {
               weekendShare: rhythm.weekendShare,
               currentStreak: rhythm.currentStreak,
@@ -155,6 +196,16 @@ export function profileRoute(deps: ProfileDeps) {
             },
           })
         : [];
+      const storyCard: InsightCard | null = story
+        ? {
+            key: "story",
+            question: "What's the full story?",
+            headline: "Read your story",
+            body: story.doc.narrative.slice(0, 140),
+            shareText: `${story.doc.narrative.slice(0, 140)} My story on @ccwarriorsxyz.`,
+          }
+        : null;
+      const cards = applyPins(storyCard ? [storyCard, ...baseCards] : baseCards, pins);
       insights = {
         locked: false,
         scoresArePercentiles: usePercentiles,
@@ -165,11 +216,13 @@ export function profileRoute(deps: ProfileDeps) {
         habits: habitStats(merged),
         growthEdge: growthEdgeOf(axes, merged, effHint),
         craftScore: craft?.craftScore ?? null,
+        craftTier: craft ? tierOf(craft.craftScore) : null,
         pillars: craft?.pillars ?? null,
         trustTier: craft?.trustTier ?? null,
         provisional: merged.sessions < MIN_SESSIONS || !usePercentiles,
         sampleSessions: merged.sessions,
         githubVerified: githubVerified(craft?.trustTier ?? null, github),
+        pinnedCards: pins,
         cards,
       };
     }

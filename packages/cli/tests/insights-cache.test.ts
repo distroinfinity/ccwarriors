@@ -117,7 +117,7 @@ describe("collectDeepInsights cache resilience", () => {
     expect(result.status).toBe("ok");
 
     const saved = JSON.parse(readFileSync(join(home, "insights-cache.json"), "utf8"));
-    expect(saved.version).toBe(3);
+    expect(saved.version).toBe(4);
     expect(saved.lastSentAt).toBe(sentAt);
     expect(saved.files["/bogus/old.jsonl"]).toBeUndefined();
   });
@@ -152,6 +152,7 @@ describe("isValidSessionStats", () => {
     prompts: 1, interrupts: 0, usedPlanMode: false, exploreBeforeFirstEdit: false, hadEdits: false,
     subagentSpawns: 0, maxParallel: 0, editCalls: 0, assistantTurns: 1, startHour: 12, durationMinutes: 1,
     wordBuckets: { "1-5": 1, "6-10": 0, "11-25": 0, "26+": 0 },
+    thankYous: 0, wordTotal: 3, recoveryLoops: 0, extensions: {}, recoveryBreakoutMs: [], shortPrompts: [],
     startMs: 1, endMs: 2, cwd: null, gitBranch: null, model: null, editedFiles: [], eventGapsMs: [],
   };
 

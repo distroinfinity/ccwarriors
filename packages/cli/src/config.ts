@@ -12,7 +12,14 @@ export interface Config {
   // Per-user secret used to salt the local-git outcome hashes (repo/branch).
   // LOCAL-ONLY: this value is never uploaded. Generated once, kept forever.
   insightsSalt?: string;
+  // Deep-mode disclosure version the user acknowledged. Text extracts and
+  // transcripts (consent v2) only run when this is ≥ 2 — pre-existing deep
+  // users keep counts-only until they say yes once.
+  ackConsentVersion?: number;
 }
+
+/** The disclosure version THIS build ships with (bumped with deep's scope). */
+export const CONSENT_VERSION = 2;
 
 const CONFIG_DIR = join(homedir(), ".claude-warriors");
 const CONFIG_PATH = join(CONFIG_DIR, "config.json");

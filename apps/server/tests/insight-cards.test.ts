@@ -23,6 +23,7 @@ function ghStats(over: Partial<GithubStats> = {}): GithubStats {
     longestStreakDays: 30,
     reposContributedTo: 6,
     windowCommits: 25,
+    windowPrs: 9,
     ...over,
   };
 }
@@ -244,6 +245,7 @@ describe("buildInsightCards — GitHub cards", () => {
   it("emits the full GitHub strip from a rich footprint", () => {
     const m = byKey(buildInsightCards({ ...base, github: ghStats() }));
     expect(m.get("gh_merged_prs")?.headline).toBe("41 public PRs merged");
+    expect(m.get("gh_prs_worked")?.headline).toBe("9 PRs this window");
     expect(m.get("gh_stars")?.stat).toBe("★ 340");
     expect(m.get("gh_languages")?.headline).toBe("Polyglot");
     expect(m.get("gh_languages")?.body).toContain("TypeScript");
@@ -368,6 +370,128 @@ describe("buildInsightCards — usage/rhythm/git cards from existing data", () =
     const m = byKey(buildInsightCards({ ...base, sessions: tidy, merged: deriveAggregate(tidy, 30) }));
     expect(m.get("clean_history")?.headline).toBe("You curate history");
     expect(byKey(buildInsightCards(base)).has("clean_history")).toBe(false);
+  });
+});
+
+describe("buildInsightCards — Paxel-parity cards (new deep signals)", () => {
+  const base = {
+    sessions: [session()],
+    merged: deriveAggregate([session()], 30),
+    efficiency: null,
+    archetype: null,
+    pillars: null,
+  };
+  const enriched = (over: Partial<SessionRecord> = {}) =>
+    session({ thankYous: 1, wordTotal: 24, recovery: { loops: 0, medianBreakoutMs: 0 }, extensions: { ts: 3 }, ...over });
+
+  it("total_hours sums session durations", () => {
+    const sessions = [session({ durationMinutes: 120 }), session({ durationMinutes: 60 }), session({ durationMinutes: 45 })];
+    const m = byKey(buildInsightCards({ ...base, sessions, merged: deriveAggregate(sessions, 30) }));
+    const c = m.get("total_hours")!;
+    expect(c.headline).toBe("3.8 hours");
+    expect(c.body).toBe("Across 3 sessions this window");
+  });
+
+  it("dialogue classifies the working style", () => {
+    const chatty = [session({ prompts: 8, assistantTurns: 24 })];
+    const m = byKey(buildInsightCards({ ...base, sessions: chatty, merged: deriveAggregate(chatty, 30) }));
+    expect(m.get("dialogue")?.headline).toBe("A back-and-forth");
+    const fire = [session({ prompts: 1, assistantTurns: 40 })];
+    const f = byKey(buildInsightCards({ ...base, sessions: fire, merged: deriveAggregate(fire, 30) }));
+    expect(f.get("dialogue")?.headline).toBe("Fire and forget");
+  });
+
+  it("burst_profile detects burst builders and deep divers", () => {
+    const bursts = Array.from({ length: 4 }, () => session({ durationMinutes: 8 }));
+    const m = byKey(buildInsightCards({ ...base, sessions: bursts, merged: deriveAggregate(bursts, 30) }));
+    expect(m.get("burst_profile")?.headline).toBe("Burst builder");
+    const deep = [session({ durationMinutes: 200, interrupts: 0 }), session({ durationMinutes: 150, interrupts: 0 })];
+    const d = byKey(buildInsightCards({ ...base, sessions: deep, merged: deriveAggregate(deep, 30) }));
+    expect(d.get("burst_profile")?.headline).toBe("Deep diver");
+  });
+
+  it("thank_yous emits only when the signal exists", () => {
+    const polite = [enriched({ thankYous: 4 }), enriched({ thankYous: 2 })];
+    const m = byKey(buildInsightCards({ ...base, sessions: polite, merged: deriveAggregate(polite, 30) }));
+    expect(m.get("thank_yous")?.headline).toBe("6 thank-yous");
+    // Old payloads (field absent) → no card, never a fabricated zero.
+    expect(byKey(buildInsightCards(base)).has("thank_yous")).toBe(false);
+    const rude = [enriched({ thankYous: 0 })];
+    expect(byKey(buildInsightCards({ ...base, sessions: rude, merged: deriveAggregate(rude, 30) })).has("thank_yous")).toBe(false);
+  });
+
+  it("avg_prompt_words from exact word totals", () => {
+    const sessions = [enriched({ wordTotal: 100, prompts: 4 }), enriched({ wordTotal: 60, prompts: 4 })];
+    const m = byKey(buildInsightCards({ ...base, sessions, merged: deriveAggregate(sessions, 30) }));
+    expect(m.get("avg_prompt_words")?.headline).toBe("20 words per prompt");
+  });
+
+  it("recovery emits on real breakout signal", () => {
+    const stuck = [enriched({ recovery: { loops: 2, medianBreakoutMs: 4 * 60_000 } }), enriched({ recovery: { loops: 1, medianBreakoutMs: 2 * 60_000 } })];
+    const m = byKey(buildInsightCards({ ...base, sessions: stuck, merged: deriveAggregate(stuck, 30) }));
+    const c = m.get("recovery")!;
+    expect(c.headline).toBe("3 error loops broken");
+    expect(byKey(buildInsightCards(base)).has("recovery")).toBe(false);
+  });
+
+  it("breadth_local from edited file extensions", () => {
+    const poly = [enriched({ extensions: { ts: 10, py: 4, css: 2 } })];
+    const m = byKey(buildInsightCards({ ...base, sessions: poly, merged: deriveAggregate(poly, 30) }));
+    expect(m.get("breadth_local")?.headline).toBe("3 languages this window");
+    const mono = [enriched({ extensions: { ts: 10 } })];
+    expect(byKey(buildInsightCards({ ...base, sessions: mono, merged: deriveAggregate(mono, 30) })).has("breadth_local")).toBe(false);
+  });
+
+  it("fixes_features splits commit kinds", () => {
+    const sessions = [
+      session({ git: git({ commitKinds: { fixes: 2, features: 5, refactors: 1, other: 0 } }) }),
+      session({ git: git({ commitKinds: { fixes: 1, features: 2, refactors: 0, other: 1 } }) }),
+    ];
+    const m = byKey(buildInsightCards({ ...base, sessions, merged: deriveAggregate(sessions, 30) }));
+    const c = m.get("fixes_features")!;
+    expect(c.headline).toBe("Mostly features");
+    expect(c.body).toBe("7 features and 3 fixes in your commits");
+  });
+
+  it("first_try measures clean shipped sessions", () => {
+    const sessions = [
+      session({ interrupts: 0, git: git({ commitsInWindow: 1, revertedLinesWithin14d: 0 }) }),
+      session({ interrupts: 0, git: git({ commitsInWindow: 1, revertedLinesWithin14d: 0 }) }),
+      session({ interrupts: 3, git: git({ commitsInWindow: 1, revertedLinesWithin14d: 50 }) }),
+    ];
+    const m = byKey(buildInsightCards({ ...base, sessions, merged: deriveAggregate(sessions, 30) }));
+    const c = m.get("first_try")!;
+    expect(c.headline).toBe("Lands it first try");
+    expect(c.body).toContain("67%");
+  });
+
+  it("task_model_fit needs two model families and enough sessions", () => {
+    const sessions = [
+      session({ model: "claude-opus-4-8", editCalls: 30, assistantTurns: 60 }),
+      session({ model: "claude-opus-4-8", editCalls: 25, assistantTurns: 50 }),
+      session({ model: "claude-haiku-4-5", editCalls: 2, assistantTurns: 5 }),
+      session({ model: "claude-haiku-4-5", editCalls: 1, assistantTurns: 4 }),
+    ];
+    const m = byKey(buildInsightCards({ ...base, sessions, merged: deriveAggregate(sessions, 30) }));
+    expect(m.get("task_model_fit")?.headline).toBe("Right blade for the fight");
+    expect(byKey(buildInsightCards(base)).has("task_model_fit")).toBe(false);
+  });
+
+  it("max_concurrent and go_to_prompt come from payload extras", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        extras: { maxConcurrentSessions: 12, topPrompt: { text: "implement the plan", count: 6, sessions: 3 } },
+      }),
+    );
+    expect(m.get("max_concurrent")?.headline).toBe("12 at once");
+    const go = m.get("go_to_prompt")!;
+    expect(go.headline).toBe("“implement the plan”");
+    expect(go.body).toBe("You sent it 6 times across 3 sessions");
+    // 1 concurrent session is just... a session.
+    const single = byKey(buildInsightCards({ ...base, extras: { maxConcurrentSessions: 1 } }));
+    expect(single.has("max_concurrent")).toBe(false);
+    expect(single.has("go_to_prompt")).toBe(false);
   });
 });
 

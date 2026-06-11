@@ -3,9 +3,10 @@
 import { existsSync, watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
+import { loadConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
-import { postIngest, postTelemetry, postInsightsDeep } from "./core.js";
+import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./core.js";
+import { collectTranscripts } from "./transcripts.js";
 import { maybeSelfUpdate, markUpdateSuccess } from "./selfupdate.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
@@ -75,7 +76,9 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
             try {
               if (!(await shouldSend())) return;
               const salt = await ensureInsightsSalt(cfg);
-              const result = await collectDeepInsights(salt);
+              // Daemon never prompts: text extracts only with an explicit ack.
+              const acked = (cfg.ackConsentVersion ?? 1) >= CONSENT_VERSION;
+              const result = await collectDeepInsights(salt, { textExtracts: acked });
               if (result.status === "error") {
                 void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
                 return;
@@ -85,6 +88,14 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
               if (sent.ok) {
                 await markSent();
                 log("insights synced");
+                if (acked) {
+                  try {
+                    const transcripts = await collectTranscripts();
+                    if (transcripts) await postTranscripts(token, machineId, transcripts);
+                  } catch {
+                    /* best-effort */
+                  }
+                }
               }
             } catch {
               /* never break the daemon */

@@ -24,6 +24,9 @@ const schema = z.object({
   // Server-owned PAT for public GitHub-stats reads (optional) — the fallback
   // for users whose OAuth token isn't stored yet (pre-#48 logins) or revoked.
   GITHUB_TOKEN: z.string().optional(),
+  // Claude API key for story generation (#50). Absent → story features dormant.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  STORY_MODEL: z.string().optional(),
   // Discord OAuth app credentials (optional — org verification is disabled
   // when unset). Per-org guild IDs come from their own env vars (NS_GUILD_ID).
   DISCORD_CLIENT_ID: z.string().optional(),
@@ -48,6 +51,8 @@ export interface Config {
   githubClientId?: string;
   githubClientSecret?: string;
   githubToken?: string;
+  anthropicApiKey?: string;
+  storyModel?: string;
   discordClientId?: string;
   discordClientSecret?: string;
   publicBaseUrl: string;
@@ -68,6 +73,8 @@ export function parseConfig(env: NodeJS.ProcessEnv): Config {
     githubClientId: p.GITHUB_CLIENT_ID && p.GITHUB_CLIENT_ID.length > 0 ? p.GITHUB_CLIENT_ID : undefined,
     githubClientSecret: p.GITHUB_CLIENT_SECRET && p.GITHUB_CLIENT_SECRET.length > 0 ? p.GITHUB_CLIENT_SECRET : undefined,
     githubToken: p.GITHUB_TOKEN && p.GITHUB_TOKEN.length > 0 ? p.GITHUB_TOKEN : undefined,
+    anthropicApiKey: p.ANTHROPIC_API_KEY && p.ANTHROPIC_API_KEY.length > 0 ? p.ANTHROPIC_API_KEY : undefined,
+    storyModel: p.STORY_MODEL && p.STORY_MODEL.length > 0 ? p.STORY_MODEL : undefined,
     discordClientId: p.DISCORD_CLIENT_ID && p.DISCORD_CLIENT_ID.length > 0 ? p.DISCORD_CLIENT_ID : undefined,
     discordClientSecret: p.DISCORD_CLIENT_SECRET && p.DISCORD_CLIENT_SECRET.length > 0 ? p.DISCORD_CLIENT_SECRET : undefined,
     publicBaseUrl: p.PUBLIC_BASE_URL,

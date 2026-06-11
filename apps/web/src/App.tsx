@@ -16,6 +16,7 @@ import { HowItWorks } from "./components/HowItWorks";
 import { Legal } from "./components/Legal";
 import { Sponsor } from "./components/Sponsor/Sponsor";
 import { ProfilePage } from "./components/Profile/ProfilePage";
+import { StoryPage } from "./components/Profile/StoryPage";
 import { API_HTTP } from "./api";
 import type { Entry } from "./types";
 
@@ -39,6 +40,11 @@ const PROFILE_LOGIN: string | null = (() => {
   const bare = path.match(/^\/([A-Za-z0-9-]{1,39})$/);
   if (bare && !RESERVED_TOP_LEVEL.has(bare[1]!)) return bare[1]!;
   return null;
+})();
+// The story page: /<login>/story (static suffix — safe vs vercel.json #62).
+const STORY_LOGIN: string | null = (() => {
+  const m = path.match(/^\/([A-Za-z0-9-]{1,39})\/story$/);
+  return m && !RESERVED_TOP_LEVEL.has(m[1]!) ? m[1]! : null;
 })();
 if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
@@ -183,7 +189,9 @@ export default function App() {
           </div>
         )}
         <main className="main">
-          {PROFILE_LOGIN ? (
+          {STORY_LOGIN ? (
+            <StoryPage login={STORY_LOGIN} />
+          ) : PROFILE_LOGIN ? (
             <ProfilePage login={PROFILE_LOGIN} />
           ) : isHow ? (
             <HowItWorks />
@@ -228,7 +236,7 @@ export default function App() {
             </>
           )}
         </main>
-        {!isHow && !isLegal && !PROFILE_LOGIN && <Sponsor />}
+        {!isHow && !isLegal && !PROFILE_LOGIN && !STORY_LOGIN && <Sponsor />}
         <footer>
           <div className="fleft">
             <div className="fbrand">

@@ -64,11 +64,13 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
     }
   };
 
+  const isPublic = profile.owner.visibility === "public";
   return (
     <div className="owner-controls">
       <div className="arch-transparency">
         <div className="trans-status mono">
-          Deep insights on &middot; {profile.owner.machineCount} machine
+          Profile: <b className={isPublic ? "vis-public" : "vis-private"}>{isPublic ? "Public" : "Private"}</b>
+          {" "}&middot; deep insights on &middot; {profile.owner.machineCount} machine
           {profile.owner.machineCount === 1 ? "" : "s"}
         </div>
 
@@ -83,9 +85,11 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
 
         <div className="trans-actions">
           <span className="trans-vis mono">
-            {profile.owner.visibility === "public" ? "Visible to everyone" : "Hidden from others"} &middot;{" "}
+            {isPublic
+              ? "Anyone can see this profile and its stats."
+              : "Only you can see these stats. You stay on the leaderboard."}{" "}
             <button className="linklike" onClick={toggleVisibility} disabled={visibilityBusy}>
-              {visibilityBusy ? "updating" : `make ${profile.owner.visibility === "public" ? "private" : "public"}`}
+              {visibilityBusy ? "updating" : `make ${isPublic ? "private" : "public"}`}
             </button>
           </span>
           {visibilityError ? <span className="arch-error">{visibilityError}</span> : null}
@@ -111,7 +115,7 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
             </span>
           ) : (
             <button className="linklike purge-start" onClick={purge}>
-              Purge and go private
+              Purge all my insights data
             </button>
           )}
           {purgeError ? <span className="arch-error"> · {purgeError}</span> : null}

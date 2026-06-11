@@ -49,9 +49,13 @@ export interface ProfileInsights {
   // Craft Score (the headline). Null on aggregate-only insights (no deep rows)
   // or against an older server — the UI falls back to archetype + axes then.
   craftScore: number | null;
+  // Forge tier: Apprentice <40 · Journeyman 40-59 · Artisan 60-79 · Mastersmith 80+.
+  craftTier?: { key: "apprentice" | "journeyman" | "artisan" | "mastersmith"; name: string } | null;
   pillars: ProfilePillars | null;
   trustTier: 0 | 1 | null;
   provisional: boolean;
+  // Owner-curated deck order (≤4 card keys). Absent on older servers.
+  pinnedCards?: string[];
   // Sessions behind these scores. Absent on older servers.
   sampleSessions?: number;
   // Local-git verified AND public GitHub commits in the same window.

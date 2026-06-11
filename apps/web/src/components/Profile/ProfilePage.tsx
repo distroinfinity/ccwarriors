@@ -48,7 +48,13 @@ export function ProfilePage({ login }: { login: string }) {
           <GithubPanel profile={p} />
         </div>
       </div>
-      <InsightCards cards={cards} login={p.login} />
+      <InsightCards
+        cards={cards}
+        login={p.login}
+        isOwner={!!p.owner}
+        pinnedCards={!p.insights.locked ? (p.insights.pinnedCards ?? []) : []}
+        onPinsChanged={refetch}
+      />
       <RhythmPanel profile={p} />
       <OwnerControls profile={p} onConsentChanged={refetch} />
     </div>

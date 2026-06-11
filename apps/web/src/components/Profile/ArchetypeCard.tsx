@@ -72,12 +72,16 @@ function CraftScoreHero({
   archetype: string;
 }) {
   const tier1 = insights.trustTier === 1;
+  const tier = insights.craftTier;
   return (
     <div className="craft">
       <div className="craft-top">
         <div className="craft-num-wrap">
           <span className="craft-label mono">CRAFT SCORE</span>
-          <span className="craft-score mono">{Math.round(insights.craftScore)}</span>
+          <span className={`craft-score mono${tier ? ` tier-${tier.key}` : ""}`}>
+            {Math.round(insights.craftScore)}
+          </span>
+          {tier && <span className={`craft-tier px tier-${tier.key}`}>{tier.name.toUpperCase()}</span>}
         </div>
         <div className="craft-badges">
           <span className={`trust-badge mono${tier1 ? " t1" : " t0"}`}>
@@ -151,10 +155,10 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
   return (
     <div className="arch-locked pending">
       <span className="arch-pulse" aria-hidden="true" />
-      <p className="arch-pending-h">Forging your archetype…</p>
+      <p className="arch-pending-h">Building your profile…</p>
       <p>
-        Your next sync forges this from local session counts. Autosync usually lands it within minutes,
-        and this page updates itself the moment it does. To see it in seconds, run:
+        Your first sync fills this in from your local sessions — usually within minutes, and this page
+        updates itself the moment it lands. To see it in seconds, run:
       </p>
       <div className="arch-skip">
         <code className="mono">ccwarriors insights on</code>
@@ -177,10 +181,13 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
 const DEEP_UPLOADS: Array<{ k: string; v: string }> = [
   { k: "Per-session counts", v: "prompts, tool calls, plan-mode turns" },
   { k: "Timing summaries", v: "session length, active hours, gaps" },
-  { k: "Model names", v: "which models you ran, nothing about the chats" },
+  { k: "Model names", v: "which models you ran" },
   { k: "Hashed git outcomes", v: "commits, lines, tests as salted hashes" },
+  { k: "Your top prompts", v: "the short prompts you repeat most, secrets stripped" },
+  { k: "Redacted transcripts", v: "power your story page — analyzed once, then deleted" },
 ];
-const DEEP_NEVER = "Never your prompts, code, file paths, or repo names.";
+const DEEP_NEVER =
+  "Never your code, file contents, file paths, or repo names. Secrets are stripped on your machine before anything leaves it.";
 
 export function DisclosureList() {
   return (

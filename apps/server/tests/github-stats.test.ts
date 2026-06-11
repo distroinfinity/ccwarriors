@@ -36,7 +36,7 @@ function gqlUser(over: Record<string, unknown> = {}): Record<string, unknown> {
         ],
       },
     },
-    windowContrib: { totalCommitContributions: 60 },
+    windowContrib: { totalCommitContributions: 60, totalPullRequestContributions: 14 },
     ...over,
   };
 }
@@ -75,6 +75,7 @@ describe("fetchGithubStats", () => {
     expect(s.reviewsLastYear).toBe(55);
     expect(s.contributionsLastYear).toBe(1200);
     expect(s.windowCommits).toBe(60);
+    expect(s.windowPrs).toBe(14);
     expect(s.currentStreakDays).toBe(3); // 8th, 9th, 10th
     expect(s.longestStreakDays).toBe(3);
   });
