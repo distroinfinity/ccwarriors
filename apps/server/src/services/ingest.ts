@@ -57,6 +57,7 @@ export type IngestResult =
       rankAllTime: number | null;
       insightsRequested: boolean;
       insightsMode: string;
+      consentVersion: number;
     }
   | { ok: false; error: "unauthorized" | "implausible" | "rate_limited" };
 
@@ -494,5 +495,8 @@ async function finalize(
     // source of truth the client reads going forward.
     insightsRequested: user.insightsMode === "deep",
     insightsMode: user.insightsMode,
+    // The deep-disclosure version this user acknowledged (web GO ALL-IN or CLI
+    // prompt). The CLI adopts it so one disclosed yes anywhere unlocks text.
+    consentVersion: user.consentVersion ?? 1,
   };
 }

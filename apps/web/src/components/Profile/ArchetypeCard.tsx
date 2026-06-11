@@ -213,11 +213,13 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
     setBusy(true);
     setError(null);
     try {
-      const r = await fetch(`${API_HTTP}/insights/mode`, {
+      // One call: deep on + the v2 disclosure acknowledged (the list above IS
+      // the full v2 disclosure). The CLI adopts this ack on its next sync.
+      const r = await fetch(`${API_HTTP}/insights/consent`, {
         method: "POST",
         credentials: "include",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "deep" }),
+        body: JSON.stringify({ consent: true, consentVersion: 2 }),
       });
       if (!r.ok) {
         setError("Could not switch on Deep mode. Try again after refreshing your session.");

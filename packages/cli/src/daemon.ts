@@ -3,7 +3,7 @@
 import { existsSync, watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION } from "./config.js";
+import { loadConfig, saveConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./core.js";
 import { collectTranscripts } from "./transcripts.js";
@@ -75,8 +75,14 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
           void (async () => {
             try {
               if (!(await shouldSend())) return;
+              // Adopt a consent the user gave on the web (GO ALL-IN shows the
+              // full disclosure) — the daemon itself never prompts.
+              const serverV = res.data?.consentVersion;
+              if (typeof serverV === "number" && serverV >= CONSENT_VERSION && (cfg.ackConsentVersion ?? 1) < CONSENT_VERSION) {
+                cfg.ackConsentVersion = serverV;
+                await saveConfig(cfg);
+              }
               const salt = await ensureInsightsSalt(cfg);
-              // Daemon never prompts: text extracts only with an explicit ack.
               const acked = (cfg.ackConsentVersion ?? 1) >= CONSENT_VERSION;
               const result = await collectDeepInsights(salt, { textExtracts: acked });
               if (result.status === "error") {

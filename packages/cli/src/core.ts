@@ -29,6 +29,9 @@ export interface IngestResponse {
   rankAllTime?: number | null;
   insightsRequested?: boolean;
   insightsMode?: "off" | "deep";
+  // Deep-disclosure version the user acknowledged (web or CLI). The client
+  // adopts it: one disclosed yes anywhere unlocks text extracts everywhere.
+  consentVersion?: number;
 }
 
 // v3 payload: raw per-tool/day/model token counts. The server prices and

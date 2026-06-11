@@ -79,8 +79,9 @@ async function maybePushInsights(token: string, machineId: string, data: import(
   if (!deepWanted) return;
   try {
     if (!(await shouldSend())) return;
-    const config = await loadConfig();
+    let config = await loadConfig();
     if (!config) return;
+    config = await adoptServerConsent(config, data.consentVersion);
     const salt = await ensureInsightsSalt(config);
     const acked = consentAcked(config);
     const result = await collectDeepInsights(salt, { textExtracts: acked });
@@ -201,9 +202,10 @@ async function cmdSync(): Promise<void> {
   console.log();
 
   // Existing deep users who predate the v2 disclosure: one-line nudge, never a
-  // mid-sync prompt. `ccwarriors insights on` is where they review and decide.
+  // mid-sync prompt. `ccwarriors insights on` (or the web GO ALL-IN, which the
+  // next sync adopts automatically) is where they review and decide.
   const deepOn = data.insightsMode === "deep" || (data.insightsMode === undefined && data.insightsRequested === true);
-  if (deepOn && !consentAcked(config)) {
+  if (deepOn && !consentAcked(config) && (data.consentVersion ?? 1) < CONSENT_VERSION) {
     console.log(yellow("   Deep mode grew richer (go-to prompts + your story). Run `ccwarriors insights on` to review and unlock it."));
   }
 
@@ -260,6 +262,18 @@ async function cmdWatch(args: string[]): Promise<void> {
 /** Has this user acknowledged the current deep-mode disclosure? */
 function consentAcked(config: Config): boolean {
   return (config.ackConsentVersion ?? 1) >= CONSENT_VERSION;
+}
+
+/**
+ * Adopt a consent acknowledged elsewhere (the web GO ALL-IN button shows the
+ * same full disclosure). The server tells us via the ingest response; we
+ * persist it so this machine's syncs include text extracts from now on.
+ */
+export async function adoptServerConsent(config: Config, serverVersion: number | undefined): Promise<Config> {
+  if (typeof serverVersion !== "number" || serverVersion < CONSENT_VERSION || consentAcked(config)) return config;
+  const next = { ...config, ackConsentVersion: serverVersion };
+  await saveConfig(next);
+  return next;
 }
 
 const DEEP_V2_DISCLOSURE = `
