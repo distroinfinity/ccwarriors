@@ -1,0 +1,28 @@
+name: Prune deployment records
+
+on:
+  schedule:
+    - cron: "0 5 * * 1" # Mondays 05:00 UTC
+  workflow_dispatch:
+
+permissions:
+  deployments: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete all but the newest deployment record per environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # API returns newest first; awk keeps the first id seen per environment
+          gh api "repos/$REPO/deployments" --paginate \
+            --jq '.[] | [.id, .environment] | @tsv' |
+            awk -F'\t' 'seen[$2]++ { print $1 }' |
+            while read -r id; do
+              # records must be marked inactive before GitHub allows deletion
+              gh api -X POST "repos/$REPO/deployments/$id/statuses" -f state=inactive --silent || true
+              gh api -X DELETE "repos/$REPO/deployments/$id" --silent && echo "pruned $id"
+            done
