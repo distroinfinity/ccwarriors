@@ -100,7 +100,11 @@ machine id to daemon telemetry (separate follow-up).
 
 ### 1. ccusage version fallback — `packages/cli/src/ccusage.ts` (core)
 
-- Keep `CCUSAGE_PKG = "ccusage@20"` as the **primary** spec.
+- Keep `CCUSAGE_PKG = "ccusage@20"` as the **primary** spec, but read it from
+  `process.env.CCWARRIORS_CCUSAGE_PKG` first — an ops escape-hatch and the lever
+  the battle-test uses to force the known-broken `20.0.10` deterministically
+  (upstream's `latest` is now `20.0.11`, which is fixed, so the crash no longer
+  reproduces on its own).
 - Add `CCUSAGE_FALLBACK_PKG = "ccusage@20.0.6"` — last-known-good pin whose
   native binary links `/usr/lib/libiconv.2.dylib`. (Bump occasionally as upstream
   ships fixed versions; see follow-ups.)
@@ -261,10 +265,11 @@ Gate: `pnpm -r test && pnpm -r typecheck && pnpm -r build` (`pnpm verify`).
 
 ## Follow-ups (out of scope for this change)
 
-- File an upstream issue on `ryoppippi/ccusage`: the published
-  `@ccusage/ccusage-darwin-arm64@20.0.10` prebuilt links a dead
-  `/nix/store/…libiconv-109.100.2/lib/libiconv.2.dylib` rpath and crashes at
-  load on any machine without that exact Nix store path.
+- ~~File an upstream issue on `ryoppippi/ccusage`~~ — **not needed**: verified
+  that `@ccusage/ccusage-darwin-arm64@20.0.11` (current `latest`) already links
+  `/usr/lib/libiconv.2.dylib` and is fixed; only `20.0.10` shipped the dead
+  `/nix/store/…libiconv` rpath. This change is therefore defense-in-depth for
+  the *next* bad patch, not a workaround for an open upstream bug.
 - Revisit `CCUSAGE_FALLBACK_PKG` once upstream ships a fixed 20.x; consider
   bumping the pin or switching the fallback to "latest known-good" tracking.
 - Add a `machineId` property to daemon telemetry so failure counts can be

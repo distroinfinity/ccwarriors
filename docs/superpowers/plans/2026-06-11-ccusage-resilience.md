@@ -203,11 +203,13 @@ with:
 ```ts
 // Pinned major: we own the collection path. ccusage ships breaking output
 // changes in majors; bumping this requires a CLI release (self-update ships it).
-const CCUSAGE_PKG = "ccusage@20";
+// Overridable via env so ops can pin in an emergency and the battle-test can
+// force a known-broken version (e.g. CCWARRIORS_CCUSAGE_PKG=ccusage@20.0.10).
+const CCUSAGE_PKG = process.env["CCWARRIORS_CCUSAGE_PKG"] ?? "ccusage@20";
 // Known-good fallback. Some published ccusage patches ship a broken native
 // prebuilt — e.g. 20.0.10 darwin-arm64 links a dead /nix/store libiconv and
-// crashes at load. When the latest crashes we degrade to this pinned build
-// (its native binary links /usr/lib/libiconv). Bump as upstream ships fixes.
+// crashes at load (fixed upstream in 20.0.11). When the primary is broken we
+// degrade to this pinned build (its native binary links /usr/lib/libiconv).
 const CCUSAGE_FALLBACK_PKG = "ccusage@20.0.6";
 
 // Which spec we invoke. Flips to the fallback for the rest of the process the
@@ -909,31 +911,31 @@ git commit -m "feat(cli): recover the daemon from a 401 instead of backing off f
 Run: `pnpm verify`
 Expected: `pnpm -r test && pnpm -r typecheck && pnpm -r build` all green across server + cli + web.
 
-- [ ] **Step 2: Confirm this machine still has the broken ccusage to test against**
+- [ ] **Step 2: Confirm the broken `20.0.10` still reproduces the dyld crash on this machine**
 
-Run:
+Upstream `latest` is now `20.0.11` (fixed), so `npx ccusage@20` resolves to a healthy binary; we reproduce the failure deterministically by pinning the broken version. Run:
 ```bash
-otool -L "$(find /Users/manu/.npm/_npx/*/node_modules/@ccusage/ccusage-darwin-arm64/bin/ccusage 2>/dev/null | xargs -I{} sh -c 'otool -L "{}" 2>/dev/null | grep -ql nix && echo {}' | head -1)" | grep -i iconv
-npx --yes ccusage@20 --version 2>&1 | head -2
+npx --yes ccusage@20.0.10 --version 2>&1 | head -2
 ```
-Expected: the nix-linked binary is still present and `npx ccusage@20` still crashes with the dyld error. (If upstream already fixed 20.x and it no longer crashes, the live failure path can't be reproduced — note that and rely on the unit tests; record it in the PR.)
+Expected: still crashes with `dyld: Library not loaded: /nix/store/…libiconv`. (If even `20.0.10` no longer crashes here — e.g. cache cleared and re-fetched differently — note it and rely on the unit tests, which simulate the exact error shape.)
 
-- [ ] **Step 3: Battle-test the built daemon against the REAL broken ccusage**
+- [ ] **Step 3: Battle-test the built daemon forcing the broken primary**
 
-This runs the freshly-built daemon in the foreground for ~80s using the real enlisted config. `CCWARRIORS_NO_UPDATE=1` stops it self-updating away; telemetry stays ON so the real `ccusage_fallback` event is exercised. The existing launchd daemon keeps running — harmless (server dedupes by machineId).
+Runs the freshly-built daemon in the foreground for ~80s using the real enlisted config, with the primary spec forced to the broken `ccusage@20.0.10` via `CCWARRIORS_CCUSAGE_PKG`. This proves the end-to-end fallback path (broken primary → degrade to `20.0.6` → real sync). `CCWARRIORS_NO_UPDATE=1` stops it self-updating away; telemetry stays ON so the real `ccusage_fallback` event is exercised. The existing launchd daemon keeps running — harmless (server dedupes by machineId).
 
 Run:
 ```bash
-CCWARRIORS_NO_UPDATE=1 node packages/cli/dist/cli.js daemon 1 > /tmp/ccw-battletest.log 2>&1 &
+CCWARRIORS_CCUSAGE_PKG=ccusage@20.0.10 CCWARRIORS_NO_UPDATE=1 \
+  node packages/cli/dist/cli.js daemon 1 > /tmp/ccw-battletest.log 2>&1 &
 BT=$!; sleep 80; kill "$BT" 2>/dev/null || true
 echo "=== fallback / sync result ==="
-grep -E "synced \(|sync failed|sync skipped" /tmp/ccw-battletest.log | head
+grep -E "synced \(|sync failed|sync skipped|fallback" /tmp/ccw-battletest.log | head
 echo "=== flap check: count of dyld/sync-failed lines (should be small, not growing) ==="
 grep -c -E "dyld|sync failed" /tmp/ccw-battletest.log
 ```
 Expected:
-- At least one `synced (startup) — … · rank #…` line — proving the fallback to `ccusage@20.0.6` produced real data and ingest succeeded.
-- The dyld/sync-failed count is small (the first primary attempt may log once before the fallback engages) and does NOT keep growing for the whole 80s — proving the flap is gone.
+- At least one `synced (startup) — … · rank #…` line — proving the forced-broken primary fell back to `ccusage@20.0.6`, produced real data, and ingest succeeded.
+- The dyld/sync-failed count is small (the first primary attempt logs once before the fallback engages) and does NOT keep growing for the whole 80s — proving the flap is gone.
 
 - [ ] **Step 4: Confirm the fallback telemetry landed**
 
@@ -1027,9 +1029,14 @@ self-update rollback path has 0 events because its telemetry never flushed befor
 single `token expired` line from /tmp/ccw-401test.log>
 ```
 
+## Notes
+- Upstream `ccusage@20.0.11` (current `latest`) already links `/usr/lib/libiconv` and is
+  fixed — only `20.0.10` was broken. So this is defense-in-depth for the next bad patch, not
+  a workaround for an open bug. No upstream issue filed.
+- Primary spec is overridable via `CCWARRIORS_CCUSAGE_PKG` (ops escape-hatch; the battle-test
+  uses it to force `20.0.10`).
+
 ## Follow-up
-- Upstream issue to file on `ryoppippi/ccusage`: `@ccusage/ccusage-darwin-arm64@20.0.10`
-  prebuilt links a dead nix libiconv rpath.
 - Add `machineId` to daemon telemetry (today daemon events are anonymous → 1 person_id).
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
