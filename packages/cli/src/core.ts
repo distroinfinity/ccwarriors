@@ -29,6 +29,9 @@ export interface IngestResponse {
   rankAllTime?: number | null;
   insightsRequested?: boolean;
   insightsMode?: "off" | "deep";
+  // Deep-disclosure version the user acknowledged (web or CLI). The client
+  // adopts it: one disclosed yes anywhere unlocks text extracts everywhere.
+  consentVersion?: number;
 }
 
 // v3 payload: raw per-tool/day/model token counts. The server prices and
@@ -111,12 +114,31 @@ export async function getInsightsMode(token: string): Promise<{ mode: "off" | "d
   }
 }
 
-export async function setInsightsConsent(token: string, consent: boolean): Promise<{ status: number; ok: boolean }> {
+export async function setInsightsConsent(
+  token: string,
+  consent: boolean,
+  consentVersion?: number,
+): Promise<{ status: number; ok: boolean }> {
   const res = await fetch(`${API_BASE}/insights/consent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ consent }),
+    body: JSON.stringify({ consent, ...(consentVersion !== undefined ? { consentVersion } : {}) }),
     signal: AbortSignal.timeout(15_000),
+  });
+  return { status: res.status, ok: res.ok };
+}
+
+/** Upload redacted transcripts for story generation (consent v2 only). */
+export async function postTranscripts(
+  token: string,
+  machineId: string,
+  payload: unknown,
+): Promise<{ status: number; ok: boolean }> {
+  const res = await fetch(`${API_BASE}/insights/transcripts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ machineId, ...(payload as Record<string, unknown>) }),
+    signal: AbortSignal.timeout(60_000),
   });
   return { status: res.status, ok: res.ok };
 }

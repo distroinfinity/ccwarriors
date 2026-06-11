@@ -16,6 +16,8 @@ import { sponsorsRoute } from "./routes/sponsors.js";
 import { insightsRoute } from "./routes/insights.js";
 import { profileRoute } from "./routes/profile.js";
 import { ogRoute } from "./routes/og.js";
+import { badgeRoute } from "./routes/badge.js";
+import type { StoryGenerate } from "./lib/story.js";
 
 export interface AppDeps {
   db: DB;
@@ -37,6 +39,11 @@ export interface AppDeps {
     usdInr?: () => number;
   };
   discord?: DiscordCfg;
+  // Server-owned PAT for public GitHub-stats reads (fallback when a user's
+  // OAuth token isn't stored). Absent → user tokens only.
+  githubToken?: string;
+  // Story generation (#50): absent → transcripts stored dormant.
+  storyGenerate?: StoryGenerate;
 }
 
 export function createApp(deps?: AppDeps) {
@@ -95,14 +102,27 @@ export function createApp(deps?: AppDeps) {
     if (deps.insightsStore) {
       app.route(
         "/insights",
-        insightsRoute({ db: deps.db, insightsStore: deps.insightsStore, store: deps.store, sessionSecret: deps.auth?.clientSecret }),
+        insightsRoute({
+          db: deps.db,
+          insightsStore: deps.insightsStore,
+          store: deps.store,
+          sessionSecret: deps.auth?.clientSecret,
+          storyGenerate: deps.storyGenerate,
+        }),
       );
       app.route(
         "/profile",
-        profileRoute({ db: deps.db, store: deps.store, insightsStore: deps.insightsStore, sessionSecret: deps.auth?.clientSecret }),
+        profileRoute({
+          db: deps.db,
+          store: deps.store,
+          insightsStore: deps.insightsStore,
+          sessionSecret: deps.auth?.clientSecret,
+          githubToken: deps.githubToken ?? null,
+        }),
       );
     }
     app.route("/og", ogRoute(deps.db, deps.store, deps.auth?.webBaseUrl ?? "https://ccwarriors.xyz"));
+    app.route("/badge", badgeRoute(deps.store));
     if (deps.auth) {
       app.route("/", authRoute(deps.db, deps.auth));
     }

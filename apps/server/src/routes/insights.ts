@@ -9,21 +9,27 @@ import {
   users,
   userInsights,
   userDeepSessions,
+  storySources,
+  userStories,
   type InsightsPayload,
   type InsightsDeepPayload,
   type User,
 } from "../db/schema.js";
 import { hashToken } from "../lib/token.js";
+import { maybeGenerateStory } from "../lib/story-service.js";
+import type { StoryGenerate } from "../lib/story.js";
 import { readSessionToken } from "../lib/session.js";
 import type { InsightsStore } from "../lib/insights-store.js";
 import {
   archetypeOf,
   calibratedAxes,
   percentileAxes,
+  percentilePool,
   MIN_SESSIONS,
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
 import { deriveAggregate } from "../lib/deep.js";
+import { CARD_KEYS } from "../lib/insight-cards.js";
 import { computeCraftForUser, loadDeepSessions, loadUsageSignal } from "../lib/craft-score-service.js";
 import {
   checkOutcomeImplausibility,
@@ -76,6 +82,7 @@ const gitOutcomeSchema = z.object({
   // Optional commit-timing histograms (old clients omit them).
   commitHours: z.array(count).length(24).optional(),
   commitDows: z.array(count).length(7).optional(),
+  commitKinds: z.object({ fixes: count, features: count, refactors: count, other: count }).optional(),
 });
 
 const sessionRecordSchema = z.object({
@@ -99,6 +106,11 @@ const sessionRecordSchema = z.object({
     subSecondFraction: z.number().min(0).max(1),
   }),
   git: gitOutcomeSchema.nullable(),
+  // New deep signals (optional — old clients omit).
+  thankYous: count.optional(),
+  wordTotal: count.optional(),
+  recovery: z.object({ loops: count, medianBreakoutMs: count }).optional(),
+  extensions: z.record(z.string().max(16), count).optional(),
 });
 
 const MAX_DEEP_SESSIONS = 2000;
@@ -106,6 +118,12 @@ const deepBodySchema = z.object({
   machineId: z.string().regex(/^[a-f0-9]{8,64}$/i),
   windowDays: z.number().int().min(1).max(60),
   sessions: z.array(sessionRecordSchema).max(MAX_DEEP_SESSIONS),
+  maxConcurrentSessions: z.number().int().min(0).max(10_000).optional(),
+  // The only TEXT field — redacted client-side, accepted only under consent v2.
+  topPrompt: z
+    .object({ text: z.string().min(1).max(80), count: count, sessions: count })
+    .nullable()
+    .optional(),
 });
 
 export interface InsightsDeps {
@@ -115,6 +133,9 @@ export interface InsightsDeps {
   // boards too (optional — the DB flaggedAt is the authority either way).
   store?: LeaderboardStore;
   sessionSecret?: string; // GitHub client secret — same signer the session uses
+  // Story generation (#50). Absent (no ANTHROPIC_API_KEY) → transcripts are
+  // stored dormant; generation picks up when the key ships.
+  storyGenerate?: StoryGenerate;
 }
 
 async function userFromBearer(db: DB, c: Context): Promise<User | null> {
@@ -125,14 +146,17 @@ async function userFromBearer(db: DB, c: Context): Promise<User | null> {
   return user ?? null;
 }
 
-/** Recompute and persist the archetype after any insights change. */
+/** Recompute and persist the archetype after any insights change. Derives
+    from session #1 — MIN_SESSIONS only decides percentile-pool membership. */
 async function refreshArchetype(db: DB, store: InsightsStore, userId: string): Promise<string | null> {
   const merged = store.merged(userId);
   let archetype: string | null = null;
-  if (merged && merged.sessions >= MIN_SESSIONS) {
-    const pop = store.population();
+  if (merged && merged.sessions > 0) {
+    const pop = percentilePool(store.population());
     const scores =
-      pop.length >= PERCENTILE_MIN_POPULATION ? percentileAxes(merged, pop) : calibratedAxes(merged);
+      pop.length >= PERCENTILE_MIN_POPULATION && merged.sessions >= MIN_SESSIONS
+        ? percentileAxes(merged, pop)
+        : calibratedAxes(merged);
     archetype = archetypeOf(scores);
   }
   await db.update(users).set({ archetype }).where(eq(users.id, userId));
@@ -184,13 +208,23 @@ export function insightsRoute(deps: InsightsDeps) {
 
   app.post(
     "/consent",
-    zValidator("json", z.object({ consent: z.boolean().optional(), visibility: z.enum(["public", "private"]).optional() })),
+    zValidator(
+      "json",
+      z.object({
+        consent: z.boolean().optional(),
+        visibility: z.enum(["public", "private"]).optional(),
+        // Deep-disclosure version the CLI user acknowledged (v2 = text extracts
+        // + transcripts). Gates topPrompt/transcript acceptance server-side.
+        consentVersion: z.number().int().min(1).max(100).optional(),
+      }),
+    ),
     async (c) => {
       const user = await resolveUser(c);
       if (!user) return c.json({ error: "unauthorized" }, 401);
-      const { consent, visibility } = c.req.valid("json");
+      const { consent, visibility, consentVersion } = c.req.valid("json");
       const set: Partial<typeof users.$inferInsert> = {};
       if (visibility !== undefined) set.insightsVisibility = visibility;
+      if (consentVersion !== undefined) set.consentVersion = consentVersion;
       // Keep the boolean and the binary mode consistent: consent=true → 'deep',
       // consent=false → 'off' (mode !== 'off' is the source of truth).
       if (consent !== undefined) {
@@ -205,6 +239,8 @@ export function insightsRoute(deps: InsightsDeps) {
         // the two self-heals at next boot (warm-up reads only surviving DB rows).
         await deps.db.delete(userInsights).where(eq(userInsights.userId, user.id));
         await deps.db.delete(userDeepSessions).where(eq(userDeepSessions.userId, user.id));
+        await deps.db.delete(storySources).where(eq(storySources.userId, user.id));
+        await deps.db.delete(userStories).where(eq(userStories.userId, user.id));
         await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
       }
@@ -212,6 +248,69 @@ export function insightsRoute(deps: InsightsDeps) {
       // Echo: request values ARE the written values (no server-side normalization),
       // so falling back to the pre-update row is accurate for fields not in this request.
       return c.json({ ok: true, consent: consent ?? user.insightsConsent, visibility: visibility ?? user.insightsVisibility });
+    },
+  );
+
+  // Story transcripts (consent v2 only): redacted prompts + tool-call names.
+  // Stored transiently in story_sources; PURGED after a story is generated.
+  const transcriptSessionSchema = z.object({
+    startedDay: z.string().max(10).nullable(),
+    durationMinutes: z.number().min(0).max(7 * 24 * 60),
+    model: z.string().max(200).nullable(),
+    interrupts: count,
+    prompts: z.array(z.string().max(2000)).max(60),
+    toolCounts: z.record(z.string().max(64), count),
+  });
+  app.post(
+    "/transcripts",
+    zValidator(
+      "json",
+      z.object({
+        machineId: z.string().regex(/^[a-f0-9]{8,64}$/i),
+        windowDays: z.number().int().min(1).max(60),
+        sessions: z.array(transcriptSessionSchema).min(1).max(30),
+      }),
+    ),
+    async (c) => {
+      const user = await userFromBearer(deps.db, c);
+      if (!user) return c.json({ error: "unauthorized" }, 401);
+      if (user.insightsMode !== "deep") {
+        captureEvent("transcripts_rejected", user.githubLogin, { reason: "mode_off" });
+        return c.json({ error: "mode_off" }, 403);
+      }
+      // Text only ever crosses with the v2 acknowledgment — no exceptions.
+      if ((user.consentVersion ?? 1) < 2) {
+        captureEvent("transcripts_rejected", user.githubLogin, { reason: "consent_v2_required" });
+        return c.json({ error: "consent_v2_required" }, 403);
+      }
+
+      const { windowDays, sessions } = c.req.valid("json");
+      const payload = { windowDays, sessions };
+      await deps.db
+        .insert(storySources)
+        .values({ userId: user.id, payload, capturedAt: new Date() })
+        .onConflictDoUpdate({ target: storySources.userId, set: { payload, capturedAt: new Date() } });
+
+      if (deps.storyGenerate) {
+        // Fire-and-forget: the upload never waits on (or fails with) the LLM.
+        void maybeGenerateStory({ db: deps.db, generate: deps.storyGenerate }, user).catch(() => {});
+      }
+      captureEvent("story_transcripts_received", user.githubLogin, { sessions: sessions.length });
+      return c.json({ ok: true });
+    },
+  );
+
+  // Owner-curated pins: up to 4 card keys lead the profile deck.
+  app.post(
+    "/pins",
+    zValidator("json", z.object({ pins: z.array(z.string().max(40)).max(4) })),
+    async (c) => {
+      const user = await resolveUser(c);
+      if (!user) return c.json({ error: "unauthorized" }, 401);
+      const { pins } = c.req.valid("json");
+      if (pins.some((k) => !CARD_KEYS.has(k))) return c.json({ error: "unknown_card_key" }, 400);
+      await deps.db.update(users).set({ pinnedCards: pins }).where(eq(users.id, user.id));
+      return c.json({ ok: true, pins });
     },
   );
 
@@ -223,16 +322,24 @@ export function insightsRoute(deps: InsightsDeps) {
     if (!user) return c.json({ error: "unauthorized" }, 401);
     if (user.insightsMode !== "deep") return c.json({ error: "mode_off" }, 403);
 
-    const { machineId, windowDays, sessions } = c.req.valid("json");
+    const { machineId, windowDays, sessions, maxConcurrentSessions, topPrompt } = c.req.valid("json");
     const mid = machineId.toLowerCase();
     const deep: InsightsDeepPayload = { windowDays, sessions };
 
+    // topPrompt is TEXT — only accepted from users who acknowledged the v2
+    // disclosure. A stale/forged client sending it earlier is silently dropped.
+    const textAllowed = (user.consentVersion ?? 1) >= 2;
+    const extras = {
+      ...(maxConcurrentSessions !== undefined ? { maxConcurrentSessions } : {}),
+      ...(textAllowed && topPrompt !== undefined ? { topPrompt } : {}),
+    };
+
     await deps.db
       .insert(userDeepSessions)
-      .values({ userId: user.id, machineId: mid, sessions: deep.sessions, windowDays, capturedAt: new Date() })
+      .values({ userId: user.id, machineId: mid, sessions: deep.sessions, windowDays, capturedAt: new Date(), extras })
       .onConflictDoUpdate({
         target: [userDeepSessions.userId, userDeepSessions.machineId],
-        set: { sessions: deep.sessions, windowDays, capturedAt: new Date() },
+        set: { sessions: deep.sessions, windowDays, capturedAt: new Date(), extras },
       });
 
     // Derive the aggregate and persist it through the same path as a direct

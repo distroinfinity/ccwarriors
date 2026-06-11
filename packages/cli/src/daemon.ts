@@ -3,9 +3,10 @@
 import { existsSync, watch } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
+import { loadConfig, saveConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
-import { postIngest, postTelemetry, postInsightsDeep } from "./core.js";
+import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./core.js";
+import { collectTranscripts } from "./transcripts.js";
 import { maybeSelfUpdate, markUpdateSuccess, markBuildAlive } from "./selfupdate.js";
 import { nextBackoffMs, shouldSync } from "./backoff.js";
 import { resolveAuthAction } from "./authstate.js";
@@ -90,14 +91,40 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         if (deepWanted) {
           void (async () => {
             try {
-              if (!(await shouldSend())) return;
+              // Adopt a consent the user gave on the web (GO ALL-IN / "Unlock
+              // my story") BEFORE the throttle — a fresh ack forces this push
+              // so the story forges within minutes, not after the 6h window.
+              const serverV = res.data?.consentVersion;
+              let freshlyAdopted = false;
+              if (typeof serverV === "number" && serverV >= CONSENT_VERSION && (cfg.ackConsentVersion ?? 1) < CONSENT_VERSION) {
+                cfg.ackConsentVersion = serverV;
+                await saveConfig(cfg);
+                freshlyAdopted = true;
+              }
+              if (!freshlyAdopted && !(await shouldSend())) return;
               const salt = await ensureInsightsSalt(cfg);
-              const payload = await collectDeepInsights(salt);
-              if (!payload) return;
-              const sent = await postInsightsDeep(token, machineId, payload);
+              const acked = (cfg.ackConsentVersion ?? 1) >= CONSENT_VERSION;
+              const result = await collectDeepInsights(salt, { textExtracts: acked });
+              if (result.status === "error") {
+                void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
+                return;
+              }
+              if (result.status !== "ok") return;
+              const sent = await postInsightsDeep(token, machineId, result.payload);
               if (sent.ok) {
                 await markSent();
                 log("insights synced");
+                if (acked) {
+                  try {
+                    const transcripts = await collectTranscripts();
+                    if (transcripts) {
+                      const tr = await postTranscripts(token, machineId, transcripts);
+                      if (!tr.ok) void postTelemetry("transcripts_send_failed", { status: tr.status });
+                    }
+                  } catch {
+                    /* best-effort */
+                  }
+                }
               }
             } catch {
               /* never break the daemon */

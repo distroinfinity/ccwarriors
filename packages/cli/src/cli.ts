@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
+import { createInterface } from "node:readline";
 import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
-import { loadConfig, clearConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
+import { loadConfig, saveConfig, clearConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION, type Config } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
-import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsightsDeep, setInsightsConsent, getInsightsMode } from "./core.js";
+import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsightsDeep, postTranscripts, setInsightsConsent, getInsightsMode } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
+import { collectTranscripts } from "./transcripts.js";
 
 declare const __BUILD_ID__: string;
 
@@ -76,16 +78,40 @@ async function maybePushInsights(token: string, machineId: string, data: import(
   const deepWanted = data.insightsMode === "deep" || (data.insightsMode === undefined && data.insightsRequested === true);
   if (!deepWanted) return;
   try {
-    if (!(await shouldSend())) return;
-    const config = await loadConfig();
+    let config = await loadConfig();
     if (!config) return;
+    // Adoption runs BEFORE the throttle: a user who just clicked "Unlock my
+    // story" on the web must not wait out the 6h window — the fresh ack
+    // forces this sync's push so the story forges within minutes.
+    const hadAck = consentAcked(config);
+    config = await adoptServerConsent(config, data.consentVersion);
+    const freshlyAdopted = !hadAck && consentAcked(config);
+    if (!freshlyAdopted && !(await shouldSend())) return;
     const salt = await ensureInsightsSalt(config);
-    const payload = await collectDeepInsights(salt);
-    if (!payload) return;
-    const res = await postInsightsDeep(token, machineId, payload);
+    const acked = consentAcked(config);
+    const result = await collectDeepInsights(salt, { textExtracts: acked });
+    if (result.status === "error") {
+      // Extraction broke — beacon it so a fleet-wide regression is visible,
+      // but never break the sync UX.
+      void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
+      return;
+    }
+    if (result.status !== "ok") return;
+    const res = await postInsightsDeep(token, machineId, result.payload);
     if (res.ok) {
       await markSent();
       if (verbose) console.log(dim("   insights synced — your archetype is forging at ccwarriors.xyz"));
+      if (acked) {
+        try {
+          const transcripts = await collectTranscripts();
+          if (transcripts) {
+            const tr = await postTranscripts(token, machineId, transcripts);
+            if (!tr.ok) void postTelemetry("transcripts_send_failed", { status: tr.status });
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
     }
   } catch {
     // insights must never break a sync
@@ -104,6 +130,11 @@ async function cmdSync(): Promise<void> {
   console.log(dim("Reading ccusage (all your coding agents)…"));
   const { tools, estimates, ccusageVersion } = await readUsage();
 
+  if (Object.keys(tools).length === 0) {
+    // A stale npx-cached ccusage binary fails silently and reads as "no usage"
+    // (seen in the wild: a native binary linking a GC'd nix library).
+    console.log(yellow("  ccusage returned no usage — if this persists, try `npx --yes ccusage@latest` manually; a stale npx cache can break the binary."));
+  }
   console.log(dim(`  found: ${formatEstimates(estimates)} ${dim("(local estimates — the server prices the truth)")}`));
   console.log(dim("Syncing with Claude Warriors…"));
 
@@ -178,6 +209,14 @@ async function cmdSync(): Promise<void> {
   }
   console.log();
 
+  // Existing deep users who predate the v2 disclosure: one-line nudge, never a
+  // mid-sync prompt. `ccwarriors insights on` (or the web GO ALL-IN, which the
+  // next sync adopts automatically) is where they review and decide.
+  const deepOn = data.insightsMode === "deep" || (data.insightsMode === undefined && data.insightsRequested === true);
+  if (deepOn && !consentAcked(config) && (data.consentVersion ?? 1) < CONSENT_VERSION) {
+    console.log(yellow("   Deep mode grew richer (go-to prompts + your story). Run `ccwarriors insights on` to review and unlock it."));
+  }
+
   // After the user has their output: extraction is fs-bound and can take seconds cold.
   await maybePushInsights(config.token, machineId, result.data, true);
 
@@ -228,6 +267,58 @@ async function cmdWatch(args: string[]): Promise<void> {
   }
 }
 
+/** Has this user acknowledged the current deep-mode disclosure? */
+function consentAcked(config: Config): boolean {
+  return (config.ackConsentVersion ?? 1) >= CONSENT_VERSION;
+}
+
+/**
+ * Adopt a consent acknowledged elsewhere (the web GO ALL-IN button shows the
+ * same full disclosure). The server tells us via the ingest response; we
+ * persist it so this machine's syncs include text extracts from now on.
+ */
+export async function adoptServerConsent(config: Config, serverVersion: number | undefined): Promise<Config> {
+  if (typeof serverVersion !== "number" || serverVersion < CONSENT_VERSION || consentAcked(config)) return config;
+  const next = { ...config, ackConsentVersion: serverVersion };
+  await saveConfig(next);
+  return next;
+}
+
+const DEEP_V2_DISCLOSURE = `
+${bold("Deep mode now extracts more (everything is in the docs):")}
+  • per-session counts, timing, model names      ${dim("(as before)")}
+  • hashed git outcomes — commits, lines, tests  ${dim("(as before)")}
+  • your most-repeated short prompts              ${dim("(new — secrets stripped on this machine)")}
+  • redacted transcripts for your story page      ${dim("(new — analyzed once, then deleted)")}
+${dim("Never your code, file contents, file paths, or repo names.")}
+`;
+
+/**
+ * One-time v2 disclosure. Interactive only — the daemon never prompts.
+ * Declining keeps deep on with counts-only (no text ever leaves).
+ */
+async function ensureConsentAck(config: Config): Promise<boolean> {
+  if (consentAcked(config)) return true;
+  if (!process.stdin.isTTY) return false;
+  console.log(DEEP_V2_DISCLOSURE);
+  const answer = await new Promise<string>((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`Continue with the expanded deep mode? ${dim("[Y/n]")} `, (a) => {
+      rl.close();
+      resolve(a.trim().toLowerCase());
+    });
+  });
+  const yes = answer === "" || answer === "y" || answer === "yes";
+  if (yes) {
+    await saveConfig({ ...config, ackConsentVersion: CONSENT_VERSION });
+    void setInsightsConsent(config.token, true, CONSENT_VERSION).catch(() => {});
+    console.log(green("Got it — full deep mode on."));
+  } else {
+    console.log(yellow("Staying on counts-only deep mode. Your prompts and transcripts will not leave this machine."));
+  }
+  return yes;
+}
+
 async function cmdInsights(args: string[]): Promise<void> {
   const sub = args[0];
   if (sub === "--dry-run" || sub === "dry-run") {
@@ -236,8 +327,15 @@ async function cmdInsights(args: string[]): Promise<void> {
     // dry-run works without auth (the salt only affects opaque hashes anyway).
     const config = await loadConfig();
     const salt = config ? await ensureInsightsSalt(config) : randomBytes(16).toString("hex");
-    const payload = await collectDeepInsights(salt);
-    console.log(JSON.stringify(payload, null, 2));
+    // Dry-run mirrors exactly what a sync would upload: text extracts appear
+    // only if this user already acknowledged the v2 disclosure.
+    const result = await collectDeepInsights(salt, { textExtracts: !!config && consentAcked(config) });
+    if (result.status === "error") {
+      console.error(red(`Insights extraction failed: ${result.message}`));
+      console.error(red("Your sessions exist but could not be read — try deleting ~/.claude-warriors/insights-cache.json and re-running."));
+      process.exit(1);
+    }
+    console.log(JSON.stringify(result.status === "ok" ? result.payload : null, null, 2));
     return;
   }
   const config = await loadConfig();
@@ -253,18 +351,47 @@ async function cmdInsights(args: string[]): Promise<void> {
       process.exit(1);
     }
     console.log(green("Insights on."));
-    console.log(dim("Extracting from your local sessions now — counts and hashed git outcomes only, transcripts and paths never leave this machine."));
+    const fresh = (await loadConfig()) ?? config;
+    const textExtracts = await ensureConsentAck(fresh);
+    console.log(
+      dim(
+        textExtracts
+          ? "Extracting from your local sessions now — secrets are stripped on this machine before anything leaves it."
+          : "Extracting from your local sessions now — counts and hashed git outcomes only.",
+      ),
+    );
     const machineId = await ensureMachineId(config);
     const salt = await ensureInsightsSalt(config);
-    const payload = await collectDeepInsights(salt);
-    if (payload) {
-      const sent = await postInsightsDeep(config.token, machineId, payload);
+    const result = await collectDeepInsights(salt, { textExtracts });
+    if (result.status === "ok") {
+      const sent = await postInsightsDeep(config.token, machineId, result.payload);
       if (sent.ok) {
         await markSent();
         console.log(green(`Done — see your archetype at ${WEB_BASE}/u/${encodeURIComponent(config.login)}`));
+        if (textExtracts) {
+          // Story material rides along under the same v2 consent. Best-effort:
+          // a failure here never degrades the insights flow.
+          try {
+            const transcripts = await collectTranscripts();
+            if (transcripts) {
+              const tr = await postTranscripts(config.token, machineId, transcripts);
+              if (tr.ok) console.log(dim(`   story material sent — your story is forging at ${WEB_BASE}/${encodeURIComponent(config.login)}/story`));
+              else void postTelemetry("transcripts_send_failed", { status: tr.status });
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
       } else {
         console.error(red(`Upload failed (status ${sent.status}) — it will retry on the next sync.`));
       }
+    } else if (result.status === "error") {
+      // Error ≠ empty. Saying "no sessions" to someone with hundreds of them
+      // is how this bug hid in the wild — be honest and point at the fix.
+      void postTelemetry("insights_extract_error", { message: result.message.slice(0, 200) });
+      console.error(red(`Insights extraction failed: ${result.message}`));
+      console.error(red("Your sessions exist but could not be read — try deleting ~/.claude-warriors/insights-cache.json and re-running `ccwarriors insights on`."));
+      process.exit(1);
     } else {
       console.log(yellow("No local Claude Code sessions found in the last 40 days — your profile unlocks after you code."));
     }

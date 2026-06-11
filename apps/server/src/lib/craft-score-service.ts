@@ -31,6 +31,36 @@ export async function loadDeepSessions(db: DB, userId: string): Promise<SessionR
   return rows.flatMap((r) => r.sessions);
 }
 
+export interface DeepExtras {
+  maxConcurrentSessions?: number;
+  topPrompt?: { text: string; count: number; sessions: number } | null;
+}
+
+/** Merge payload-level extras across machines: max concurrency, best prompt. */
+export async function loadDeepExtras(db: DB, userId: string): Promise<DeepExtras | null> {
+  const rows = await db
+    .select({ extras: userDeepSessions.extras })
+    .from(userDeepSessions)
+    .where(eq(userDeepSessions.userId, userId));
+  let maxConcurrent = 0;
+  let topPrompt: { text: string; count: number; sessions: number } | null = null;
+  let any = false;
+  for (const r of rows) {
+    if (!r.extras) continue;
+    any = true;
+    if (typeof r.extras.maxConcurrentSessions === "number") {
+      maxConcurrent = Math.max(maxConcurrent, r.extras.maxConcurrentSessions);
+    }
+    const tp = r.extras.topPrompt;
+    if (tp && (!topPrompt || tp.count > topPrompt.count)) topPrompt = tp;
+  }
+  if (!any) return null;
+  return {
+    ...(maxConcurrent > 0 ? { maxConcurrentSessions: maxConcurrent } : {}),
+    topPrompt,
+  };
+}
+
 /** Window cost + token totals + cache/opus signal from usage_days. */
 export async function loadUsageSignal(
   db: DB,

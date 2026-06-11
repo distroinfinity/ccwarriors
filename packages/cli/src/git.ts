@@ -27,6 +27,38 @@ export interface GitOutcomeInput {
   salt: string; // per-user secret for hashing (caller provides; stable per machine)
 }
 
+export type CommitKind = "fix" | "feature" | "refactor" | "other";
+
+export interface CommitKinds {
+  fixes: number;
+  features: number;
+  refactors: number;
+  other: number;
+}
+
+/**
+ * Classify a commit subject into fix/feature/refactor/other. Conventional
+ * prefixes first, keyword fallback second. Counts only ever leave the machine
+ * — never the subjects themselves.
+ */
+export function classifyCommitSubject(subject: string): CommitKind {
+  const s = subject.trim().toLowerCase();
+  // Conventional-commit prefixes (with optional scope).
+  const conv = s.match(/^([a-z]+)(?:\([^)]*\))?[:!]/);
+  if (conv) {
+    const type = conv[1]!;
+    if (type === "fix" || type === "hotfix" || type === "bugfix") return "fix";
+    if (type === "feat" || type === "feature") return "feature";
+    if (type === "refactor" || type === "perf" || type === "style") return "refactor";
+    return "other"; // chore, docs, test, ci, build...
+  }
+  if (/\b(fix|fixes|fixed|bugfix|hotfix|bug)\b/.test(s)) return "fix";
+  if (/^(add|adds|added|implement|implements|introduce|create|new)\b/.test(s) || /\b(feature)\b/.test(s)) return "feature";
+  if (/\b(refactor|cleanup|clean up|tidy|simplify|restructure)\b/.test(s)) return "refactor";
+  if (/\b(docs?|chore|bump|wip|merge)\b/.test(s)) return "other";
+  return "other";
+}
+
 export interface SessionGitOutcome {
   repoIdHash: string; // sha256(salt + repoRoot), hex; "" if not a git repo
   branchHash: string; // sha256(salt + branch), hex; "" if branch null
@@ -43,6 +75,7 @@ export interface SessionGitOutcome {
   hasRemote: boolean;
   commitHours: number[]; // length 24; count of in-window commits per local hour-of-day (0-23)
   commitDows: number[]; // length 7; count of in-window commits per local day-of-week (0=Sun..6=Sat)
+  commitKinds?: CommitKinds; // fix/feature/refactor/other counts from commit subjects (counts only)
 }
 
 function sha256(salt: string, value: string): string {
@@ -239,10 +272,16 @@ export async function readGitOutcome(input: GitOutcomeInput): Promise<SessionGit
     const commitDows: number[] = Array(7).fill(0);
 
     const aiBasenames = new Set(aiEditedFiles.map(basename).filter((b) => b.length > 0));
+    const commitKinds: CommitKinds = { fixes: 0, features: 0, refactors: 0, other: 0 };
 
     for (const c of commits) {
       linesAdded += c.added;
       linesDeleted += c.deleted;
+      const kind = classifyCommitSubject(c.message);
+      if (kind === "fix") commitKinds.fixes++;
+      else if (kind === "feature") commitKinds.features++;
+      else if (kind === "refactor") commitKinds.refactors++;
+      else commitKinds.other++;
 
       // Hour/DoW histograms: bucket by local time. If date is unparseable
       // (dateMs === 0 from parseLog fallback), skip gracefully.
@@ -329,6 +368,7 @@ export async function readGitOutcome(input: GitOutcomeInput): Promise<SessionGit
       hasRemote,
       commitHours,
       commitDows,
+      commitKinds,
     };
   } catch {
     // Absolute backstop: this function must never throw.

@@ -52,6 +52,9 @@ describe("ingest v1 (legacy clients)", () => {
       costAllTime: 456.78,
     }, NOW);
     expect(res.ok).toBe(true);
+    // The response carries the user's acked deep-disclosure version (default 1)
+    // so the CLI can adopt a consent given on the web.
+    if (res.ok) expect(res.consentVersion).toBe(1);
     const [u] = await db.select().from(users).where(eq(users.githubLogin, "legacy"));
     expect(Number(u!.cost30d)).toBe(123.45);
     expect(u!.toolBreakdown).toBeNull();

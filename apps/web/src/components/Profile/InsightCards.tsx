@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { getFontEmbedCSS, toPng } from "html-to-image";
+import { API_HTTP } from "../../api";
 import type { InsightCard } from "../../useProfile";
 import { Halftone } from "./Halftone";
 
@@ -7,7 +8,18 @@ import { Halftone } from "./Halftone";
 // question as a label, a bold headline, a muted body, an optional accent stat.
 // The whole card is the capture target; the share affordances live in a footer
 // flagged data-noexport so the exported PNG reads clean.
-function DeckCard({ card, login }: { card: InsightCard; login: string }) {
+function DeckCard({
+  card,
+  login,
+  pinned,
+  onTogglePin,
+}: {
+  card: InsightCard;
+  login: string;
+  // undefined = visitor (no pin affordance); boolean = owner edit mode.
+  pinned?: boolean;
+  onTogglePin?: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -43,14 +55,50 @@ function DeckCard({ card, login }: { card: InsightCard; login: string }) {
     }
   };
 
+  // The story teaser is a doorway, not a stat — the whole card links to the
+  // dossier page instead of carrying share/export chrome.
+  if (card.key === "story") {
+    return (
+      <a className="deck-card deck-card-story" href={`/${encodeURIComponent(login)}/story`}>
+        <div className="deck-corner" aria-hidden="true">
+          <Halftone seed={card.key} />
+        </div>
+        <div className="deck-body">
+          <div className="deck-q mono">{card.question}</div>
+          <div className="deck-head">{card.headline}</div>
+          <p className="deck-text">{card.body}…</p>
+        </div>
+        <div className="deck-foot mono">
+          <span className="deck-share">read the full story →</span>
+        </div>
+      </a>
+    );
+  }
+
   return (
     <div className="deck-card" ref={ref}>
-      <div className="deck-band">
+      {/* Texture retreats to a masked corner — never behind text. */}
+      <div className="deck-corner" aria-hidden="true">
         <Halftone seed={card.key} />
-        {card.stat && <span className="deck-stat mono">{card.stat}</span>}
       </div>
+      {pinned !== undefined && (
+        <button
+          className={`deck-pin mono${pinned ? " on" : ""}`}
+          onClick={onTogglePin}
+          data-noexport="true"
+          aria-label={pinned ? "Unpin card" : "Pin card"}
+          title={pinned ? "Unpin from the top of your deck" : "Pin to the top of your deck (max 4)"}
+        >
+          {pinned ? "⚲ pinned" : "⚲ pin"}
+        </button>
+      )}
       <div className="deck-body">
         <div className="deck-q mono">{card.question}</div>
+        {card.stat && (
+          <span className="deck-plate mono" aria-hidden="true">
+            {card.stat}
+          </span>
+        )}
         <div className="deck-head">{card.headline}</div>
         <p className="deck-text">{card.body}</p>
       </div>
@@ -66,8 +114,43 @@ function DeckCard({ card, login }: { card: InsightCard; login: string }) {
   );
 }
 
-export function InsightCards({ cards, login }: { cards: InsightCard[]; login: string }) {
+export function InsightCards({
+  cards,
+  login,
+  isOwner = false,
+  pinnedCards = [],
+  onPinsChanged,
+}: {
+  cards: InsightCard[];
+  login: string;
+  isOwner?: boolean;
+  pinnedCards?: string[];
+  onPinsChanged?: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
   if (!cards || cards.length === 0) return null;
+
+  const togglePin = async (key: string) => {
+    if (busy) return;
+    const next = pinnedCards.includes(key)
+      ? pinnedCards.filter((k) => k !== key)
+      : [...pinnedCards, key].slice(0, 4); // server caps at 4 too
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_HTTP}/insights/pins`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pins: next }),
+      });
+      if (r.ok) onPinsChanged?.();
+    } catch {
+      /* leave the deck as-is */
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="deck">
       <div className="deck-header">
@@ -83,7 +166,13 @@ export function InsightCards({ cards, login }: { cards: InsightCard[]; login: st
       </div>
       <div className="deck-grid">
         {cards.map((card) => (
-          <DeckCard key={card.key} card={card} login={login} />
+          <DeckCard
+            key={card.key}
+            card={card}
+            login={login}
+            pinned={isOwner && card.key !== "story" ? pinnedCards.includes(card.key) : undefined}
+            onTogglePin={isOwner ? () => void togglePin(card.key) : undefined}
+          />
         ))}
       </div>
     </section>

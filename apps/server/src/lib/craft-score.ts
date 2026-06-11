@@ -46,6 +46,18 @@ export const PERCENTILE_MIN_POPULATION = 30;
 export const clamp = (n: number, lo = 0, hi = 100) => Math.max(lo, Math.min(hi, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+// ── Craft tiers ──────────────────────────────────────────────────────────────
+// Forge-themed score bands (our own brand of a CF-style rating ramp). The web
+// colors by key: ink → bronze → terracotta → ember.
+export type CraftTier = { key: "apprentice" | "journeyman" | "artisan" | "mastersmith"; name: string };
+
+export function tierOf(score: number): CraftTier {
+  if (score >= 80) return { key: "mastersmith", name: "Mastersmith" };
+  if (score >= 60) return { key: "artisan", name: "Artisan" };
+  if (score >= 40) return { key: "journeyman", name: "Journeyman" };
+  return { key: "apprentice", name: "Apprentice" };
+}
+
 // ── Input: a user's merged deep data. The caller assembles this from
 //    userDeepSessions (all machines concatenated) + usage_days/efficiency.
 export interface CraftInput {

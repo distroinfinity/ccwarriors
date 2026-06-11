@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readGitOutcome, type SessionGitOutcome } from "./git.js";
+import { redact } from "./redact.js";
 
 export const WINDOW_DAYS = 40;
 const EXPLORE_TOOLS = new Set(["Read", "Grep", "Glob"]);
@@ -27,7 +28,14 @@ export interface SessionStats {
   startHour: number; // machine-local 0-23
   durationMinutes: number;
   wordBuckets: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
+  // ── new deep signals (counts — safe to upload) ──
+  thankYous: number; // prompts containing a thanks
+  wordTotal: number; // total words across prompts (exact avg replaces buckets)
+  recoveryLoops: number; // runs of ≥3 consecutive error tool_results
+  extensions: Record<string, number>; // file-extension histogram of agent edits
   // ── richer per-session signal (some LOCAL-ONLY; see PRIVACY CONTRACT) ──
+  recoveryBreakoutMs: number[]; // LOCAL-ONLY: collapsed to a median before upload
+  shortPrompts: string[]; // LOCAL-ONLY: go-to-prompt candidates; only the redacted top repeat may upload (consent v2)
   startMs: number | null; // first event epoch ms
   endMs: number | null; // last event epoch ms
   cwd: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
@@ -81,6 +89,23 @@ export async function parseSessionLines(
   const modelCounts = new Map<string, number>();
   const editedFiles = new Set<string>();
   const eventGapsMs: number[] = [];
+  let thankYous = 0, wordTotal = 0;
+  const extensions: Record<string, number> = {};
+  const shortPrompts: string[] = [];
+  // Recovery: a "failure loop" is ≥3 consecutive error tool_results (assistant
+  // turns in between don't reset it). Breakout = first success or real prompt.
+  let recoveryLoops = 0;
+  const recoveryBreakoutMs: number[] = [];
+  let errorRun = 0;
+  let errorRunStartTs: number | null = null;
+  const endErrorRun = (ts: number | null) => {
+    if (errorRun >= 3) {
+      recoveryLoops++;
+      if (ts !== null && errorRunStartTs !== null) recoveryBreakoutMs.push(Math.max(0, ts - errorRunStartTs));
+    }
+    errorRun = 0;
+    errorRunStartTs = null;
+  };
 
   for await (const line of lines) {
     let o: Record<string, unknown>;
@@ -106,11 +131,32 @@ export async function parseSessionLines(
     if (type === "user") {
       if (o["isMeta"] === true) continue;
       if (o["permissionMode"] === "plan") usedPlanMode = true;
-      const text = promptText(message?.["content"]);
+      // Tool results ride user-type messages: track error runs for recovery.
+      const content = message?.["content"];
+      if (Array.isArray(content)) {
+        const results = content.filter(
+          (b): b is Record<string, unknown> => !!b && typeof b === "object" && (b as Record<string, unknown>)["type"] === "tool_result",
+        );
+        for (const r of results) {
+          if (r["is_error"] === true) {
+            errorRun++;
+            if (errorRunStartTs === null && Number.isFinite(ts)) errorRunStartTs = ts;
+          } else {
+            endErrorRun(Number.isFinite(ts) ? ts : null);
+          }
+        }
+      }
+      const text = promptText(content);
       if (text === null) continue;
+      // A real human prompt breaks any failure loop (the human stepped in).
+      endErrorRun(Number.isFinite(ts) ? ts : null);
       prompts++;
       if (text.includes("[Request interrupted")) interrupts++;
-      const words = text.trim().split(/\s+/).filter(Boolean).length;
+      if (/\b(thanks|thank you|thank u|thx|ty)\b/i.test(text)) thankYous++;
+      const trimmed = text.trim();
+      if (trimmed.length > 0 && trimmed.length <= 80 && shortPrompts.length < 50) shortPrompts.push(trimmed);
+      const words = trimmed.split(/\s+/).filter(Boolean).length;
+      wordTotal += words;
       if (words <= 5) wordBuckets["1-5"]++;
       else if (words <= 10) wordBuckets["6-10"]++;
       else if (words <= 25) wordBuckets["11-25"]++;
@@ -141,12 +187,21 @@ export async function parseSessionLines(
         editCalls++;
         const inp = block["input"] as Record<string, unknown> | undefined;
         const fp = inp?.["file_path"];
-        if (typeof fp === "string" && fp) editedFiles.add(fp);
+        if (typeof fp === "string" && fp) {
+          editedFiles.add(fp);
+          const base = fp.slice(fp.lastIndexOf("/") + 1);
+          const dot = base.lastIndexOf(".");
+          if (dot > 0 && base.length - dot - 1 <= 8) {
+            const ext = base.slice(dot + 1).toLowerCase();
+            extensions[ext] = (extensions[ext] ?? 0) + 1;
+          }
+        }
       }
     }
     maxParallel = Math.max(maxParallel, parallel);
   }
 
+  endErrorRun(null); // session ended mid-loop → loop still counts, no breakout
   if (prompts === 0 && assistantTurns === 0) return null;
   const startHour = firstTs !== null ? new Date(firstTs).getHours() : 12;
   const durationMinutes = firstTs !== null && lastTs !== null ? Math.max(0, (lastTs - firstTs) / 60_000) : 0;
@@ -161,6 +216,7 @@ export async function parseSessionLines(
   return {
     prompts, interrupts, usedPlanMode, exploreBeforeFirstEdit, hadEdits,
     subagentSpawns, maxParallel, editCalls, assistantTurns, startHour, durationMinutes, wordBuckets,
+    thankYous, wordTotal, recoveryLoops, extensions, recoveryBreakoutMs, shortPrompts,
     startMs: firstTs, endMs: lastTs, cwd, gitBranch, model,
     editedFiles: [...editedFiles], eventGapsMs,
   };
@@ -232,8 +288,38 @@ export function timingSummary(gapsMs: number[]): {
 
 // Bump when the cached SessionStats shape changes so older caches are
 // discarded and re-parsed (an old entry would be missing newer fields like
-// cwd/editedFiles/eventGapsMs, breaking the deep path).
-const CACHE_VERSION = 2;
+// cwd/editedFiles/eventGapsMs, breaking the deep path). v3: purges caches
+// poisoned by the unbumped v2 shape change (entries without eventGapsMs).
+// v4: thankYous/wordTotal/recovery/extensions/shortPrompts signals added.
+const CACHE_VERSION = 4;
+
+/**
+ * Structural check on a cached SessionStats. The version bump handles known
+ * shape changes; this guards against the next UNbumped one — a malformed
+ * cached entry is treated as a cache miss and re-parsed, never trusted.
+ */
+export function isValidSessionStats(x: unknown): x is SessionStats {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  const numeric = [
+    "prompts", "interrupts", "subagentSpawns", "maxParallel", "editCalls", "assistantTurns",
+    "startHour", "durationMinutes", "thankYous", "wordTotal", "recoveryLoops",
+  ];
+  for (const k of numeric) if (typeof o[k] !== "number") return false;
+  const booleans = ["usedPlanMode", "exploreBeforeFirstEdit", "hadEdits"];
+  for (const k of booleans) if (typeof o[k] !== "boolean") return false;
+  const wb = o["wordBuckets"] as Record<string, unknown> | undefined;
+  if (!wb || typeof wb !== "object") return false;
+  for (const k of ["1-5", "6-10", "11-25", "26+"]) if (typeof wb[k] !== "number") return false;
+  if (!Array.isArray(o["eventGapsMs"])) return false;
+  if (!Array.isArray(o["editedFiles"])) return false;
+  if (!Array.isArray(o["recoveryBreakoutMs"])) return false;
+  if (!Array.isArray(o["shortPrompts"])) return false;
+  if (!o["extensions"] || typeof o["extensions"] !== "object") return false;
+  // Nullable fields must be PRESENT (null is fine; absent means stale shape).
+  for (const k of ["startMs", "endMs", "cwd", "gitBranch", "model"]) if (!(k in o)) return false;
+  return true;
+}
 
 interface CacheFile {
   version?: number;
@@ -304,7 +390,12 @@ async function walkSessions(): Promise<SessionStats[]> {
       seen.add(full);
       const cached = cache.files[full];
       let stats: SessionStats | null;
-      if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) {
+      if (
+        cached &&
+        cached.size === st.size &&
+        cached.mtimeMs === st.mtimeMs &&
+        (cached.stats === null || isValidSessionStats(cached.stats))
+      ) {
         stats = cached.stats;
       } else {
         try {
@@ -344,11 +435,22 @@ export interface SessionRecord {
   model: string | null;
   timing: { events: number; medianGapMs: number; p10GapMs: number; subSecondFraction: number };
   git: SessionGitOutcome | null;
+  // New deep signals (older servers ignore unknown fields; server zod marks
+  // them optional for older CLIs).
+  thankYous: number;
+  wordTotal: number;
+  recovery: { loops: number; medianBreakoutMs: number };
+  extensions: Record<string, number>; // capped to the top 10 by count
 }
 
 export interface InsightsDeepPayload {
   windowDays: number;
   sessions: SessionRecord[];
+  // Max simultaneously-open sessions in the window (interval overlap).
+  maxConcurrentSessions: number;
+  // The go-to prompt — the ONLY text field, present only under consent v2
+  // (textExtracts), redacted client-side, ≥3 repeats to qualify, ≤80 chars.
+  topPrompt?: { text: string; count: number; sessions: number } | null;
 }
 
 /**
@@ -361,6 +463,21 @@ export interface InsightsDeepPayload {
 // open across days) otherwise blow past the server's max (10080 min) and get
 // the whole upload rejected. Matches aggregateSessions' longestSessionMinutes cap.
 const MAX_SESSION_MINUTES = 7 * 24 * 60;
+
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0;
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)] ?? 0;
+}
+
+/** Top-N entries of a histogram (bounds upload size on wild sessions). */
+function topEntries(h: Record<string, number>, n: number): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(h)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n),
+  );
+}
 
 function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): SessionRecord {
   return {
@@ -377,21 +494,92 @@ function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): Sessio
     assistantTurns: s.assistantTurns,
     wordBuckets: s.wordBuckets,
     model: s.model,
-    timing: timingSummary(s.eventGapsMs),
+    timing: timingSummary(s.eventGapsMs ?? []),
     git,
+    thankYous: s.thankYous ?? 0,
+    wordTotal: s.wordTotal ?? 0,
+    recovery: { loops: s.recoveryLoops ?? 0, medianBreakoutMs: median(s.recoveryBreakoutMs ?? []) },
+    extensions: topEntries(s.extensions ?? {}, 10),
   };
 }
+
+/** Max number of sessions open at the same moment (interval-overlap sweep). */
+export function maxConcurrent(sessions: Array<{ startMs: number | null; endMs: number | null }>): number {
+  const events: Array<[number, number]> = [];
+  for (const s of sessions) {
+    if (s.startMs === null || s.endMs === null || s.endMs < s.startMs) continue;
+    events.push([s.startMs, 1], [s.endMs, -1]);
+  }
+  // Ends sort before starts at the same instant — touching sessions don't overlap.
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let cur = 0;
+  let max = 0;
+  for (const [, delta] of events) {
+    cur += delta;
+    if (cur > max) max = cur;
+  }
+  return max;
+}
+
+/**
+ * The go-to prompt: most-repeated short prompt across the window. ≥3 repeats
+ * to qualify (one-offs never upload), redacted, ≤80 chars. Returns null when
+ * nothing qualifies.
+ */
+export function topPromptOf(
+  sessions: Array<{ shortPrompts?: string[] }>,
+): { text: string; count: number; sessions: number } | null {
+  const counts = new Map<string, { count: number; sessions: number; display: Map<string, number> }>();
+  for (let i = 0; i < sessions.length; i++) {
+    const seenThisSession = new Set<string>();
+    for (const p of sessions[i]?.shortPrompts ?? []) {
+      const key = p.toLowerCase();
+      const entry = counts.get(key) ?? { count: 0, sessions: 0, display: new Map<string, number>() };
+      entry.count++;
+      entry.display.set(p, (entry.display.get(p) ?? 0) + 1);
+      if (!seenThisSession.has(key)) {
+        entry.sessions++;
+        seenThisSession.add(key);
+      }
+      counts.set(key, entry);
+    }
+  }
+  let best: { text: string; count: number; sessions: number } | null = null;
+  for (const entry of counts.values()) {
+    if (entry.count < 3) continue;
+    if (best && entry.count <= best.count) continue;
+    const display = [...entry.display.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+    best = { text: redact(display).slice(0, 80), count: entry.count, sessions: entry.sessions };
+  }
+  return best;
+}
+
+/**
+ * Discriminated result so callers can tell "you have no sessions" (empty) from
+ * "your sessions exist but extraction broke" (error). Conflating the two
+ * shipped a bug where a poisoned cache made the CLI tell users with hundreds
+ * of sessions that they had none.
+ */
+export type DeepCollectResult =
+  | { status: "ok"; payload: InsightsDeepPayload }
+  | { status: "empty" }
+  | { status: "error"; message: string };
 
 /**
  * Deep per-session insights: one SessionRecord per in-window session, each
  * coupled to its LOCAL-git outcome (hashed). The salt is the per-user secret
- * from config (LOCAL-ONLY). Returns null when there are no sessions. Never
- * throws — git reads already return null on failure and the rest is wrapped.
+ * from config (LOCAL-ONLY). Never throws — git reads already return null on
+ * failure and any other failure surfaces as { status: "error" }.
  */
-export async function collectDeepInsights(salt: string): Promise<InsightsDeepPayload | null> {
+export interface DeepCollectOptions {
+  /** Consent v2: allow the redacted go-to-prompt text in the payload. */
+  textExtracts?: boolean;
+}
+
+export async function collectDeepInsights(salt: string, opts: DeepCollectOptions = {}): Promise<DeepCollectResult> {
   try {
     const sessions = await walkSessions();
-    if (sessions.length === 0) return null;
+    if (sessions.length === 0) return { status: "empty" };
 
     // Memoize "is this cwd inside a git repo": once a cwd is known non-git, a
     // later session in the same cwd skips the git spawns entirely. (readGitOutcome
@@ -419,7 +607,7 @@ export async function collectDeepInsights(salt: string): Promise<InsightsDeepPay
             branch: s.gitBranch,
             startMs: s.startMs,
             endMs: s.endMs,
-            aiEditedFiles: s.editedFiles,
+            aiEditedFiles: s.editedFiles ?? [],
             salt,
           });
           repoKnown.set(cwd, git !== null);
@@ -436,9 +624,15 @@ export async function collectDeepInsights(salt: string): Promise<InsightsDeepPay
       await Promise.all(chunk);
     }
 
-    return { windowDays: WINDOW_DAYS, sessions: records };
-  } catch {
-    return null;
+    const payload: InsightsDeepPayload = {
+      windowDays: WINDOW_DAYS,
+      sessions: records,
+      maxConcurrentSessions: maxConcurrent(sessions),
+    };
+    if (opts.textExtracts) payload.topPrompt = topPromptOf(sessions);
+    return { status: "ok", payload };
+  } catch (err) {
+    return { status: "error", message: err instanceof Error ? err.message : String(err) };
   }
 }
 

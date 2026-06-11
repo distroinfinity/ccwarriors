@@ -88,9 +88,11 @@ describe("collectDeepInsights", () => {
     process.env["CCWARRIORS_HOME"] = home;
 
     const { collectDeepInsights } = await import("../src/insights.js");
-    const payload = (await collectDeepInsights("testsalt"))!;
+    const result = await collectDeepInsights("testsalt");
 
-    expect(payload).not.toBeNull();
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const payload = result.payload;
     expect(payload.windowDays).toBeGreaterThan(0);
     expect(payload.sessions.length).toBe(2);
 
