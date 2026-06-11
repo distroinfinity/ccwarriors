@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { API_HTTP } from "../../api";
 import type { Profile } from "../../useProfile";
 import { DisclosureList } from "./ArchetypeCard";
@@ -45,6 +45,40 @@ function UpgradeBanner({ onConsentChanged }: { onConsentChanged: () => void }) {
         {busy ? "Unlocking…" : "Unlock my story"}
       </button>
       {error && <p className="arch-error">{error}</p>}
+    </div>
+  );
+}
+
+// Post-unlock pending state: poll until the story card appears, then vanish.
+function StoryForging({ onPoll }: { onPoll: () => void }) {
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      if (tries > 40) {
+        // ~6 min of polling: the sync probably hasn't run yet. Stop quietly;
+        // the story appears on the next visit.
+        setStalled(true);
+        clearInterval(id);
+        return;
+      }
+      onPoll();
+    }, 9000);
+    return () => clearInterval(id);
+  }, [onPoll]);
+
+  return (
+    <div className="consent-upgrade story-forging-note">
+      <div className="consent-upgrade-text">
+        <b>Story unlocked — forging now.</b>
+        <p>
+          {stalled
+            ? "Your next sync delivers the material. Check back in a few minutes, or run `ccwarriors` once to hurry it."
+            : "Your machine sends the material on its next sync (usually within minutes) and this page updates itself."}
+        </p>
+      </div>
+      {!stalled && <span className="arch-pulse" aria-hidden="true" />}
     </div>
   );
 }
@@ -112,9 +146,14 @@ export function OwnerControls({ profile, onConsentChanged }: { profile: Profile;
 
   const isPublic = profile.owner.visibility === "public";
   const needsV2 = (profile.owner.consentVersion ?? 1) < 2;
+  // Unlocked but no story yet: the material rides the next sync, so show a
+  // live forging state instead of silence (poll-refetch until it lands).
+  const storyForging =
+    !needsV2 && !profile.insights.locked && !profile.insights.cards.some((c) => c.key === "story");
   return (
     <div className="owner-controls">
       {needsV2 && <UpgradeBanner onConsentChanged={onConsentChanged} />}
+      {storyForging && <StoryForging onPoll={onConsentChanged} />}
       <div className="arch-transparency">
         <div className="trans-status mono">
           Profile: <b className={isPublic ? "vis-public" : "vis-private"}>{isPublic ? "Public" : "Private"}</b>

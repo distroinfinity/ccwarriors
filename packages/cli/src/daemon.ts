@@ -74,14 +74,17 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         if (deepWanted) {
           void (async () => {
             try {
-              if (!(await shouldSend())) return;
-              // Adopt a consent the user gave on the web (GO ALL-IN shows the
-              // full disclosure) — the daemon itself never prompts.
+              // Adopt a consent the user gave on the web (GO ALL-IN / "Unlock
+              // my story") BEFORE the throttle — a fresh ack forces this push
+              // so the story forges within minutes, not after the 6h window.
               const serverV = res.data?.consentVersion;
+              let freshlyAdopted = false;
               if (typeof serverV === "number" && serverV >= CONSENT_VERSION && (cfg.ackConsentVersion ?? 1) < CONSENT_VERSION) {
                 cfg.ackConsentVersion = serverV;
                 await saveConfig(cfg);
+                freshlyAdopted = true;
               }
+              if (!freshlyAdopted && !(await shouldSend())) return;
               const salt = await ensureInsightsSalt(cfg);
               const acked = (cfg.ackConsentVersion ?? 1) >= CONSENT_VERSION;
               const result = await collectDeepInsights(salt, { textExtracts: acked });

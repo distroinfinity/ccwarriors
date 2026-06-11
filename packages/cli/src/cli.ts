@@ -78,10 +78,15 @@ async function maybePushInsights(token: string, machineId: string, data: import(
   const deepWanted = data.insightsMode === "deep" || (data.insightsMode === undefined && data.insightsRequested === true);
   if (!deepWanted) return;
   try {
-    if (!(await shouldSend())) return;
     let config = await loadConfig();
     if (!config) return;
+    // Adoption runs BEFORE the throttle: a user who just clicked "Unlock my
+    // story" on the web must not wait out the 6h window — the fresh ack
+    // forces this sync's push so the story forges within minutes.
+    const hadAck = consentAcked(config);
     config = await adoptServerConsent(config, data.consentVersion);
+    const freshlyAdopted = !hadAck && consentAcked(config);
+    if (!freshlyAdopted && !(await shouldSend())) return;
     const salt = await ensureInsightsSalt(config);
     const acked = consentAcked(config);
     const result = await collectDeepInsights(salt, { textExtracts: acked });
