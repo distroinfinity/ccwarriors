@@ -50,6 +50,19 @@ interface ParsedTranscript extends TranscriptSession {
   jsonChars: number;   // serialized size estimate for budget accounting
 }
 
+type ProjectStats = Map<string, { count: number; lastEndMs: number }>;
+
+const EDIT_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+// Substance score for the stratified sample: sessions with more prompts and
+// real edits from denser projects beat one-off pokes at long-dead repos.
+function score(s: ParsedTranscript, projectStats: ProjectStats): number {
+  let editCalls = 0;
+  for (const t of EDIT_TOOLS) editCalls += s.toolCounts[t] ?? 0;
+  const stats = projectStats.get(s.projectKey)!;
+  return (s.prompts.length + editCalls) * Math.log2(1 + stats.count);
+}
+
 async function parseFile(path: string): Promise<Omit<ParsedTranscript, "projectKey" | "jsonChars"> | null> {
   const rl = createInterface({ input: createReadStream(path, "utf8"), crlfDelay: Infinity });
   let firstTs: number | null = null;
@@ -193,7 +206,7 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
     const pool = eligible.length >= 5 ? eligible : allSessions;
 
     // PROJECT STATS (local only — never uploaded).
-    const projectStats = new Map<string, { count: number; lastEndMs: number }>();
+    const projectStats: ProjectStats = new Map();
     for (const s of pool) {
       const prev = projectStats.get(s.projectKey);
       if (!prev) {
@@ -246,18 +259,9 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
       strata[idx]!.push(s);
     }
 
-    // Score each session: (prompts.length + editToolCalls) * log2(1 + projectCount).
-    const EDIT_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
-    function score(s: ParsedTranscript): number {
-      let editCalls = 0;
-      for (const t of EDIT_TOOLS) editCalls += s.toolCounts[t] ?? 0;
-      const stats = projectStats.get(s.projectKey)!;
-      return (s.prompts.length + editCalls) * Math.log2(1 + stats.count);
-    }
-
     // Sort each stratum by score desc so we can pop the best.
     for (const stratum of strata) {
-      stratum.sort((a, b) => score(b) - score(a));
+      stratum.sort((a, b) => score(b, projectStats) - score(a, projectStats));
     }
 
     // Round-robin OLDEST-first; repeat rounds until no slice yields a fit.
@@ -266,24 +270,17 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
       anyFit = false;
       for (let i = 0; i < STRATA_COUNT; i++) {
         const stratum = strata[i]!;
-        // Pop the first session in this stratum that fits.
-        let found = false;
+        // Pop the best-scored session in this stratum that fits; a stratum
+        // where nothing fits is simply skipped this round.
         for (let j = 0; j < stratum.length; j++) {
           const s = stratum[j]!;
           if (used + s.jsonChars <= STORY_CHAR_BUDGET && picked.length < MAX_STORY_SESSIONS) {
             picked.push(s);
             used += s.jsonChars;
             stratum.splice(j, 1);
-            found = true;
             anyFit = true;
             break;
           }
-        }
-        // If nothing fit in this stratum (all too large), that's fine — continue.
-        if (!found && stratum.length > 0) {
-          // Check if any remaining session could fit at all.
-          const smallest = stratum.reduce((min, s) => (s.jsonChars < min.jsonChars ? s : min));
-          if (used + smallest.jsonChars <= STORY_CHAR_BUDGET) anyFit = true;
         }
       }
     }
