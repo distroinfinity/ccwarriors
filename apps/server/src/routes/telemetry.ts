@@ -21,6 +21,13 @@ const bodySchema = z.object({
     "self_update_failed",
     "self_update_applied",
     "self_update_rollback",
+    // CLI degraded to the known-good ccusage after the latest native binary
+    // crashed at load. Observability, not a failure — deliberately NOT added to
+    // `failureEvents`, so it never enters the rolling window or pages.
+    "ccusage_fallback",
+    // Daemon hit a 401 with no fresher token on disk and paused autosync until
+    // the user re-logs-in. User-specific, not prod breakage — also non-paging.
+    "auth_expired",
     // `autosync off` couldn't kill the daemon (macOS launchctl edge).
     "autosync_off_failed",
   ]),

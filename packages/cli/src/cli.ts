@@ -477,7 +477,7 @@ async function main(): Promise<void> {
   }
 
   if (cmd === "watch") {
-    selfUpdateBootCheck();
+    await selfUpdateBootCheck();
     await cmdWatch(args.slice(1));
     return;
   }
@@ -488,13 +488,13 @@ async function main(): Promise<void> {
   }
 
   if (cmd === "daemon") {
-    selfUpdateBootCheck();
+    await selfUpdateBootCheck();
     await runDaemon(Number(args[1] ?? 5) || 5);
     return;
   }
 
   if (cmd === "sync" || cmd === undefined) {
-    selfUpdateBootCheck();
+    await selfUpdateBootCheck();
     await cmdSync();
     return;
   }

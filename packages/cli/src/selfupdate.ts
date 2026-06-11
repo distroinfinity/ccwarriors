@@ -67,7 +67,7 @@ function readMarker(cliPath: string): UpdateMarker | null {
  * we've failed to complete a sync after several starts, restore the previous
  * bundle and exit so launchd/cron relaunches into the known-good build.
  */
-export function selfUpdateBootCheck(): void {
+export async function selfUpdateBootCheck(): Promise<void> {
   const cliPath = installedCliPath();
   if (!cliPath) return;
   const marker = readMarker(cliPath);
@@ -77,8 +77,10 @@ export function selfUpdateBootCheck(): void {
     try {
       copyFileSync(prevPath(cliPath), cliPath);
       unlinkSync(markerPath(cliPath));
-      void postTelemetry("self_update_rollback", { fromBuild: marker.fromBuild, toBuild: marker.buildId });
       console.error(`ccwarriors: build ${marker.buildId} failed to sync — rolled back to ${marker.fromBuild}`);
+      // Await the beacon (4s timeout) so the rollback is actually observable —
+      // a fire-and-forget here never flushed before the exit below.
+      await postTelemetry("self_update_rollback", { fromBuild: marker.fromBuild, toBuild: marker.buildId });
       // Exit non-zero: launchd relaunches into the restored bundle; an
       // interactive user sees the message and can simply re-run.
       process.exit(1);
@@ -107,6 +109,26 @@ export function markUpdateSuccess(): void {
       /* already gone */
     }
     void postTelemetry("self_update_applied", { fromBuild: marker.fromBuild, toBuild: marker.buildId });
+  }
+}
+
+/**
+ * Call at the END of every sync cycle (success OR failure). Reaching here proves
+ * the freshly-installed bundle's daemon path executes without crashing, so a
+ * failed sync (ccusage/network/server down) is NOT the build's fault. Clears the
+ * pending-rollback marker WITHOUT the self_update_applied telemetry. A genuine
+ * boot/daemon-path crash exits before this runs, so selfUpdateBootCheck still
+ * rolls back actually-broken bundles. The cliPath param exists for testing.
+ */
+export function markBuildAlive(cliPath: string | null = installedCliPath()): void {
+  if (!cliPath) return;
+  const marker = readMarker(cliPath);
+  if (marker && marker.buildId === buildId()) {
+    try {
+      unlinkSync(markerPath(cliPath));
+    } catch {
+      /* already gone */
+    }
   }
 }
 

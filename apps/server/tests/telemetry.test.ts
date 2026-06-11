@@ -86,4 +86,18 @@ describe("telemetry endpoint", () => {
     const body = (await res.json()) as FailureStats;
     expect(body.failuresLast24h).toBe(0);
   });
+
+  it("accepts ccusage_fallback and auth_expired without counting them as failures", async () => {
+    for (const event of ["ccusage_fallback", "auth_expired"]) {
+      const post = await app.request("/telemetry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ event, distinctId: "t-5", props: { os: "darwin" } }),
+      });
+      expect(post.status).toBe(200);
+    }
+    const res = await app.request("/telemetry/failures");
+    const body = (await res.json()) as FailureStats;
+    expect(body.failuresLast24h).toBe(0);
+  });
 });

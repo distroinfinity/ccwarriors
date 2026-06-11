@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { normalizeDay } from "../src/ccusage.js";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { normalizeDay, invokeCcusage, resetCcusageStateForTest, type CcusageRunner } from "../src/ccusage.js";
+import { postTelemetry } from "../src/core.js";
+
+// invokeCcusage fires postTelemetry on the first fallback — stub it so no
+// network call happens during the unit test.
+vi.mock("../src/core.js", () => ({ postTelemetry: vi.fn(async () => {}) }));
 
 // Fixtures mirror real ccusage v20 output (captured 2026-06-04 on this machine).
 
@@ -85,6 +90,96 @@ describe("normalizeDay", () => {
       outputTokens: 0,
       cacheCreationTokens: 0,
       cacheReadTokens: 0,
+    });
+  });
+});
+
+const nativeCrash = () =>
+  Object.assign(new Error("dyld[1]: Library not loaded: /nix/store/x-libiconv.2.dylib"), {
+    stderr: "dyld[1]: Library not loaded: /nix/store/x-libiconv.2.dylib (no such file)",
+  });
+
+const etargetCrash = () =>
+  Object.assign(new Error("Command failed: npx --yes ccusage@20 daily"), {
+    stderr: "npm error code ETARGET\nnpm error notarget No matching version found for ccusage@20",
+  });
+
+describe("invokeCcusage broken-ccusage fallback", () => {
+  // NOTE: CCUSAGE_PKG is a module-load const (read once at import time), so
+  // deleting process.env.CCWARRIORS_CCUSAGE_PKG here would have no effect on
+  // its value. The literal "ccusage@20" assertions below are safe as long as
+  // CI does not set that env var (it does not).
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetCcusageStateForTest();
+  });
+
+  it("uses the primary when healthy and never calls the fallback", async () => {
+    const run = vi.fn(async (_pkg: string, _args: string[]) => '{"daily":[]}');
+    const out = await invokeCcusage(["daily", "--json"], run as unknown as CcusageRunner);
+    expect(out).toBe('{"daily":[]}');
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledWith("ccusage@20", ["daily", "--json"]);
+  });
+
+  it("falls back to the known-good version when the primary native binary crashes", async () => {
+    const run = vi.fn(async (pkg: string, _args: string[]) => {
+      if (pkg === "ccusage@20") throw nativeCrash();
+      return '{"daily":[{"date":"2026-06-01"}]}';
+    });
+    const out = await invokeCcusage(["daily", "--json"], run as unknown as CcusageRunner);
+    expect(out).toContain("2026-06-01");
+    expect(run).toHaveBeenNthCalledWith(1, "ccusage@20", ["daily", "--json"]);
+    expect(run).toHaveBeenNthCalledWith(2, "ccusage@20.0.6", ["daily", "--json"]);
+  });
+
+  it("falls back when npm cannot resolve the primary (ETARGET)", async () => {
+    const run = vi.fn(async (pkg: string, _args: string[]) => {
+      if (pkg === "ccusage@20") throw etargetCrash();
+      return "{}";
+    });
+    const out = await invokeCcusage(["daily"], run as unknown as CcusageRunner);
+    expect(out).toBe("{}");
+    expect(run).toHaveBeenNthCalledWith(2, "ccusage@20.0.6", ["daily"]);
+  });
+
+  it("memoizes the fallback for the rest of the process", async () => {
+    const run = vi.fn(async (pkg: string, _args: string[]) => {
+      if (pkg === "ccusage@20") throw nativeCrash();
+      return "{}";
+    });
+    await invokeCcusage(["daily"], run as unknown as CcusageRunner); // flips (2 calls)
+    await invokeCcusage(["--version"], run as unknown as CcusageRunner); // fallback directly (1 call)
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenLastCalledWith("ccusage@20.0.6", ["--version"]);
+  });
+
+  it("throws when both primary and fallback are broken", async () => {
+    const run = vi.fn(async (_pkg: string, _args: string[]) => {
+      throw nativeCrash();
+    });
+    await expect(invokeCcusage(["daily"], run as unknown as CcusageRunner)).rejects.toThrow(/Library not loaded/);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("does NOT fall back on a non-ccusage error", async () => {
+    const run = vi.fn(async (_pkg: string, _args: string[]) => {
+      throw new Error("some transient network thing");
+    });
+    await expect(invokeCcusage(["daily"], run as unknown as CcusageRunner)).rejects.toThrow(/transient network/);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires the fallback telemetry exactly once when the primary native binary crashes", async () => {
+    const run = vi.fn(async (pkg: string, _args: string[]) => {
+      if (pkg === "ccusage@20") throw nativeCrash();
+      return '{"daily":[]}';
+    });
+    await invokeCcusage(["daily", "--json"], run as unknown as CcusageRunner);
+    expect(postTelemetry).toHaveBeenCalledTimes(1);
+    expect(postTelemetry).toHaveBeenCalledWith("ccusage_fallback", {
+      from: "ccusage@20",
+      to: "ccusage@20.0.6",
     });
   });
 });

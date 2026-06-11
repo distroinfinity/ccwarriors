@@ -7,7 +7,9 @@ import { loadConfig, saveConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VE
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./core.js";
 import { collectTranscripts } from "./transcripts.js";
-import { maybeSelfUpdate, markUpdateSuccess } from "./selfupdate.js";
+import { maybeSelfUpdate, markUpdateSuccess, markBuildAlive } from "./selfupdate.js";
+import { nextBackoffMs, shouldSync } from "./backoff.js";
+import { resolveAuthAction } from "./authstate.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
 declare const __BUILD_ID__: string;
@@ -32,7 +34,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
     process.exit(1);
   }
   const cfg = config; // non-null binding for use inside closures below
-  const token = cfg.token;
+  let token = cfg.token;
   const machineId = await ensureMachineId(cfg);
 
   let timer: NodeJS.Timeout | null = null;
@@ -41,6 +43,20 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   // Beacon once after 3 consecutive hard failures (not 429s), reset on success —
   // surfaces fleet-wide sync breakage without spamming telemetry.
   let failStreak = 0;
+  // While > now, syncs are suppressed (backoff after hard failures).
+  let nextAllowedSyncAt = 0;
+  // Set true after a 401 with no fresher token on disk; the heartbeat clears it
+  // when a re-login appears. Suppresses syncs without thrashing launchd.
+  let authPaused = false;
+
+  async function reloadToken(): Promise<string | null> {
+    try {
+      const c = await loadConfig();
+      return c?.token ?? null;
+    } catch {
+      return null;
+    }
+  }
 
   async function checkForUpdate(): Promise<void> {
     if ((await maybeSelfUpdate()) === "updated") {
@@ -66,6 +82,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       });
       if (res.data?.ok) {
         failStreak = 0;
+        nextAllowedSyncAt = 0;
         markUpdateSuccess();
         log(`synced (${reason}) — ${formatEstimates(estimates)} · rank #${res.data.rank30d ?? "—"}`);
         const deepWanted =
@@ -118,14 +135,31 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         // Server enforces 10s between syncs — retry instead of dropping the update.
         log(`sync deferred (${reason}) — rate limited, retrying`);
         schedule(`retry ${reason}`);
+      } else if (res.status === 401) {
+        // Token rotated/expired. Adopt a fresher on-disk token (user re-logged-in
+        // elsewhere) and retry without penalty; otherwise pause until re-login.
+        const disk = await reloadToken();
+        if (disk && resolveAuthAction(token, disk) === "resume") {
+          token = disk;
+          failStreak = 0;
+          nextAllowedSyncAt = 0;
+          log("token refreshed from disk — retrying");
+          schedule(`auth-refresh ${reason}`);
+        } else if (!authPaused) {
+          authPaused = true;
+          log("token expired — run `ccwarriors login` to re-enable autosync");
+          void postTelemetry("auth_expired", { reason });
+        }
       } else {
         log(`sync skipped (${reason}) — status ${res.status}`);
         failStreak += 1;
+        nextAllowedSyncAt = Date.now() + nextBackoffMs(failStreak);
         if (failStreak === 3) void postTelemetry("sync_failed", { status: res.status, reason });
       }
     } catch (err) {
       log(`sync failed (${reason}) — ${err instanceof Error ? err.message : String(err)}`);
       failStreak += 1;
+      nextAllowedSyncAt = Date.now() + nextBackoffMs(failStreak);
       if (failStreak === 3) {
         void postTelemetry("sync_failed", {
           status: 0,
@@ -134,6 +168,9 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       }
     } finally {
       syncing = false;
+      // We ran a full sync cycle without crashing → this build is alive even if
+      // the sync itself failed for external reasons. Clears any rollback marker.
+      markBuildAlive();
       if (pending) {
         pending = false;
         schedule("queued change");
@@ -142,10 +179,12 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   }
 
   function schedule(reason: string): void {
+    if (authPaused) return; // paused on auth — heartbeat handles recovery
     // Batch, don't reset: fire DEBOUNCE_MS after the FIRST event in a burst.
     // Resetting on every fs event starved syncs during continuous agent
     // activity (the timer never fired until a 12s quiet gap appeared).
     if (timer) return;
+    if (!shouldSync(Date.now(), nextAllowedSyncAt)) return; // in backoff cooldown
     timer = setTimeout(() => {
       timer = null;
       void syncNow(reason);
@@ -170,7 +209,19 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   if (watching === 0) log("no agent dirs found to watch — heartbeat only");
 
   setInterval(() => {
-    void syncNow("heartbeat");
+    void (async () => {
+      if (authPaused) {
+        const disk = await reloadToken();
+        if (disk && resolveAuthAction(token, disk) === "resume") {
+          token = disk;
+          authPaused = false;
+          log("re-authenticated — resuming autosync");
+        } else {
+          return; // still paused; don't sync
+        }
+      }
+      if (shouldSync(Date.now(), nextAllowedSyncAt)) void syncNow("heartbeat");
+    })();
     void checkForUpdate();
   }, Math.max(1, heartbeatMin) * 60_000);
 }
