@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { storySources, userStories, type User } from "../db/schema.js";
 import type { StoryGenerate } from "./story.js";
+import { captureEvent } from "../routes/telemetry.js";
 
 export const STORY_REFRESH_MS = 24 * 60 * 60 * 1000; // at most one generation/day/user
 
@@ -24,7 +25,17 @@ export async function maybeGenerateStory(deps: StoryDeps, user: User): Promise<v
     if (!source) return;
 
     const result = await deps.generate(user.githubLogin, source.payload);
-    if (!result) return; // keep the old story; the source stays for a later retry
+    if (!result || "failed" in result) {
+      // Visible in Railway logs + PostHog: a broken key, rate limit, or parse
+      // failure must not be a silent no-story forever.
+      captureEvent("story_generate_failed", user.githubLogin, { reason: result && "failed" in result ? result.failed : "null_result" });
+      return; // keep the old story; the source stays for a later retry
+    }
+    captureEvent("story_generated", user.githubLogin, {
+      model: result.model,
+      sessions: (source.payload as { sessions?: unknown[] })?.sessions?.length ?? 0,
+      ...(result.usage ?? {}),
+    });
 
     await deps.db
       .insert(userStories)

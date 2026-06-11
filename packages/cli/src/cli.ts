@@ -99,7 +99,10 @@ async function maybePushInsights(token: string, machineId: string, data: import(
       if (acked) {
         try {
           const transcripts = await collectTranscripts();
-          if (transcripts) await postTranscripts(token, machineId, transcripts);
+          if (transcripts) {
+            const tr = await postTranscripts(token, machineId, transcripts);
+            if (!tr.ok) void postTelemetry("transcripts_send_failed", { status: tr.status });
+          }
         } catch {
           /* best-effort */
         }
@@ -368,6 +371,7 @@ async function cmdInsights(args: string[]): Promise<void> {
             if (transcripts) {
               const tr = await postTranscripts(config.token, machineId, transcripts);
               if (tr.ok) console.log(dim(`   story material sent — your story is forging at ${WEB_BASE}/${encodeURIComponent(config.login)}/story`));
+              else void postTelemetry("transcripts_send_failed", { status: tr.status });
             }
           } catch {
             /* best-effort */

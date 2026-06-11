@@ -208,7 +208,34 @@ describe("generateStory (SDK integration, stubbed transport)", () => {
       "distroinfinity",
       transcriptsBody(),
     );
-    expect(result?.doc.narrative).toBe("Stubbed narrative.");
-    expect(result?.model).toBe("claude-opus-4-8");
+    if ("failed" in result) throw new Error(`unexpected failure: ${result.failed}`);
+    expect(result.doc.narrative).toBe("Stubbed narrative.");
+    expect(result.model).toBe("claude-opus-4-8");
+    // Usage + estimated cost ride along for telemetry (100 in / 200 out tokens).
+    expect(result.usage?.inputTokens).toBe(100);
+    expect(result.usage?.outputTokens).toBe(200);
+    expect(result.usage?.estCostUsd).toBeCloseTo((100 * 5 + 200 * 25) / 1_000_000, 6);
+  });
+
+  it("reports a typed failure instead of a silent null", async () => {
+    const fetcher = (async () =>
+      new Response(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }), {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch;
+    const result = await generateStory({ apiKey: "test-key", fetcher }, "x", transcriptsBody());
+    expect("failed" in result && result.failed).toBe("api_429");
+  });
+});
+
+describe("maybeGenerateStory failure handling", () => {
+  it("keeps the source for retry and writes no story on a failed generation", async () => {
+    const db = await makeDb();
+    const u = (await seedUser(db, { login: "unlucky", token: "tok_u" }))!;
+    await db.insert(storySources).values({ userId: u.id, payload: transcriptsBody() });
+    const generate = vi.fn().mockResolvedValue({ failed: "api_429" });
+    await maybeGenerateStory({ db, generate }, u);
+    expect(await db.select().from(userStories).where(eq(userStories.userId, u.id))).toHaveLength(0);
+    expect(await db.select().from(storySources).where(eq(storySources.userId, u.id))).toHaveLength(1);
   });
 });

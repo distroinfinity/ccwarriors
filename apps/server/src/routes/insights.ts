@@ -274,9 +274,15 @@ export function insightsRoute(deps: InsightsDeps) {
     async (c) => {
       const user = await userFromBearer(deps.db, c);
       if (!user) return c.json({ error: "unauthorized" }, 401);
-      if (user.insightsMode !== "deep") return c.json({ error: "mode_off" }, 403);
+      if (user.insightsMode !== "deep") {
+        captureEvent("transcripts_rejected", user.githubLogin, { reason: "mode_off" });
+        return c.json({ error: "mode_off" }, 403);
+      }
       // Text only ever crosses with the v2 acknowledgment — no exceptions.
-      if ((user.consentVersion ?? 1) < 2) return c.json({ error: "consent_v2_required" }, 403);
+      if ((user.consentVersion ?? 1) < 2) {
+        captureEvent("transcripts_rejected", user.githubLogin, { reason: "consent_v2_required" });
+        return c.json({ error: "consent_v2_required" }, 403);
+      }
 
       const { windowDays, sessions } = c.req.valid("json");
       const payload = { windowDays, sessions };

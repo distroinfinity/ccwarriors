@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { githubStats, users, type GithubStats, type User } from "../db/schema.js";
 import { fetchGithubStats } from "./github-stats.js";
+import { captureEvent } from "../routes/telemetry.js";
 
 export const FRESH_TTL_MS = 6 * 60 * 60 * 1000; // refresh in background after 6h
 export const ERROR_RETRY_MS = 30 * 60 * 1000; // backoff after a failed fetch
@@ -76,6 +77,12 @@ export async function refreshGithubStats(deps: GithubStatsDeps, user: User): Pro
     }
 
     // Any failure: stamp the backoff clock, keep whatever data we had.
+    // Bounded volume (6h TTL / 30m error backoff per user) — log every one.
+    captureEvent("github_stats_fetch_failed", user.githubLogin, {
+      status: result.status,
+      ...(result.status === "error" ? { message: result.message.slice(0, 120) } : {}),
+      usedServerToken: token === deps.serverToken,
+    });
     await deps.db
       .insert(githubStats)
       .values({ userId: user.id, status: "error", data: null, fetchedAt: new Date(now) })

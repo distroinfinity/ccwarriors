@@ -73,15 +73,31 @@ export interface GenerateStoryOpts {
   fetcher?: typeof fetch;
 }
 
-export type StoryGenerate = (login: string, source: unknown) => Promise<{ doc: StoryDoc; model: string } | null>;
+export interface StoryUsage {
+  inputTokens: number;
+  outputTokens: number;
+  estCostUsd: number | null;
+  durationMs: number;
+}
 
-/** Call Claude for one user's story. Returns null on any failure — the caller
-    keeps the old story (if any) and retries on the next upload. */
+// $/MTok for the models we generate with — cost lands in telemetry so spend
+// is visible per generation (null when the model is unknown).
+const STORY_PRICES: Record<string, { input: number; output: number }> = {
+  "claude-opus-4-8": { input: 5, output: 25 },
+};
+
+export type StoryResult = { doc: StoryDoc; model: string; usage?: StoryUsage } | { failed: string };
+export type StoryGenerate = (login: string, source: unknown) => Promise<StoryResult | null>;
+
+/** Call Claude for one user's story. Failures come back as { failed } with
+    the reason — the caller keeps the old story, logs it, and retries on the
+    next upload. */
 export async function generateStory(
   opts: GenerateStoryOpts,
   login: string,
   source: unknown,
-): Promise<{ doc: StoryDoc; model: string } | null> {
+): Promise<StoryResult> {
+  const startedAt = Date.now();
   try {
     const model = opts.model ?? STORY_MODEL;
     const client = new Anthropic({
@@ -103,10 +119,22 @@ export async function generateStory(
       output_config: { format: { type: "json_schema", schema: STORY_JSON_SCHEMA } },
     });
     const text = response.content.find((b): b is Extract<(typeof response.content)[number], { type: "text" }> => b.type === "text");
-    if (!text) return null;
+    if (!text) return { failed: "no_text_block" };
     const doc = StoryDocSchema.parse(JSON.parse(text.text));
-    return { doc: doc as StoryDoc, model };
-  } catch {
-    return null;
+    const price = STORY_PRICES[model];
+    const usage: StoryUsage = {
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      estCostUsd: price
+        ? Math.round((response.usage.input_tokens * price.input + response.usage.output_tokens * price.output) / 10) / 100_000
+        : null,
+      durationMs: Date.now() - startedAt,
+    };
+    return { doc: doc as StoryDoc, model, usage };
+  } catch (err) {
+    // Typed reasons beat opaque nulls: api_429 / api_401 / parse errors etc.
+    const e = err as { status?: number; message?: string };
+    const reason = typeof e.status === "number" ? `api_${e.status}` : (e.message ?? "unknown").slice(0, 120);
+    return { failed: reason };
   }
 }

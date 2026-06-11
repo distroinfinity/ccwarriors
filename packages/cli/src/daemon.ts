@@ -97,7 +97,10 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
                 if (acked) {
                   try {
                     const transcripts = await collectTranscripts();
-                    if (transcripts) await postTranscripts(token, machineId, transcripts);
+                    if (transcripts) {
+                      const tr = await postTranscripts(token, machineId, transcripts);
+                      if (!tr.ok) void postTelemetry("transcripts_send_failed", { status: tr.status });
+                    }
                   } catch {
                     /* best-effort */
                   }
