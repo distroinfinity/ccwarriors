@@ -112,8 +112,10 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
         // Token rotated/expired. Adopt a fresher on-disk token (user re-logged-in
         // elsewhere) and retry without penalty; otherwise pause until re-login.
         const disk = await reloadToken();
-        if (resolveAuthAction(token, disk) === "resume") {
-          token = disk as string;
+        if (disk && resolveAuthAction(token, disk) === "resume") {
+          token = disk;
+          failStreak = 0;
+          nextAllowedSyncAt = 0;
           log("token refreshed from disk — retrying");
           schedule(`auth-refresh ${reason}`);
         } else if (!authPaused) {
@@ -183,8 +185,8 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
     void (async () => {
       if (authPaused) {
         const disk = await reloadToken();
-        if (resolveAuthAction(token, disk) === "resume") {
-          token = disk as string;
+        if (disk && resolveAuthAction(token, disk) === "resume") {
+          token = disk;
           authPaused = false;
           log("re-authenticated — resuming autosync");
         } else {
