@@ -79,6 +79,17 @@ const GLYPHS: Record<string, string[]> = {
     ".X.....X.",
     "..XXXXX..",
   ],
+  // GitHub octocat silhouette (profile link)
+  github: [
+    ".X.....X.",
+    ".XXXXXXX.",
+    "XXXXXXXXX",
+    "XX.XXX.XX",
+    "XXXXXXXXX",
+    ".XXXXXXX.",
+    "..XXXXX..",
+    "...X.X...",
+  ],
   // Verify diamond (◈)
   diamond: [
     "....X....",
