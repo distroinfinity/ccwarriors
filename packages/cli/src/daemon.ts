@@ -7,6 +7,7 @@ import { loadConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { postIngest, postTelemetry, postInsightsDeep } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess } from "./selfupdate.js";
+import { nextBackoffMs, shouldSync } from "./backoff.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
 declare const __BUILD_ID__: string;
@@ -40,6 +41,8 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   // Beacon once after 3 consecutive hard failures (not 429s), reset on success —
   // surfaces fleet-wide sync breakage without spamming telemetry.
   let failStreak = 0;
+  // While > now, syncs are suppressed (backoff after hard failures).
+  let nextAllowedSyncAt = 0;
 
   async function checkForUpdate(): Promise<void> {
     if ((await maybeSelfUpdate()) === "updated") {
@@ -65,6 +68,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       });
       if (res.data?.ok) {
         failStreak = 0;
+        nextAllowedSyncAt = 0;
         markUpdateSuccess();
         log(`synced (${reason}) — ${formatEstimates(estimates)} · rank #${res.data.rank30d ?? "—"}`);
         const deepWanted =
@@ -94,11 +98,13 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       } else {
         log(`sync skipped (${reason}) — status ${res.status}`);
         failStreak += 1;
+        nextAllowedSyncAt = Date.now() + nextBackoffMs(failStreak);
         if (failStreak === 3) void postTelemetry("sync_failed", { status: res.status, reason });
       }
     } catch (err) {
       log(`sync failed (${reason}) — ${err instanceof Error ? err.message : String(err)}`);
       failStreak += 1;
+      nextAllowedSyncAt = Date.now() + nextBackoffMs(failStreak);
       if (failStreak === 3) {
         void postTelemetry("sync_failed", {
           status: 0,
@@ -119,6 +125,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
     // Resetting on every fs event starved syncs during continuous agent
     // activity (the timer never fired until a 12s quiet gap appeared).
     if (timer) return;
+    if (!shouldSync(Date.now(), nextAllowedSyncAt)) return; // in backoff cooldown
     timer = setTimeout(() => {
       timer = null;
       void syncNow(reason);
@@ -143,7 +150,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   if (watching === 0) log("no agent dirs found to watch — heartbeat only");
 
   setInterval(() => {
-    void syncNow("heartbeat");
+    if (shouldSync(Date.now(), nextAllowedSyncAt)) void syncNow("heartbeat");
     void checkForUpdate();
   }, Math.max(1, heartbeatMin) * 60_000);
 }
