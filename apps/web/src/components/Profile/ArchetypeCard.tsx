@@ -25,6 +25,17 @@ const PILLAR_LABEL: Record<(typeof PILLAR_ORDER)[number], string> = {
   throughput: "THROUGHPUT",
 };
 
+// Plain-language pillar explanations (#58). kind: outcome pillars are measured
+// against real git results; behavioral pillars from how sessions are run.
+const PILLAR_INFO: Record<(typeof PILLAR_ORDER)[number], { weight: string; kind: "outcome" | "behavioral"; tip: string }> = {
+  verification: { weight: "22%", kind: "outcome", tip: "Do long runs survive? Tests touched in shipping sessions, and how little of your work gets reverted." },
+  yield: { weight: "22%", kind: "outcome", tip: "Verified output per dollar. Surviving lines and commits against your spend." },
+  direction: { weight: "16%", kind: "behavioral", tip: "Do your instructions land? Crisp mid-length specs, and sessions that explore the code before shipping." },
+  autonomy: { weight: "16%", kind: "behavioral", tip: "How long the agent runs unsupervised, counted only when that work survives." },
+  orchestration: { weight: "12%", kind: "behavioral", tip: "Parallel subagents and model range that lead to shipped work, not just spawns." },
+  throughput: { weight: "12%", kind: "outcome", tip: "Sustained shipping pace. Surviving lines and commits per active day." },
+};
+
 // A response has the Craft Score headline only when the server sent a numeric
 // craftScore + pillars (deep insights, modern server). Otherwise fall back to
 // the legacy archetype + axes hero.
@@ -39,15 +50,57 @@ function PillarBars({ pillars }: { pillars: ProfilePillars }) {
   const sorted = [...PILLAR_ORDER].sort((a, b) => pillars[b] - pillars[a]);
   return (
     <div className="axes mono">
-      {sorted.map((pillar, i) => (
-        <div className="axis" key={pillar}>
-          <span className="axis-k pillar-k">{PILLAR_LABEL[pillar]}</span>
-          <span className="axis-track">
-            <span className={`axis-fill f${Math.min(i, 2)}`} style={{ width: `${pillars[pillar]}%` }} />
-          </span>
-          <b className="axis-v">{Math.round(pillars[pillar])}</b>
+      {sorted.map((pillar, i) => {
+        const info = PILLAR_INFO[pillar];
+        return (
+          // Hover or keyboard-focus a row to reveal what the pillar measures (#58).
+          <div className="axis pillar-row" key={pillar} tabIndex={0}>
+            <span className="axis-k pillar-k">{PILLAR_LABEL[pillar]}</span>
+            <span className="axis-track">
+              <span className={`axis-fill f${Math.min(i, 2)}`} style={{ width: `${pillars[pillar]}%` }} />
+            </span>
+            <b className="axis-v">{Math.round(pillars[pillar])}</b>
+            <span className="pillar-tip" role="tooltip">
+              <span className="pillar-tip-head">
+                <b>{PILLAR_LABEL[pillar]}</b>
+                <span className="pillar-tip-meta">{info.weight} of score · {info.kind}</span>
+              </span>
+              {info.tip}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// "How the Craft Score works" — the plain-language expander (#58).
+function CraftExplainer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="craft-explain" data-noexport="true">
+      <button className="linklike" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        {open ? "Hide how the score works" : "How the Craft Score works"}
+      </button>
+      {open && (
+        <div className="craft-explain-body">
+          <p>
+            Craft Score is a weighted mean of six pillars: <b>Verification</b> and <b>Yield</b> carry 22% each,{" "}
+            <b>Direction</b> and <b>Autonomy</b> 16%, <b>Orchestration</b> and <b>Throughput</b> 12%. A spiky
+            profile pulls the score down, so being elite at one pillar can't hide weak ones.
+          </p>
+          <p>
+            Outcome pillars (Verification, Yield, Throughput) are measured against your real git results:
+            commits, surviving lines, tests, reverts. Behavioral pillars (Direction, Autonomy, Orchestration)
+            come from how you run your sessions. Hover any bar for what it measures.
+          </p>
+          <p>
+            <b>LOCAL-GIT VERIFIED</b> means the outcomes come from real commits on your machine (uploaded as
+            counts and salted hashes, never code). <b>GITHUB-LINKED</b> means your public GitHub activity
+            corroborates the same window.
+          </p>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -101,6 +154,7 @@ function CraftScoreHero({
         plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
       </div>
       <PillarBars pillars={insights.pillars} />
+      <CraftExplainer />
     </div>
   );
 }
@@ -308,7 +362,13 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
     setExporting(true);
     try {
       const fontEmbedCSS = await getFontEmbedCSS(cardRef.current);
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 4, cacheBust: true, fontEmbedCSS });
+      const dataUrl = await toPng(cardRef.current, {
+        pixelRatio: 4,
+        cacheBust: true,
+        fontEmbedCSS,
+        // Keep interactive chrome (explainer, tooltips) out of the share image.
+        filter: (node) => !(node instanceof HTMLElement && node.dataset.noexport === "true"),
+      });
       const a = document.createElement("a");
       a.href = dataUrl;
       a.download = `ccwarriors-${profile.login}-${insights && hasCraftScore(insights) ? "craft-score" : "archetype"}.png`;

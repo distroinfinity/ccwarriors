@@ -446,6 +446,27 @@ html[data-theme="dark"] .arch-name{ color:var(--ink); }
 .tier-mastersmith{ color:#8C2F1B; text-shadow:0 0 16px color-mix(in srgb,var(--or) 40%,transparent); }
 html[data-theme="dark"] .tier-mastersmith{ color:#E8845C; }
 .craft-tier{ font-size:13px; letter-spacing:.08em; margin-top:4px; }
+
+/* ── Pillar tooltips + score explainer (#58): progressive disclosure ───────── */
+.pillar-row{ position:relative; cursor:help; outline:none; }
+.pillar-tip{ display:none; position:absolute; left:0; bottom:calc(100% + 6px); z-index:5;
+  width:min(300px, 92%); padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+  background:var(--panel); color:var(--muted); font-family:'Geist',system-ui,sans-serif;
+  font-size:11.5px; line-height:1.5; letter-spacing:0; text-transform:none;
+  box-shadow:0 2px 4px rgba(22,20,15,.06), 0 12px 28px rgba(22,20,15,.14); }
+html[data-theme="dark"] .pillar-tip{ background:#1a1b1f; box-shadow:0 12px 28px rgba(0,0,0,.55); }
+.pillar-row:hover .pillar-tip, .pillar-row:focus .pillar-tip{ display:block; }
+.pillar-tip-head{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:4px; }
+.pillar-tip-head b{ font-size:10px; letter-spacing:.12em; color:var(--ink); }
+.pillar-tip-meta{ font-size:9.5px; letter-spacing:.04em; color:var(--bronze); white-space:nowrap; }
+.craft-explain{ margin-top:14px; }
+.craft-explain > .linklike{ font-size:11px; color:var(--muted); }
+.craft-explain > .linklike:hover{ color:var(--or); }
+.craft-explain-body{ margin-top:10px; padding:12px 14px; border:1px solid var(--line); border-radius:8px;
+  background:var(--segoff); }
+.craft-explain-body p{ font-size:12px; line-height:1.6; color:var(--muted); margin:0 0 8px; }
+.craft-explain-body p:last-child{ margin-bottom:0; }
+.craft-explain-body b{ color:var(--ink); font-weight:600; }
 /* Tier color wins over the dark theme's plain-ink score. */
 html[data-theme="dark"] .craft-score.tier-apprentice{ color:var(--muted); }
 html[data-theme="dark"] .craft-score.tier-journeyman{ color:var(--bronze); }
