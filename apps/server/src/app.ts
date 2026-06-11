@@ -16,6 +16,7 @@ import { sponsorsRoute } from "./routes/sponsors.js";
 import { insightsRoute } from "./routes/insights.js";
 import { profileRoute } from "./routes/profile.js";
 import { ogRoute } from "./routes/og.js";
+import { badgeRoute } from "./routes/badge.js";
 
 export interface AppDeps {
   db: DB;
@@ -103,6 +104,7 @@ export function createApp(deps?: AppDeps) {
       );
     }
     app.route("/og", ogRoute(deps.db, deps.store, deps.auth?.webBaseUrl ?? "https://ccwarriors.xyz"));
+    app.route("/badge", badgeRoute(deps.store));
     if (deps.auth) {
       app.route("/", authRoute(deps.db, deps.auth));
     }

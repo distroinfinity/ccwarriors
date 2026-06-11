@@ -113,6 +113,7 @@ export function YourCard({
 }) {
   const [portraitFailed, setPortraitFailed] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [badgeCopied, setBadgeCopied] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const monogram = (entry.githubLogin[0] ?? "?").toUpperCase();
 
@@ -127,6 +128,19 @@ export function YourCard({
       "_blank",
       "noopener",
     );
+  };
+
+  const copyBadge = async () => {
+    const login = encodeURIComponent(entry.githubLogin);
+    // ?ref=badge: installs from profile READMEs attribute to the badge loop.
+    const md = `[![CCWarriors](${API_HTTP}/badge/${login}.svg)](https://ccwarriors.xyz/${login}?ref=badge)`;
+    try {
+      await navigator.clipboard.writeText(md);
+      setBadgeCopied(true);
+      setTimeout(() => setBadgeCopied(false), 2500);
+    } catch {
+      prompt("Copy your badge markdown:", md);
+    }
   };
 
   const downloadCard = async () => {
@@ -225,6 +239,9 @@ export function YourCard({
       </button>
       <button className="btn g" onClick={downloadCard} disabled={exporting}>
         {exporting ? "Exporting…" : "Download card"}
+      </button>
+      <button className="btn g" onClick={copyBadge}>
+        {badgeCopied ? "Copied — paste into your README" : "Copy README badge"}
       </button>
       {onLocate && (
         <button className="btn g" onClick={onLocate}>
