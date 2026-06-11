@@ -8,6 +8,11 @@ import { captureEvent } from "../routes/telemetry.js";
 
 export const STORY_REFRESH_MS = 24 * 60 * 60 * 1000; // at most one generation/day/user
 
+// Per-process dedup: a multi-machine user uploading transcripts from two
+// daemons seconds apart raced past the throttle and generated (and billed)
+// twice — caught live on day one via story_generated telemetry.
+const inFlight = new Set<string>();
+
 export interface StoryDeps {
   db: DB;
   generate: StoryGenerate;
@@ -16,6 +21,8 @@ export interface StoryDeps {
 
 /** Generate (or refresh) one user's story from their stored source. Never throws. */
 export async function maybeGenerateStory(deps: StoryDeps, user: User): Promise<void> {
+  if (inFlight.has(user.id)) return;
+  inFlight.add(user.id);
   try {
     const now = deps.now?.() ?? Date.now();
     const [existing] = await deps.db.select().from(userStories).where(eq(userStories.userId, user.id));
@@ -48,5 +55,7 @@ export async function maybeGenerateStory(deps: StoryDeps, user: User): Promise<v
     await deps.db.delete(storySources).where(eq(storySources.userId, user.id));
   } catch {
     // Background work must never propagate.
+  } finally {
+    inFlight.delete(user.id);
   }
 }

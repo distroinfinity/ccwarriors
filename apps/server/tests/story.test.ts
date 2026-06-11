@@ -105,6 +105,21 @@ describe("POST /insights/transcripts", () => {
   });
 });
 
+describe("maybeGenerateStory concurrency", () => {
+  it("two simultaneous triggers (multi-machine upload) generate exactly once", async () => {
+    const db = await makeDb();
+    const u = (await seedUser(db, { login: "twinrig", token: "tok_tw" }))!;
+    await db.insert(storySources).values({ userId: u.id, payload: transcriptsBody() });
+    // Slow generator so both calls overlap — the race that double-billed in prod.
+    const generate = vi.fn().mockImplementation(
+      () => new Promise((r) => setTimeout(() => r({ doc: doc(), model: "m" }), 50)),
+    );
+    await Promise.all([maybeGenerateStory({ db, generate }, u), maybeGenerateStory({ db, generate }, u)]);
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(userStories).where(eq(userStories.userId, u.id))).toHaveLength(1);
+  });
+});
+
 describe("maybeGenerateStory throttle", () => {
   it("skips regeneration within the refresh window", async () => {
     const db = await makeDb();
