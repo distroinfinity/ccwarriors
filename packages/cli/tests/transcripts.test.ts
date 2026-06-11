@@ -207,86 +207,136 @@ describe("collectTranscripts", () => {
     expect(prompts).toContain("hi");
   });
 
-  it("stratified sample: old session (~35 days ago) appears alongside recent sessions", async () => {
+  it("stratified sample: old active session (~35 days ago) is picked by stratified pass when greedy budget is full", async () => {
+    // Scenario: 4 fresh sessions fill the greedy pass (≤ 425k = 0.85 × 500k).
+    // Session O at ~35 days old is in the SAME project ("active-proj") as the fresh
+    // sessions, so it is NOT stale (project has recent activity). O is sorted after
+    // the fresh sessions in the greedy pass (by endMs desc) and is skipped because
+    // used + O.jsonChars would exceed 425k. O then goes to the stratified leftover
+    // pool. Stratum index for 35-day-old session: floor((40-35)/10) = 0 (oldest
+    // stratum), so round-robin picks it first. used + O ≤ 500k → O is picked.
+    //
+    // Discrimination: if the stratified loop were removed, O would never appear.
+    //
+    // Size budget (all values computed from actual JSON.stringify):
+    //   Fresh session: 51 prompts × ~1928 chars → ~98.6k chars each
+    //   4 fresh total: ~394.5k ≤ 425k (greedy picks all 4)
+    //   O: 25 prompts × ~1953 chars → ~48.4k chars
+    //   4 fresh + O: ~442.9k > 425k (O skipped by greedy) AND ≤ 500k (O fits stratified)
     const projects = tmp("ccw-tr-projects-");
     const home = tmp("ccw-tr-home-");
-
-    // Each fresh session needs ~115k chars to fill the 425k greedy budget with 4 sessions.
-    // Use "work " repeated to avoid the 48-char base64 redaction pattern.
-    // 60 prompts × ~1900 chars each ≈ 115k chars/session serialized.
-    // 4 sessions × 115k ≈ 460k, which overflows the 425k RECENT_BUDGET_SHARE (0.85×500k),
-    // so only ~3-4 sessions fit in the greedy pass, exhausting it.
-    // Then the 35-day-old session can only appear via the stratified leftover pass.
-    const freshWord = "work ".repeat(380).trim(); // ~1900 chars, short words — no redaction
-    for (let i = 0; i < 5; i++) {
+    const filler = "work ".repeat(385).trim(); // 1924 chars — short words, no redaction pattern
+    for (let i = 0; i < 4; i++) {
+      // Session i is (i+1) days old: endMs ≈ now − (i+1)*24*60 min.
+      const daysAgoMin = (i + 1) * 24 * 60;
       const lines: string[] = [];
-      for (let p = 0; p < 60; p++) {
-        lines.push(JSON.stringify({ type: "user", message: { content: `fresh${i} p${p} ${freshWord}` }, timestamp: ts(5 + i + 60 - p + 1) }));
-        lines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(5 + i + 60 - p) }));
+      for (let p = 0; p < 51; p++) {
+        // First prompt is the earliest; last prompt drives endMs.
+        const minAgo = daysAgoMin + (51 - p);
+        lines.push(JSON.stringify({ type: "user", message: { content: `fp${p} ${filler}` }, timestamp: ts(minAgo + 1) }));
+        lines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(minAgo) }));
       }
       writeSession(projects, `fresh${i}.jsonl`, lines, "active-proj");
     }
 
-    // One substantive session ~35 days ago — must fall in an old stratum.
-    // Use a small session so it fits in leftover budget after the greedy pass fills up.
-    writeSession(projects, "old.jsonl", substantiveLines("ancient wisdom", 35 * 24 * 60), "active-proj");
+    // O: 35 days old, same project dir → NOT stale (project has fresh sessions).
+    // 25 prompts with a unique marker so we can assert it appears in the payload.
+    const oMinAgo = 35 * 24 * 60;
+    const oldLines: string[] = [];
+    for (let p = 0; p < 25; p++) {
+      const minAgo = oMinAgo + (25 - p);
+      oldLines.push(JSON.stringify({ type: "user", message: { content: p === 0 ? `OLD_STRATIFIED_MARKER unique ${filler}` : `op${p} ${filler}` }, timestamp: ts(minAgo + 1) }));
+      oldLines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(minAgo) }));
+    }
+    writeSession(projects, "old.jsonl", oldLines, "active-proj");
     setFileMtime(projects, "old.jsonl", 35, "active-proj");
 
     process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
     process.env["CCWARRIORS_HOME"] = home;
     const { collectTranscripts, STORY_CHAR_BUDGET } = await import("../src/transcripts.js");
-
     const payload = (await collectTranscripts())!;
 
-    // RECENT_BUDGET_SHARE = 0.85, so the greedy pass budget = 425k chars.
-    // With 5 fresh sessions × ~115k chars each ≈ 575k total, only ~3-4 fit in the greedy pass.
-    // The old session (small, 35 days old) cannot be picked by the greedy pass
-    // because the greedy pass is full — it can only enter via the stratified leftover pass.
-    // Verify the budget was stressed: used > 90% of greedy budget (0.85 × 500k × 0.9 ≈ 382k).
-    const serialized = JSON.stringify(payload.sessions);
-    expect(serialized.length).toBeGreaterThan(STORY_CHAR_BUDGET * 0.85 * 0.9);
+    // The total payload must fit within the hard budget.
+    expect(JSON.stringify(payload.sessions).length).toBeLessThanOrEqual(STORY_CHAR_BUDGET);
 
-    // The old session must still appear — it entered via the stratified leftover pass.
-    const prompts = payload.sessions.flatMap((s) => s.prompts);
-    expect(prompts).toContain("ancient wisdom");
+    // O's unique marker must be present — it can ONLY arrive via the stratified pass.
+    // If the stratified loop is removed, this assertion fails.
+    const allPrompts = payload.sessions.flatMap((s) => s.prompts);
+    expect(allPrompts.some((p) => p.includes("OLD_STRATIFIED_MARKER"))).toBe(true);
   });
 
-  it("stale-project deprioritization: when budget is tight, stale single-session project loses to active", async () => {
+  it("stale-project deprioritization: stale session is excluded while old-but-active session is included", async () => {
+    // Scenario: 3 fresh sessions + 1 old-but-active session A fill the greedy pass.
+    // A stale session S (single-session project, 16 days idle > 14d threshold) is
+    // placed in the stale pool, bypasses the greedy pass, then cannot fit in the
+    // stratified pass because the budget is already exhausted.
+    //
+    // WITH stale logic (current code):
+    //   Greedy active pool (endMs desc): fresh1(1d), fresh2(2d), fresh3(3d), A(18d)
+    //   fresh1+2+3 = ~290k; +A = ~406k ≤ 425k → A PICKED by greedy.
+    //   Stale pool: [S]. Stratified: 406k + 97k = ~503k > 500k → S EXCLUDED.
+    //   Payload contains A, not S. ← current behaviour
+    //
+    // WITHOUT stale logic (if stale split were removed):
+    //   Greedy pool (endMs desc): fresh1(1d), fresh2(2d), fresh3(3d), S(16d), A(18d)
+    //   fresh1+2+3 = ~290k; +S = ~387k ≤ 425k → S PICKED instead.
+    //   A: 387k + 116k = ~503k > 425k → A SKIPPED by greedy.
+    //   Stratified: 387k + 116k = ~503k > 500k → A EXCLUDED.
+    //   Payload contains S, not A. ← opposite result
+    //
+    // Asserting BOTH A present AND S absent is the discriminator: it flips if
+    // the stale pool split is removed.
+    //
+    // Size budget (all values from actual JSON.stringify):
+    //   Fresh session: 50 prompts × ~1928 chars → ~96.7k chars each
+    //   3 fresh total: ~290.1k ≤ 425k
+    //   A: 60 prompts → ~116k chars
+    //   3 fresh + A: ~406.1k ≤ 425k (A fits greedy, WITH stale)
+    //   S: 50 prompts → ~96.7k chars
+    //   3 fresh + A + S: ~502.8k > 500k (S excluded from stratified)
+    //   3 fresh + S: ~386.8k ≤ 425k (S fits greedy, WITHOUT stale)
+    //   3 fresh + S + A: ~502.8k > 425k (A skipped, WITHOUT stale)
+    //   3 fresh + S + A: ~502.8k > 500k (A excluded from stratified, WITHOUT stale)
     const projects = tmp("ccw-tr-projects-");
     const home = tmp("ccw-tr-home-");
+    const filler = "work ".repeat(385).trim(); // 1924 chars — short words, no redaction
 
-    // Budget math (all sizes ≈ serialized JSON chars):
-    //   - Active session: 40 prompts × ~1900 chars ≈ 77k chars each
-    //   - Greedy budget: 0.85 × 500k = 425k → fits 5 sessions (5 × 77k = 386k)
-    //   - Stratified pass picks 1 leftover active session → 386k + 77k = 463k used
-    //   - Remaining budget: 500k − 463k = 37k
-    //   - Stale session: 60 prompts × ~1900 chars ≈ 120k → 120k > 37k, cannot fit
-    // Therefore the stale session is absent from the payload.
-    //
-    // Active project: 6 recent sessions each with 40 prompts × ~1900 chars ≈ 77k each.
-    // Use short-word repetition to avoid the 48-char base64 redaction pattern.
-    const activeWord = "code ".repeat(380).trim(); // ~1900 chars, short words
-    for (let i = 0; i < 6; i++) {
+    // 3 fresh sessions: 1, 2, 3 days old in "active-proj".
+    for (let i = 0; i < 3; i++) {
+      const daysAgoMin = (i + 1) * 24 * 60;
       const lines: string[] = [];
-      for (let p = 0; p < 40; p++) {
-        lines.push(JSON.stringify({ type: "user", message: { content: `active session ${i} prompt ${p} ${activeWord}` }, timestamp: ts(10 + i + 40 - p + 1) }));
-        lines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "tool_use", name: "Edit", input: {} }] }, timestamp: ts(10 + i + 40 - p) }));
+      for (let p = 0; p < 50; p++) {
+        const minAgo = daysAgoMin + (50 - p);
+        lines.push(JSON.stringify({ type: "user", message: { content: `gp${p} ${filler}` }, timestamp: ts(minAgo + 1) }));
+        lines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(minAgo) }));
       }
-      writeSession(projects, `active${i}.jsonl`, lines, "active-proj");
+      writeSession(projects, `fresh${i}.jsonl`, lines, "active-proj");
     }
 
-    // Stale project: single session ~20 days ago (> STALE_PROJECT_DAYS=14, count=1<=2).
-    // Made large (60 prompts × ~1900 chars ≈ 120k) so it cannot fit in the ~37k remaining
-    // budget after the greedy pass + stratified active leftovers have been picked.
-    // Use a unique marker to identify it in the payload.
-    const staleWord = "stale ".repeat(380).trim(); // ~1900 chars, short words
-    const staleLines: string[] = [];
+    // A: 18 days old, same "active-proj" (4 sessions total → NOT stale: project is active).
+    // 60 prompts with unique marker OLDACTIVE_MARKER.
+    const aMinAgo = 18 * 24 * 60;
+    const aLines: string[] = [];
     for (let p = 0; p < 60; p++) {
-      staleLines.push(JSON.stringify({ type: "user", message: { content: `STALE_UNIQUE_MARKER prompt ${p} ${staleWord}` }, timestamp: ts(20 * 24 * 60 + 60 - p + 1) }));
-      staleLines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(20 * 24 * 60 + 60 - p) }));
+      const minAgo = aMinAgo + (60 - p);
+      aLines.push(JSON.stringify({ type: "user", message: { content: p === 0 ? `OLDACTIVE_MARKER_18d unique ${filler}` : `ap${p} ${filler}` }, timestamp: ts(minAgo + 1) }));
+      aLines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(minAgo) }));
     }
-    writeSession(projects, "stale.jsonl", staleLines, "stale-proj");
-    setFileMtime(projects, "stale.jsonl", 20, "stale-proj");
+    writeSession(projects, "active-old.jsonl", aLines, "active-proj");
+    setFileMtime(projects, "active-old.jsonl", 18, "active-proj");
+
+    // S: 16 days old, in its own project "stale-proj" (only 1 session → stale:
+    //   now − lastEndMs = 16d > STALE_PROJECT_DAYS=14d AND count=1 ≤ 2).
+    // 50 prompts with unique marker STALE_MARKER.
+    const sMinAgo = 16 * 24 * 60;
+    const sLines: string[] = [];
+    for (let p = 0; p < 50; p++) {
+      const minAgo = sMinAgo + (50 - p);
+      sLines.push(JSON.stringify({ type: "user", message: { content: p === 0 ? `STALE_MARKER_16d unique ${filler}` : `sp${p} ${filler}` }, timestamp: ts(minAgo + 1) }));
+      sLines.push(JSON.stringify({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "ok" }] }, timestamp: ts(minAgo) }));
+    }
+    writeSession(projects, "stale.jsonl", sLines, "stale-proj");
+    setFileMtime(projects, "stale.jsonl", 16, "stale-proj");
 
     process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
     process.env["CCWARRIORS_HOME"] = home;
@@ -296,25 +346,16 @@ describe("collectTranscripts", () => {
     // Total budget respected.
     expect(JSON.stringify(payload.sessions).length).toBeLessThanOrEqual(STORY_CHAR_BUDGET);
 
-    // Active sessions must be present (they are picked by recency-greedy first).
-    const hasActiveSession = payload.sessions.some((s) =>
-      s.prompts.some((p) => p.includes("active session")),
-    );
-    expect(hasActiveSession).toBe(true);
+    // A must be present: it is in the active pool and picked by the greedy pass.
+    // Without stale logic, S would be picked instead of A — this assertion flips.
+    const aPresent = payload.sessions.some((s) => s.prompts.some((p) => p.includes("OLDACTIVE_MARKER_18d")));
+    expect(aPresent).toBe(true);
 
-    // The budget must have been substantially consumed by active sessions (>85% used).
-    // With 5 active sessions × ~115k each the greedy pass fills to 425k and the
-    // stratified pass picks the next leftover active session — together they push
-    // well past 85% of the 500k budget.
-    const serializedLen = JSON.stringify(payload.sessions).length;
-    expect(serializedLen).toBeGreaterThan(STORY_CHAR_BUDGET * 0.85);
-
-    // The stale session must NOT appear — budget was exhausted before the stratified
-    // pass could fit it in. This is the key assertion: stale-project truly deprioritized.
-    const stalePresent = payload.sessions.some((s) =>
-      s.prompts.some((p) => p.includes("STALE_UNIQUE_MARKER")),
-    );
-    expect(stalePresent).toBe(false);
+    // S must be absent: it is in the stale pool and the budget is exhausted before
+    // the stratified pass can fit it.
+    // Without stale logic, S would appear instead of A — this assertion flips.
+    const sPresent = payload.sessions.some((s) => s.prompts.some((p) => p.includes("STALE_MARKER_16d")));
+    expect(sPresent).toBe(false);
   });
 
   it("hard ceiling: many tiny sessions never exceed MAX_STORY_SESSIONS", async () => {
