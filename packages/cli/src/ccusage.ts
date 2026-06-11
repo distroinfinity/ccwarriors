@@ -19,12 +19,10 @@ const CCUSAGE_FALLBACK_PKG = "ccusage@20.0.6";
 // first time the primary's native binary crashes, so we never re-spawn a
 // known-broken ccusage.
 let activeSpec = CCUSAGE_PKG;
-let fallbackNotified = false;
 
 /** Test-only: restore module state between tests. */
 export function resetCcusageStateForTest(): void {
   activeSpec = CCUSAGE_PKG;
-  fallbackNotified = false;
 }
 
 // How many days of raw history we ship. The server prices days and ignores
@@ -87,8 +85,9 @@ const defaultRunner: CcusageRunner = async (pkg, args) => {
  * resolve `ccusage@20` (ETARGET). The exact-pinned fallback can clear both.
  */
 function isCcusageBroken(err: unknown): boolean {
-  const e = err as { stderr?: unknown; message?: unknown; signal?: unknown };
-  if (e && e.signal) return true; // killed by a signal (segfault/abort)
+  const e = err as { stderr?: unknown; message?: unknown; signal?: unknown; killed?: unknown };
+  // killed=true means our own execFile timeout fired (transient), not a broken binary.
+  if (e && e.signal && !e.killed) return true; // killed by a signal (segfault/abort)
   const text = `${typeof e?.stderr === "string" ? e.stderr : ""}\n${typeof e?.message === "string" ? e.message : ""}`;
   return /dyld|Library not loaded|image not found|Bad CPU type|cannot execute binary|native binary is not (available|executable)|ETARGET|No matching version/i.test(
     text,
@@ -104,12 +103,9 @@ export async function invokeCcusage(args: string[], run: CcusageRunner = default
   try {
     return await run(activeSpec, args);
   } catch (err) {
-    if (activeSpec === CCUSAGE_PKG && isCcusageBroken(err)) {
+    if (activeSpec === CCUSAGE_PKG && CCUSAGE_PKG !== CCUSAGE_FALLBACK_PKG && isCcusageBroken(err)) {
       activeSpec = CCUSAGE_FALLBACK_PKG;
-      if (!fallbackNotified) {
-        fallbackNotified = true;
-        void postTelemetry("ccusage_fallback", { from: CCUSAGE_PKG, to: CCUSAGE_FALLBACK_PKG });
-      }
+      void postTelemetry("ccusage_fallback", { from: CCUSAGE_PKG, to: CCUSAGE_FALLBACK_PKG });
       return await run(activeSpec, args);
     }
     throw err;

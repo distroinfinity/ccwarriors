@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { normalizeDay, invokeCcusage, resetCcusageStateForTest, type CcusageRunner } from "../src/ccusage.js";
+import { postTelemetry } from "../src/core.js";
 
 // invokeCcusage fires postTelemetry on the first fallback — stub it so no
 // network call happens during the unit test.
@@ -104,7 +105,14 @@ const etargetCrash = () =>
   });
 
 describe("invokeCcusage broken-ccusage fallback", () => {
-  beforeEach(() => resetCcusageStateForTest());
+  // NOTE: CCUSAGE_PKG is a module-load const (read once at import time), so
+  // deleting process.env.CCWARRIORS_CCUSAGE_PKG here would have no effect on
+  // its value. The literal "ccusage@20" assertions below are safe as long as
+  // CI does not set that env var (it does not).
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetCcusageStateForTest();
+  });
 
   it("uses the primary when healthy and never calls the fallback", async () => {
     const run = vi.fn(async (_pkg: string, _args: string[]) => '{"daily":[]}');
@@ -160,5 +168,18 @@ describe("invokeCcusage broken-ccusage fallback", () => {
     });
     await expect(invokeCcusage(["daily"], run as unknown as CcusageRunner)).rejects.toThrow(/transient network/);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires the fallback telemetry exactly once when the primary native binary crashes", async () => {
+    const run = vi.fn(async (pkg: string, _args: string[]) => {
+      if (pkg === "ccusage@20") throw nativeCrash();
+      return '{"daily":[]}';
+    });
+    await invokeCcusage(["daily", "--json"], run as unknown as CcusageRunner);
+    expect(postTelemetry).toHaveBeenCalledTimes(1);
+    expect(postTelemetry).toHaveBeenCalledWith("ccusage_fallback", {
+      from: "ccusage@20",
+      to: "ccusage@20.0.6",
+    });
   });
 });
