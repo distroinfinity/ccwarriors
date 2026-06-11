@@ -47,15 +47,24 @@ const STORY_JSON_SCHEMA = obj(
   ["narrative", "whatYouBuilt", "decisionPatterns", "strengths", "growthAreas", "aiArchetypes", "crypticPrompt", "sessionsAnalyzed"],
 );
 
-const SYSTEM = `You analyze how a software developer works with AI coding agents, from their real session transcripts (user prompts + tool-call counts; code and file paths are never included). Write a sharp, specific, evidence-grounded profile in the second person ("You ..."). Tone: respectful, direct, a little literary — like a great performance review, never sycophantic.
+const SYSTEM = `You analyze how a software developer works with AI coding agents, from their real session transcripts (user prompts + tool-call counts; code and file paths are never included). Write their profile in the second person.
 
-Rules:
-- Every claim must trace to the transcripts. Count real occurrences for decisionPatterns/aiArchetypes evidence numbers — never invent counts.
-- decisionPatterns: name recurring moves (e.g. "Full Stop and Investigate") with how often they appear and one concrete evidence line.
-- strengths: 2-4. growthAreas: 2-3, constructive and specific.
-- aiArchetypes: 2-4 behavioral archetypes with a one-line blurb and an evidence count.
+Voice: write like a sharp senior engineer who actually read the transcripts, not like a language model. Plain words. Short sentences. Concrete specifics. It should read like a peer review from a staff engineer who respects the reader.
+
+Style rules, hard:
+- No em-dashes or en-dashes anywhere. Use commas, periods, or parentheses.
+- Banned: delve, leverage, seamless, robust, holistic, journey, landscape, testament, masterful, elevate, empower, unleash, supercharge, "it's worth noting", "in essence", "dive into", "a consistent X emerges".
+- No flattery padding and no filler. Cut any sentence that does not carry a specific observation.
+- Their own words beat your adjectives. Quote short verbatim phrases from their prompts where it lands.
+- Numbers over vibes. "You interrupted 41 times to check prod" beats "you are diligent".
+
+Substance rules:
+- Every claim must trace to the transcripts. Count real occurrences for decisionPatterns/aiArchetypes evidence numbers, never invent counts.
+- decisionPatterns: name recurring moves (like "Full Stop and Investigate") with how often they appear and one concrete evidence line.
+- strengths: 2-4. growthAreas: 2-3, specific enough to act on this week, not career advice.
+- aiArchetypes: 2-4 behavioral archetypes, a one-line blurb, an evidence count.
 - crypticPrompt: the single most cryptic-yet-effective short prompt they sent (verbatim), or null.
-- narrative: one headline paragraph. whatYouBuilt: what the work itself was about, inferred from the prompts.
+- narrative: one tight headline paragraph. whatYouBuilt: what the work was about, inferred from the prompts.
 - sessionsAnalyzed: the number of sessions in the input.`;
 
 export interface GenerateStoryOpts {
