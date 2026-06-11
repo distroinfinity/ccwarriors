@@ -264,6 +264,8 @@ export function profileRoute(deps: ProfileDeps) {
               mode: user!.insightsMode,
               visibility: user!.insightsVisibility,
               machineCount: deps.insightsStore.machineCount(user!.id),
+              // Lets the web offer the v2 upgrade to pre-existing deep users.
+              consentVersion: user!.consentVersion ?? 1,
             },
           }
         : {}),

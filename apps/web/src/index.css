@@ -699,3 +699,12 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .story-empty{ text-align:left; padding-top:48px; }
 .deck-card-story{ text-decoration:none; color:inherit; border-color:var(--or); display:flex; flex-direction:column; }
 .deck-card-story .deck-share{ color:var(--or); }
+
+/* ── v2 upgrade banner: pre-existing deep users unlock the story tier ─────── */
+.consent-upgrade{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:14px;
+  padding:14px 16px; border:1px solid var(--or); border-radius:10px;
+  background:color-mix(in srgb,var(--or) 5%, var(--panel)); }
+.consent-upgrade-text{ flex:1 1 320px; }
+.consent-upgrade-text b{ font-size:13px; }
+.consent-upgrade-text p{ font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0; }
+.consent-upgrade .btn{ flex:0 0 auto; width:auto; padding:11px 18px; margin:0; }

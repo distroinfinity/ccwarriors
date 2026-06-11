@@ -86,12 +86,17 @@ describe("profile gate removal", () => {
     expect(anonBody.insights.locked).toBe(true);
     expect(anonBody.insights.reason).toBe("no_consent");
 
-    // Owner: sees the honest forging state.
+    // Owner: sees the honest forging state, plus their consent version (v1
+    // default) so the web can offer the v2 story upgrade.
     const cookie = `ccw_session=${createSessionToken({ login: "fresh", avatarUrl: "", githubId: u.githubId }, SECRET)}`;
     const owner = await app().request("/fresh", { headers: { Cookie: cookie } });
-    const ownerBody = (await owner.json()) as { insights: { locked: boolean; reason?: string } };
+    const ownerBody = (await owner.json()) as {
+      insights: { locked: boolean; reason?: string };
+      owner?: { consentVersion?: number };
+    };
     expect(ownerBody.insights.locked).toBe(true);
     expect(ownerBody.insights.reason).toBe("forging");
+    expect(ownerBody.owner?.consentVersion).toBe(1);
   });
 
   it("never emits forging based on session count", async () => {

@@ -111,7 +111,7 @@ export interface Profile {
   } | null;
   github?: GithubStats | null;
   insights: ProfileInsights | LockedInsights;
-  owner?: { consent: boolean; visibility: "public" | "private"; machineCount: number; mode: "off" | "deep" };
+  owner?: { consent: boolean; visibility: "public" | "private"; machineCount: number; mode: "off" | "deep"; consentVersion?: number };
 }
 
 export type ProfileState =
