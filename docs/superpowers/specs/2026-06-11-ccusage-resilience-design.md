@@ -41,6 +41,41 @@ wrongly rolled back (`self_update_rollback`), and the fleet can loop. The
 self-update health signal ("completed a sync") is confounded by ccusage/network
 health.
 
+## PostHog evidence (7-day window, queried 2026-06-11)
+
+The live event stream confirmed and sharpened the diagnosis. `sync_failed`
+(205 events, all `darwin`) broke down as:
+
+| Category | Count | Meaning |
+|---|---|---|
+| `network_fetch_failed` | 84 | transient connectivity (`fetch()` to API failed) |
+| ccusage command failed | 66 | `npx ccusage@20 daily …` failing (reason truncated at 120 chars) |
+| `usage collection failed` | 19 | `readUsage()` threw — downstream of ccusage failures |
+| ccusage **native crash** | 16 | `dyld: Library not loaded` — two variants: `/nix/store/…libiconv` AND `/opt/homebrew/opt/ll…`, plus "native binary is not available" |
+| ccusage npm resolve | 9 | `npm error ETARGET … No matching version` for `ccusage@20` |
+| `auth_401` | 6 | expired/invalid ingest token |
+| `server_5xx` | 3 | transient Railway |
+| `spawn EAGAIN` | 2 | OS resource exhaustion |
+
+Corrections this forced on the original framing:
+
+- **Not "fleet-wide."** `self_update_applied` fired 552× across 48 distinct
+  builds in 7 days ⇒ ~12 active machines, ~7 deploys/day. The ccusage 20.0.10
+  bug *would* hit any Mac that pulls it, but observed blast radius is a handful
+  of (Mac) machines, heavily the dev's own. Telemetry carries no machine id, so
+  exact per-machine counts aren't available (a follow-up: add `machineId` to
+  daemon telemetry).
+- **The ccusage error signatures match the fix's detection** — nix dyld,
+  homebrew dyld, and "native binary is not available" are all covered; the 66
+  truncated "command failed" rows are the same `ccusage@20` invocation whose
+  full stderr the runtime fallback still inspects. ETARGET is a separate
+  npm-resolution failure now also handled (see Component 1).
+- **Rollback has *never* been observed** — `self_update_rollback` isn't in the
+  project taxonomy (0 events), partly a real bug: the rollback emits
+  `void postTelemetry(...)` then `process.exit(1)` on the next line, so the
+  fire-and-forget beacon never flushes. Rollbacks (if any) are invisible.
+  Addressed by Component 6.
+
 ## Goals
 
 1. Keep `ccusage@20` (latest features) on healthy machines, but **automatically
@@ -51,9 +86,15 @@ health.
    health** so a good new build is never rolled back for a reason that isn't the
    bundle's fault — while preserving rollback for genuinely broken bundles.
 4. Add observability so the next bad upstream ccusage patch is visible early.
+5. **Recover the daemon from a 401** instead of backing off forever on a stale
+   token (the daemon can't run an interactive login and holds the token it read
+   at startup, so a re-login elsewhere never reaches it today).
+6. **Make rollbacks observable** — flush the rollback telemetry before the
+   process exits.
 
 Non-goals: changing the install funnel (it's healthy); fixing ccusage upstream
-(filed separately); forcing a ccusage JS path (doesn't exist in v20).
+(filed separately); forcing a ccusage JS path (doesn't exist in v20); adding a
+machine id to daemon telemetry (separate follow-up).
 
 ## Components
 
@@ -65,22 +106,26 @@ Non-goals: changing the install funnel (it's healthy); fixing ccusage upstream
   ships fixed versions; see follow-ups.)
 - Module-level `activeSpec`, initialized to the primary. `runCcusage` invokes
   `activeSpec`.
-- **Native-failure detection.** A ccusage invocation is treated as a native
-  load/crash failure when the thrown exec error's `stderr`/`message` matches any
+- **Broken-ccusage detection** (`isCcusageBroken`). A ccusage invocation is
+  treated as broken when the thrown exec error's `stderr`/`message` matches any
   of: `dyld`, `Library not loaded`, `image not found`, `Bad CPU type`,
   `cannot execute binary`, `native binary is not available`,
-  `native binary is not executable` — or the child was killed by a signal
-  (`err.signal != null`).
-- **Fallback flip.** On a native failure while `activeSpec` is the primary: set
+  `native binary is not executable` (native load/exec crashes — both the nix and
+  homebrew dyld variants seen in PostHog), OR `npm error code ETARGET` /
+  `No matching version` (npm fails to resolve `ccusage@20` — PostHog showed 9
+  such failures; the exact-pinned fallback can resolve where the `@20` range
+  hiccups, and is harmless if the registry is genuinely down since backoff still
+  applies) — OR the child was killed by a signal (`err.signal != null`).
+- **Fallback flip.** On a broken-ccusage failure while `activeSpec` is the primary: set
   `activeSpec = CCUSAGE_FALLBACK_PKG` **once**, fire the `ccusage_fallback`
   telemetry event once, and retry the current call with the fallback. All
   subsequent calls in this process use the fallback directly — so we never
   re-spawn the broken primary (this is the per-call half of the flap fix).
-- **Both broken.** If the fallback invocation also fails with a native
-  signature, throw (as today) so `readUsage` surfaces the failure and the daemon
+- **Both broken.** If the fallback invocation also fails the broken-ccusage
+  check, throw (as today) so `readUsage` surfaces the failure and the daemon
   records it.
 - **Empty data is not failure.** Legitimate "no usage found" / empty `daily`
-  results must never trigger fallback — only the native crash signature does.
+  results must never trigger fallback — only the broken-ccusage signatures do.
 - Route the trailing `--version` read (currently calling `CCUSAGE_PKG`
   directly) through `activeSpec`.
 - **Testability seam.** `runCcusage` takes an injectable exec runner
@@ -119,42 +164,83 @@ Non-goals: changing the install funnel (it's healthy); fixing ccusage upstream
 
 ### 4. Telemetry / observability — `apps/server/src/routes/telemetry.ts` (supporting)
 
-- Add `ccusage_fallback` to the event enum. The CLI fires it once per process
-  when it flips to the fallback spec — early warning that upstream-latest ccusage
-  is broken in the fleet.
-- `ccusage_fallback` is **not** added to the `failureEvents` list, so it is
-  captured/forwarded to PostHog and Railway logs but never enters the rolling
-  failure window — it is a successful-degraded state, not a failure, and never
-  pages. No change to `recordFailure` or the `/telemetry/failures` `nonPaging`
-  set is needed.
-- `sync_failed` still fires only when even the fallback dies.
+- Add `ccusage_fallback` and `auth_expired` to the event enum. Neither is added
+  to the `failureEvents` list, so they are captured/forwarded to PostHog and
+  Railway logs but never enter the rolling failure window or page — they are
+  degraded-but-known states, not prod breakage. No change to `recordFailure` or
+  the `/telemetry/failures` `nonPaging` set is needed.
+- `ccusage_fallback` fires once per process when the CLI flips to the fallback
+  spec (early warning of a bad upstream patch). `sync_failed` still fires only
+  when even the fallback dies.
+
+### 5. Daemon 401 re-auth — `packages/cli/src/daemon.ts` (core)
+
+PostHog showed 6 `auth_401` failures; the daemon currently treats 401 as a
+generic failure and backs off forever, because (a) it can't run the interactive
+browser login and (b) it captured `config.token` once at startup, so a re-login
+on disk never reaches the running process.
+
+- Make the daemon's `token` mutable (`let token = cfg.token`).
+- Add `reloadToken()` → re-reads `loadConfig()` from disk, returns the on-disk
+  token or null.
+- Handle `res.status === 401` as its own branch in `syncNow`, before the generic
+  failure branch:
+  - Call `reloadToken()`. If the disk token differs from the in-memory token
+    (the user re-logged-in elsewhere), adopt it, log "token refreshed", and
+    reschedule a sync — **not** counted as a hard failure, no backoff.
+  - Otherwise the token is genuinely expired: set `authPaused = true`, log
+    "token expired — run `ccwarriors login` to re-enable autosync", and fire
+    `auth_expired` **once**. Do not exit (avoids launchd restart-thrash).
+- While `authPaused`, `schedule()` and the heartbeat skip syncing — but the
+  heartbeat first calls `reloadToken()`; if the token changed, clear
+  `authPaused`, adopt the new token, and resume. This auto-recovers when the
+  user re-logs-in interactively, with no thrash and one telemetry signal.
+- Decision helper `resolveAuthAction(currentToken, diskToken)` →
+  `"resume" | "pause"` is extracted as a **pure function** for unit testing.
+
+### 6. Rollback telemetry flush — `packages/cli/src/selfupdate.ts` + `cli.ts` (supporting)
+
+`self_update_rollback` has 0 events in PostHog because `selfUpdateBootCheck()`
+emits `void postTelemetry("self_update_rollback", …)` and then `process.exit(1)`
+on the next line — the fire-and-forget beacon never flushes.
+
+- Make `selfUpdateBootCheck()` `async` and `await postTelemetry(...)` (it already
+  has a 4s timeout) before `process.exit(1)` in the rollback branch.
+- `await` it at its three call sites in `cli.ts` (`watch`, `daemon`, `sync` —
+  lines 353, 364, 370). They currently call it un-awaited; awaiting is safe (it
+  either returns quickly or rolls back and exits).
 
 ## Error handling summary
 
 | Situation | Behavior |
 |---|---|
 | Primary ccusage healthy | Use latest; never touch fallback. |
-| Primary native crash, fallback healthy | Flip to fallback once, `ccusage_fallback` fired once, sync succeeds. |
-| Primary + fallback both crash | `readUsage` throws → daemon records `sync_failed`, backoff engages. |
+| Primary broken (dyld crash or ETARGET), fallback healthy | Flip to fallback once, `ccusage_fallback` fired once, sync succeeds. |
+| Primary + fallback both broken | `readUsage` throws → daemon records `sync_failed`, backoff engages. |
 | ccusage empty/no-usage | Treated as success-with-no-data; no fallback. |
 | New bundle runs but sync fails (ccusage/net/server) | `markBuildAlive` clears marker → no rollback. |
-| New bundle crashes in daemon path | Marker never cleared → rollback after 5 starts (unchanged). |
+| New bundle crashes in daemon path | Marker never cleared → rollback after 5 starts; rollback telemetry now flushes. |
+| Daemon gets 401, newer token on disk | Adopt it, retry, no backoff. |
+| Daemon gets 401, no newer token | `authPaused` + `auth_expired` once; heartbeat auto-resumes when a re-login lands. |
 
 ## Testing (TDD, vitest in `packages/cli`)
 
 New tests (first CLI tests in the package; `pnpm --filter cli test`):
 
 - **ccusage fallback** (injected exec runner):
-  - primary native-crash → flips to fallback → returns parsed data;
-  - both crash → throws;
+  - primary native-crash (dyld) → flips to fallback → returns parsed data;
+  - primary ETARGET / "No matching version" → flips to fallback;
+  - both broken → throws;
   - healthy primary → fallback never invoked;
   - `activeSpec` memoized (second call uses fallback directly);
   - empty/no-usage output → no fallback.
 - **backoff** (pure functions): `nextBackoffMs(streak)` curve + cap;
   `shouldSync(now, gate)` boundaries.
+- **auth** (pure function): `resolveAuthAction(current, disk)` → `resume` when
+  the disk token is new and non-null, `pause` otherwise (incl. null).
 - **selfupdate**: `markBuildAlive()` clears the pending marker without
-  `self_update_applied`; `selfUpdateBootCheck` still rolls back when the marker
-  is never cleared.
+  `self_update_applied`; leaves a different build's marker intact; no-op with no
+  marker.
 
 Gate: `pnpm -r test && pnpm -r typecheck && pnpm -r build` (`pnpm verify`).
 
@@ -164,8 +250,10 @@ Gate: `pnpm -r test && pnpm -r typecheck && pnpm -r build` (`pnpm verify`).
   feature branch, run `pnpm verify` (tests + typecheck + build), then exercise
   the real failure path on this machine — force the broken primary and confirm
   the daemon falls back to the known-good version, syncs successfully, stops
-  flapping, and does not trigger a self-update rollback. Only after the local
-  battle-test passes do we open a PR. **Never merge straight to main.**
+  flapping, and does not trigger a self-update rollback. Also force a 401 (point
+  the daemon at a bad token) and confirm it pauses, fires `auth_expired`, and
+  resumes after a re-login lands on disk. Only after the local battle-test
+  passes do we open a PR. **Never merge straight to main.**
 - Ship as a normal CLI release; the build self-updates the fleet. Once a Mac
   picks up the new build, the fallback engages on the next sync and it recovers.
 - The currently-running (pre-fix) daemons keep flapping until they self-update;
@@ -179,3 +267,6 @@ Gate: `pnpm -r test && pnpm -r typecheck && pnpm -r build` (`pnpm verify`).
   load on any machine without that exact Nix store path.
 - Revisit `CCUSAGE_FALLBACK_PKG` once upstream ships a fixed 20.x; consider
   bumping the pin or switching the fallback to "latest known-good" tracking.
+- Add a `machineId` property to daemon telemetry so failure counts can be
+  attributed per-machine (today daemon events are anonymous and collapse to one
+  `person_id`).
