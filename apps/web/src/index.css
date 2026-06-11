@@ -268,6 +268,10 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .btn{ display:block; width:100%; text-align:center; padding:12px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; border:1px solid var(--line); }
 .btn.x{ background:var(--ink); color:var(--bg); border-color:var(--ink); margin-top:14px; } .btn.x:hover{ opacity:.85; }
 .btn.g{ background:transparent; color:var(--ink); margin-top:9px; } .btn.g:hover{ background:var(--segoff); }
+/* The story doorway: terracotta-outlined, unmistakably the special one. */
+.btn.story-btn{ display:inline-flex; align-items:center; justify-content:center; text-decoration:none;
+  color:var(--or); border-color:var(--or); background:color-mix(in srgb,var(--or) 6%, transparent); }
+.btn.story-btn:hover{ background:var(--or); color:var(--bg); }
 
 /* ── Sponsor — "fuel the board" funding section above the footer ─────────── */
 /* Generous top gap (no rule) so the funding section sits clearly below the board. */

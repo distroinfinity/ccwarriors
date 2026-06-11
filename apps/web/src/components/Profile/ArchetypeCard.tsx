@@ -369,6 +369,11 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           <button className="btn g" onClick={downloadCard} disabled={exporting}>
             {exporting ? "Exporting…" : "Download card"}
           </button>
+          {insights.cards.some((c) => c.key === "story") && (
+            <a className="btn story-btn" href={`/${encodeURIComponent(profile.login)}/story`}>
+              Read your story →
+            </a>
+          )}
         </div>
       )}
     </div>
