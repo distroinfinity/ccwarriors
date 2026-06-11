@@ -21,7 +21,7 @@ import {
 } from "../lib/insights.js";
 import { computeCraftForUser, loadDeepExtras } from "../lib/craft-score-service.js";
 import { tierOf, type CraftTier, type Pillars } from "../lib/craft-score.js";
-import { applyPins, buildInsightCards, type InsightCard } from "../lib/insight-cards.js";
+import { applyPins, buildInsightCards, selectDeck, type InsightCard } from "../lib/insight-cards.js";
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
 
@@ -205,7 +205,8 @@ export function profileRoute(deps: ProfileDeps) {
             shareText: `${story.doc.narrative.slice(0, 140)} My story on @ccwarriorsxyz.`,
           }
         : null;
-      const cards = applyPins(storyCard ? [storyCard, ...baseCards] : baseCards, pins);
+      // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
+      const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
       insights = {
         locked: false,
         scoresArePercentiles: usePercentiles,

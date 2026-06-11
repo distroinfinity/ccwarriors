@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildInsightCards, friendlyModel, type InsightCard } from "../src/lib/insight-cards.js";
+import { buildInsightCards, selectDeck, DECK_LIMIT, friendlyModel, type InsightCard } from "../src/lib/insight-cards.js";
 import { deriveAggregate } from "../src/lib/deep.js";
 import type { SessionRecord, SessionGitOutcome, GithubStats } from "../src/db/schema.js";
 
@@ -492,6 +492,81 @@ describe("buildInsightCards — Paxel-parity cards (new deep signals)", () => {
     const single = byKey(buildInsightCards({ ...base, extras: { maxConcurrentSessions: 1 } }));
     expect(single.has("max_concurrent")).toBe(false);
     expect(single.has("go_to_prompt")).toBe(false);
+  });
+});
+
+describe("selectDeck — curation layer (Wrapped-sized, not everything-bagel)", () => {
+  function fullDeck() {
+    const sessions = Array.from({ length: 12 }, (_, i) =>
+      session({
+        durationMinutes: i === 0 ? 120 : 8, // burst-heavy + one long
+        git: git({
+          repoIdHash: i % 2 ? "ra" : "rb",
+          rebaseDetected: i === 0,
+          commitKinds: { fixes: 1, features: 2, refactors: 0, other: 0 },
+          commitHours: (() => { const h = Array(24).fill(0) as number[]; h[23] = 1; return h; })(),
+          commitDows: [0, 0, 0, 0, 0, 1, 0],
+        }),
+        thankYous: 1,
+        wordTotal: 30,
+        recovery: { loops: 1, medianBreakoutMs: 120000 },
+        extensions: { ts: 4, py: 2 },
+      }),
+    );
+    return buildInsightCards({
+      sessions,
+      merged: deriveAggregate(sessions, 30),
+      efficiency: {
+        cacheReadRatio: 0.9,
+        opusShare: 0.7,
+        modelMix: [{ family: "opus", share: 0.7 }, { family: "sonnet", share: 0.3 }],
+        grade: "A",
+        estSavingsPerMonth: null,
+        tokensPerActiveDay: 1000,
+      },
+      archetype: "The Tactician",
+      pillars: { direction: 50 },
+      github: ghStats(),
+      rhythm: { weekendShare: 0.5, currentStreak: 2, longestStreak: 5, activeDays: 10 },
+      extras: { maxConcurrentSessions: 6, topPrompt: { text: "implement the plan", count: 6, sessions: 3 } },
+    });
+  }
+
+  it("caps a maximal deck at DECK_LIMIT", () => {
+    const all = fullDeck();
+    expect(all.length).toBeGreaterThan(20); // the bagel exists pre-selection
+    const picked = selectDeck(all, []);
+    expect(picked.length).toBeLessThanOrEqual(DECK_LIMIT);
+  });
+
+  it("keeps the headliners and drops near-duplicates", () => {
+    const keys = selectDeck(fullDeck(), []).map((c) => c.key);
+    for (const must of ["archetype", "go_to_prompt", "total_hours", "max_concurrent"]) {
+      expect(keys).toContain(must);
+    }
+    // One per dedupe family, never both.
+    expect(keys.includes("model") && keys.includes("model_mix")).toBe(false);
+    expect(keys.includes("avg_prompt_words") && keys.includes("prompt_length")).toBe(false);
+    expect(keys.includes("burst_profile") && keys.includes("marathoner")).toBe(false);
+    expect(keys.includes("night_owl") && keys.includes("commits_at_night")).toBe(false);
+    expect(keys.includes("gh_streak") && keys.includes("grind_streak")).toBe(false);
+  });
+
+  it("pinned cards bypass both the cap and the dedupe", () => {
+    const picked = selectDeck(fullDeck(), ["model_mix", "marathoner"]);
+    const keys = picked.map((c) => c.key);
+    expect(keys).toContain("model_mix");
+    expect(keys).toContain("marathoner");
+    expect(picked.length).toBeLessThanOrEqual(DECK_LIMIT + 2);
+  });
+
+  it("preserves the original deck order and passes small decks through", () => {
+    const all = fullDeck();
+    const picked = selectDeck(all, []);
+    const indices = picked.map((c) => all.findIndex((a) => a.key === c.key));
+    expect([...indices].sort((a, b) => a - b)).toEqual(indices);
+    const tiny = all.slice(0, 3);
+    expect(selectDeck(tiny, [])).toEqual(tiny);
   });
 });
 

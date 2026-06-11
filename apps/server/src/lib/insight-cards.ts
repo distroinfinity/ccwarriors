@@ -781,6 +781,71 @@ export function applyPins(cards: InsightCard[], pins: string[] | null | undefine
   return [...pinned, ...cards.filter((c) => !rank.has(c.key))];
 }
 
+// ── Curation: Wrapped-sized deck, not an everything-bagel ───────────────────
+// The builders stay exhaustive (every signal extracted); selection ships only
+// the strongest few. Spotify Wrapped and Paxel land at 12-16 cards — each one
+// feels special because the boring ones never appear.
+
+export const DECK_LIMIT = 14;
+
+// Lower rank = stronger card. 1 = headliner, 2 = strong, 3 = filler that only
+// appears on thin profiles where nothing better exists.
+const CARD_RANK: Record<string, number> = {
+  story: 1, archetype: 1, go_to_prompt: 1, total_hours: 1, max_concurrent: 1, shipped: 1,
+  model: 2, burst_profile: 2, night_owl: 2, thank_yous: 2, recovery: 2, fixes_features: 2,
+  first_try: 2, you_test: 2, agents: 2, task_model_fit: 2, gh_merged_prs: 2, gh_stars: 2, gh_streak: 2,
+  dialogue: 3, plan_mode: 3, prompt_length: 3, avg_prompt_words: 3, course_correction: 3,
+  longest_run: 3, marathoner: 3, explore_first: 3, ai_commits: 3, local_repos: 3, breadth_local: 3,
+  clean_history: 3, ships_on: 3, commits_at_night: 3, gh_languages: 3, gh_reviews: 3,
+  gh_footprint: 3, gh_veteran: 3, gh_prs_worked: 3, cache_warm: 3, model_mix: 3,
+  weekend_warrior: 3, grind_streak: 3,
+};
+
+// Near-twins: at most one per family ships (first present in listed order
+// wins). Pinned cards are exempt — the owner outranks the curator.
+const DEDUPE_FAMILIES: string[][] = [
+  ["model", "model_mix"],
+  ["avg_prompt_words", "prompt_length"],
+  ["burst_profile", "marathoner", "longest_run"],
+  ["night_owl", "commits_at_night"],
+  ["gh_streak", "grind_streak"],
+  ["breadth_local", "gh_languages"],
+];
+
+/**
+ * Curate the full deck down to DECK_LIMIT: dedupe near-twin families, then
+ * keep the best-ranked cards. Pins always survive (cap and dedupe both).
+ * Original deck order is preserved in the output.
+ */
+export function selectDeck(cards: InsightCard[], pins: string[] | null | undefined): InsightCard[] {
+  const pinned = new Set(pins ?? []);
+  if (cards.length <= DECK_LIMIT && pinned.size === 0) return cards;
+
+  // Dedupe: drop later family members unless pinned.
+  const dropped = new Set<string>();
+  const present = new Set(cards.map((c) => c.key));
+  for (const family of DEDUPE_FAMILIES) {
+    const members = family.filter((k) => present.has(k));
+    for (const k of members.slice(1)) if (!pinned.has(k)) dropped.add(k);
+  }
+
+  const survivors = cards.filter((c) => !dropped.has(c.key));
+  if (survivors.length <= DECK_LIMIT) return survivors;
+
+  // Keep: every pinned card + the best-ranked rest up to the limit. Stable
+  // sort (rank, then original position) so ties resolve by deck order.
+  const indexOf = new Map(survivors.map((c, i) => [c.key, i]));
+  const keep = new Set(survivors.filter((c) => pinned.has(c.key)).map((c) => c.key));
+  const ranked = survivors
+    .filter((c) => !keep.has(c.key))
+    .sort((a, b) => (CARD_RANK[a.key] ?? 3) - (CARD_RANK[b.key] ?? 3) || indexOf.get(a.key)! - indexOf.get(b.key)!);
+  for (const c of ranked) {
+    if (keep.size >= Math.max(DECK_LIMIT, pinned.size)) break;
+    keep.add(c.key);
+  }
+  return survivors.filter((c) => keep.has(c.key));
+}
+
 /** Build the ordered deck of insight cards, emitting only cards with real data. */
 export function buildInsightCards(input: InsightCardInput): InsightCard[] {
   return BUILDERS.map((b) => b(input)).filter((c): c is InsightCard => c !== null);
