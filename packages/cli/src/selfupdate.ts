@@ -110,6 +110,26 @@ export function markUpdateSuccess(): void {
   }
 }
 
+/**
+ * Call at the END of every sync cycle (success OR failure). Reaching here proves
+ * the freshly-installed bundle's daemon path executes without crashing, so a
+ * failed sync (ccusage/network/server down) is NOT the build's fault. Clears the
+ * pending-rollback marker WITHOUT the self_update_applied telemetry. A genuine
+ * boot/daemon-path crash exits before this runs, so selfUpdateBootCheck still
+ * rolls back actually-broken bundles. The cliPath param exists for testing.
+ */
+export function markBuildAlive(cliPath: string | null = installedCliPath()): void {
+  if (!cliPath) return;
+  const marker = readMarker(cliPath);
+  if (marker && marker.buildId === buildId()) {
+    try {
+      unlinkSync(markerPath(cliPath));
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
 async function fail(step: string, toBuild: string, detail?: string): Promise<"failed"> {
   void postTelemetry("self_update_failed", {
     step,

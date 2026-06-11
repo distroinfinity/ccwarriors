@@ -6,7 +6,7 @@ import path from "node:path";
 import { loadConfig, ensureMachineId, ensureInsightsSalt } from "./config.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
 import { postIngest, postTelemetry, postInsightsDeep } from "./core.js";
-import { maybeSelfUpdate, markUpdateSuccess } from "./selfupdate.js";
+import { maybeSelfUpdate, markUpdateSuccess, markBuildAlive } from "./selfupdate.js";
 import { nextBackoffMs, shouldSync } from "./backoff.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
@@ -113,6 +113,9 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       }
     } finally {
       syncing = false;
+      // We ran a full sync cycle without crashing → this build is alive even if
+      // the sync itself failed for external reasons. Clears any rollback marker.
+      markBuildAlive();
       if (pending) {
         pending = false;
         schedule("queued change");
