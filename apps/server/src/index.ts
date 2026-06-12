@@ -4,7 +4,7 @@ import { eq, gte, sql } from "drizzle-orm";
 import { parseConfig } from "./config.js";
 import { createDbFromEnv } from "./db/index.js";
 import { users, orgMembers, userInsights, usageDays } from "./db/schema.js";
-import { LeaderboardStore } from "./lib/leaderboard-store.js";
+import { LeaderboardStore, craftEntryFor } from "./lib/leaderboard-store.js";
 import { InsightsStore } from "./lib/insights-store.js";
 import { createApp } from "./app.js";
 import { generateStory } from "./lib/story.js";
@@ -75,6 +75,7 @@ async function main() {
         flagged: !!u.flaggedAt,
         orgs: orgsByUser.get(u.id) ?? [],
         lastSyncedAt: u.lastSyncedAt?.getTime(),
+        craft: craftEntryFor(u),
       });
     }
     // Warm insights (consented users only — revokes deleted their rows).

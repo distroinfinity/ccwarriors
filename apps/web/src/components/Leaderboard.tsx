@@ -116,7 +116,14 @@ function Row({
         </div>
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </a>
-      <div className="tierc">{tierLabel(entry.tier)}</div>
+      <div className="tierc">
+        {tierLabel(entry.tier)}
+        {entry.craft && (
+          <span className="craft-chip mono" title={`Craft: ${entry.craft.tier}`}>
+            {entry.craft.score}
+          </span>
+        )}
+      </div>
       <Sparkline spark={entry.spark} />
       <div className="amt mono">
         {/* Slow honest tween — glides toward each confirmed value, flashes green on growth. */}

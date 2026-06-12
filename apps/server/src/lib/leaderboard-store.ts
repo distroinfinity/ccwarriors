@@ -1,3 +1,5 @@
+import { tierOf } from "./craft-score.js";
+
 export type Board = "30d" | "allTime";
 
 export interface Entry {
@@ -23,6 +25,27 @@ export interface Entry {
   // 8 buckets (levels 0-8) over the last 30 days, one per ~3.75d. Absent when
   // the user has no spend in the window (legacy rows before spark rollout).
   spark?: number[];
+  // Craft Score: present ONLY when insightsConsent===true AND
+  // insightsVisibility==="public" AND craftScore!=null. Absent for all others.
+  craft?: { score: number; tier: string };
+}
+
+/** Returns the craft payload to store on a leaderboard entry, or undefined if
+ *  the three-condition privacy gate is not satisfied:
+ *  insightsConsent===true AND insightsVisibility==="public" AND craftScore!=null.
+ *  This is the single authoritative implementation — all call sites MUST use it. */
+export function craftEntryFor(user: {
+  insightsConsent: boolean;
+  insightsVisibility: string;
+  craftScore: string | number | null | undefined;
+}): Entry["craft"] {
+  if (!user.insightsConsent) return undefined;
+  if (user.insightsVisibility !== "public") return undefined;
+  if (user.craftScore == null) return undefined;
+  const score = Math.round(Number(user.craftScore));
+  if (!Number.isFinite(score)) return undefined;
+  const { name } = tierOf(score);
+  return { score, tier: name };
 }
 
 export interface ToolSummary {
@@ -63,6 +86,20 @@ export class LeaderboardStore {
   setOrgs(id: string, orgs: string[]): void {
     const e = this.entries.get(id);
     if (e) this.entries.set(id, { ...e, orgs });
+  }
+
+  /** Set or strip craft on an existing entry. Pass undefined to strip (on consent revoke
+   *  or visibility → private). No-op when the entry is not in the store. */
+  setCraft(id: string, craft: Entry["craft"]): void {
+    const e = this.entries.get(id);
+    if (!e) return;
+    const updated = { ...e };
+    if (craft === undefined) {
+      delete updated.craft;
+    } else {
+      updated.craft = craft;
+    }
+    this.entries.set(id, updated);
   }
 
   private visible(org?: string): Entry[] {

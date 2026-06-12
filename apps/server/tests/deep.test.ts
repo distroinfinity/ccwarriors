@@ -7,6 +7,7 @@ import { InsightsStore } from "../src/lib/insights-store.js";
 import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
 import { makeDb, seedUser } from "./helpers/db.js";
 import { users, userInsights, userDeepSessions, type SessionRecord } from "../src/db/schema.js";
+import { ingestUsage } from "../src/services/ingest.js";
 
 function record(over: Partial<SessionRecord> = {}): SessionRecord {
   return {
@@ -266,5 +267,121 @@ describe("/insights/mode + /insights/deep", () => {
       body: JSON.stringify({ machineId: MID, windowDays: 40, sessions: Array.from({ length: 2001 }, () => record()) }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+const TOKEN2 = "tok_craft";
+const MID2 = "c0ffeedeadbeef";
+const auth2 = { Authorization: `Bearer ${TOKEN2}`, "Content-Type": "application/json" };
+const deepSessions = Array.from({ length: 12 }, () => record({ hadEdits: true, editCalls: 4 }));
+
+describe("craft score leaderboard integration (privacy gate)", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let insStore: InsightsStore;
+
+  beforeEach(async () => {
+    db = await makeDb();
+    insStore = new InsightsStore();
+    await seedUser(db, { login: "craftwarrior", token: TOKEN2 });
+  });
+
+  it("deep upload sets craft on the leaderboard entry for public+consented user", async () => {
+    await db
+      .update(users)
+      .set({ insightsMode: "deep", insightsConsent: true, insightsVisibility: "public" })
+      .where(eq(users.githubLogin, "craftwarrior"));
+    const lbStore = new LeaderboardStore();
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "craftwarrior"));
+    lbStore.upsert({ id: u!.id, githubLogin: "craftwarrior", avatarUrl: "", xHandle: null, tier: "Stone", cardScene: "fujiNight", cost30d: 0, costAllTime: 0 });
+
+    const app = insightsRoute({ db, insightsStore: insStore, store: lbStore });
+    const res = await app.request("/deep", {
+      method: "POST",
+      headers: auth2,
+      body: JSON.stringify({ machineId: MID2, windowDays: 40, sessions: deepSessions }),
+    });
+    expect(res.status).toBe(200);
+    const entry = lbStore.get(u!.id);
+    expect(entry?.craft).toBeDefined();
+    expect(typeof entry?.craft?.score).toBe("number");
+    expect(typeof entry?.craft?.tier).toBe("string");
+  });
+
+  it("private visibility user: deep upload never sets craft on the leaderboard entry", async () => {
+    await db
+      .update(users)
+      .set({ insightsMode: "deep", insightsConsent: true, insightsVisibility: "private" })
+      .where(eq(users.githubLogin, "craftwarrior"));
+    const lbStore = new LeaderboardStore();
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "craftwarrior"));
+    lbStore.upsert({ id: u!.id, githubLogin: "craftwarrior", avatarUrl: "", xHandle: null, tier: "Stone", cardScene: "fujiNight", cost30d: 0, costAllTime: 0 });
+
+    const app = insightsRoute({ db, insightsStore: insStore, store: lbStore });
+    const res = await app.request("/deep", {
+      method: "POST",
+      headers: auth2,
+      body: JSON.stringify({ machineId: MID2, windowDays: 40, sessions: deepSessions }),
+    });
+    expect(res.status).toBe(200);
+    const entry = lbStore.get(u!.id);
+    // craftScore is computed in DB, but must NOT reach the leaderboard store for private users.
+    expect(entry?.craft).toBeUndefined();
+  });
+
+  it("mode→off strips craft from the leaderboard entry", async () => {
+    await db
+      .update(users)
+      .set({ insightsMode: "deep", insightsConsent: true, insightsVisibility: "public" })
+      .where(eq(users.githubLogin, "craftwarrior"));
+    const lbStore = new LeaderboardStore();
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "craftwarrior"));
+    lbStore.upsert({ id: u!.id, githubLogin: "craftwarrior", avatarUrl: "", xHandle: null, tier: "Stone", cardScene: "fujiNight", cost30d: 0, costAllTime: 0, craft: { score: 75, tier: "Artisan" } });
+
+    const app = insightsRoute({ db, insightsStore: insStore, store: lbStore });
+    const res = await app.request("/mode", {
+      method: "POST",
+      headers: auth2,
+      body: JSON.stringify({ mode: "off" }),
+    });
+    expect(res.status).toBe(200);
+    expect(lbStore.get(u!.id)?.craft).toBeUndefined();
+  });
+
+  it("consent revoke strips craft from the leaderboard entry", async () => {
+    await db
+      .update(users)
+      .set({ insightsMode: "deep", insightsConsent: true, insightsVisibility: "public" })
+      .where(eq(users.githubLogin, "craftwarrior"));
+    const lbStore = new LeaderboardStore();
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "craftwarrior"));
+    lbStore.upsert({ id: u!.id, githubLogin: "craftwarrior", avatarUrl: "", xHandle: null, tier: "Stone", cardScene: "fujiNight", cost30d: 0, costAllTime: 0, craft: { score: 75, tier: "Artisan" } });
+
+    const app = insightsRoute({ db, insightsStore: insStore, store: lbStore, sessionSecret: "test-secret" });
+    const res = await app.request("/consent", {
+      method: "POST",
+      headers: auth2,
+      body: JSON.stringify({ consent: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(lbStore.get(u!.id)?.craft).toBeUndefined();
+  });
+
+  it("visibility→private strips craft from the leaderboard entry", async () => {
+    await db
+      .update(users)
+      .set({ insightsMode: "deep", insightsConsent: true, insightsVisibility: "public", craftScore: "75" })
+      .where(eq(users.githubLogin, "craftwarrior"));
+    const lbStore = new LeaderboardStore();
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "craftwarrior"));
+    lbStore.upsert({ id: u!.id, githubLogin: "craftwarrior", avatarUrl: "", xHandle: null, tier: "Stone", cardScene: "fujiNight", cost30d: 0, costAllTime: 0, craft: { score: 75, tier: "Artisan" } });
+
+    const app = insightsRoute({ db, insightsStore: insStore, store: lbStore, sessionSecret: "test-secret" });
+    const res = await app.request("/consent", {
+      method: "POST",
+      headers: auth2,
+      body: JSON.stringify({ visibility: "private" }),
+    });
+    expect(res.status).toBe(200);
+    expect(lbStore.get(u!.id)?.craft).toBeUndefined();
   });
 });

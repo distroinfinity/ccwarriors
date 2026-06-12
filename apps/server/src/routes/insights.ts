@@ -38,6 +38,7 @@ import {
 } from "../lib/plausibility.js";
 import { flagUser } from "../services/ingest.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
+import { craftEntryFor } from "../lib/leaderboard-store.js";
 import { captureEvent } from "./telemetry.js";
 
 const count = z.number().int().nonnegative().max(10_000_000);
@@ -245,6 +246,21 @@ export function insightsRoute(deps: InsightsDeps) {
         await deps.db.delete(userStories).where(eq(userStories.userId, user.id));
         await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
+        // Strip craft from the leaderboard: consent revoked → no craft visible.
+        deps.store?.setCraft(user.id, undefined);
+      } else if (visibility !== undefined && deps.store) {
+        // Visibility change: strip or restore craft based on the new value.
+        const newVisibility = visibility;
+        if (newVisibility === "private") {
+          deps.store.setCraft(user.id, undefined);
+        } else {
+          // Toggled back to public: restore craft from the current DB score.
+          const currentScore = user.craftScore; // may be null if no deep data yet
+          deps.store.setCraft(
+            user.id,
+            craftEntryFor({ insightsConsent: consent ?? user.insightsConsent, insightsVisibility: newVisibility, craftScore: currentScore }),
+          );
+        }
       }
       captureEvent("insights_consent", user.githubLogin, { consent: String(consent), visibility: visibility ?? "" });
       // Echo: request values ARE the written values (no server-side normalization),
@@ -371,13 +387,22 @@ export function insightsRoute(deps: InsightsDeps) {
     // leaderboard can rank on the stored value. Reads back all machines' deep
     // rows (this upload is already committed) + usage_days.
     const craft = await computeCraftForUser(deps.db, user.id);
+    const newCraftScore = craft ? String(craft.craftScore) : null;
     await deps.db
       .update(users)
       .set({
-        craftScore: craft ? String(craft.craftScore) : null,
+        craftScore: newCraftScore,
         trustTier: craft ? craft.trustTier : null,
       })
       .where(eq(users.id, user.id));
+    // Update leaderboard store entry (user row visibility may have changed;
+    // use the snapshot we have — insightsVisibility is not mutated by /deep).
+    if (deps.store) {
+      deps.store.setCraft(
+        user.id,
+        craftEntryFor({ insightsConsent: user.insightsConsent, insightsVisibility: user.insightsVisibility, craftScore: newCraftScore }),
+      );
+    }
 
     // ── Anti-gaming gates (Craft Score is a hiring credential). Run AFTER the
     // data is stored, NEVER reject: a violation shadow-quarantines (flaggedAt
@@ -435,6 +460,8 @@ export function insightsRoute(deps: InsightsDeps) {
         await deps.db.delete(userDeepSessions).where(eq(userDeepSessions.userId, user.id));
         await deps.db.update(users).set({ archetype: null, craftScore: null, trustTier: null }).where(eq(users.id, user.id));
         deps.insightsStore.remove(user.id);
+        // Mode off = consent false → strip craft from the leaderboard.
+        deps.store?.setCraft(user.id, undefined);
       }
       captureEvent("insights_mode", user.githubLogin, { mode });
       return c.json({ ok: true, mode, visibility: user.insightsVisibility });

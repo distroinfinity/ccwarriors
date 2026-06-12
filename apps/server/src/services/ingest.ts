@@ -4,6 +4,7 @@ import { users, snapshots, usageDays, orgMembers, type ModelTokens, type ToolBre
 import { hashToken } from "../lib/token.js";
 import { computeTier } from "../lib/tier.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
+import { craftEntryFor } from "../lib/leaderboard-store.js";
 import { isKnownTool, OTHER_TOOL } from "../lib/tools.js";
 import { priceModels } from "../lib/pricing.js";
 import { computeSpark } from "../lib/spark.js";
@@ -522,6 +523,9 @@ async function finalize(
     orgs,
     lastSyncedAt: syncedAt.getTime(),
     spark: args.spark,
+    // Craft is derived from the user row: the gate is authoritative, so we
+    // neither lose craft on sync nor resurrect it for private/non-consented users.
+    craft: craftEntryFor(user),
   });
 
   return {

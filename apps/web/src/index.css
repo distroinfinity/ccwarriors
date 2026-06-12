@@ -185,6 +185,10 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .orgbadge{ flex:none; font-size:8.5px; font-weight:700; letter-spacing:.09em; line-height:1;
   padding:2.5px 5px 2px; border:1px solid color-mix(in srgb, currentColor 45%, transparent);
   background:color-mix(in srgb, currentColor 8%, transparent); }
+/* Craft Score chip on the leaderboard row — public+consented warriors only. */
+.craft-chip{ flex:none; font-size:8.5px; font-weight:700; letter-spacing:.09em; line-height:1;
+  padding:2.5px 5px 2px; border:1px solid color-mix(in srgb, var(--or) 50%, transparent);
+  background:color-mix(in srgb, var(--or) 8%, transparent); color:var(--or); }
 .who .x{ font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tierc{ font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
 .spark{ font-family:'Geist Mono'; font-size:13px; color:var(--spark); letter-spacing:-1px; }

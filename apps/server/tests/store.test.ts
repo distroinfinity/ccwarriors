@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LeaderboardStore, type Entry } from "../src/lib/leaderboard-store.js";
+import { LeaderboardStore, craftEntryFor, type Entry } from "../src/lib/leaderboard-store.js";
 
 const entry = (id: string, over: Partial<Entry> = {}): Entry => ({
   id,
@@ -121,5 +121,61 @@ describe("LeaderboardStore (multi-tool)", () => {
     store.upsert(entry("synced", { cost30d: 50, costAllTime: 100, lastSyncedAt: 1_000_000 }));
 
     expect(store.getTop("30d", 10).map((e) => e.id)).toEqual(["synced", "nosync"]);
+  });
+});
+
+describe("setCraft", () => {
+  it("sets craft on an existing entry", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10 }));
+    store.setCraft("a", { score: 75, tier: "Artisan" });
+    expect(store.get("a")?.craft).toEqual({ score: 75, tier: "Artisan" });
+  });
+
+  it("strips craft when called with undefined", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10, craft: { score: 75, tier: "Artisan" } }));
+    store.setCraft("a", undefined);
+    expect(store.get("a")?.craft).toBeUndefined();
+    expect("craft" in store.get("a")!).toBe(false);
+  });
+
+  it("no-ops when the entry is absent", () => {
+    const store = new LeaderboardStore();
+    expect(() => store.setCraft("missing", { score: 50, tier: "Journeyman" })).not.toThrow();
+  });
+
+  it("does not affect entries for other users", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10 }));
+    store.upsert(entry("b", { cost30d: 5, craft: { score: 60, tier: "Artisan" } }));
+    store.setCraft("a", { score: 80, tier: "Mastersmith" });
+    expect(store.get("b")?.craft).toEqual({ score: 60, tier: "Artisan" });
+  });
+});
+
+describe("craftEntryFor", () => {
+  it("returns craft when all three conditions hold", () => {
+    const result = craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "72.5" });
+    expect(result).toEqual({ score: 73, tier: "Artisan" });
+  });
+
+  it("returns undefined when consent is false", () => {
+    expect(craftEntryFor({ insightsConsent: false, insightsVisibility: "public", craftScore: "72" })).toBeUndefined();
+  });
+
+  it("returns undefined when visibility is private", () => {
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "private", craftScore: "72" })).toBeUndefined();
+  });
+
+  it("returns undefined when craftScore is null", () => {
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: null })).toBeUndefined();
+  });
+
+  it("maps score to correct tier", () => {
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "30" })?.tier).toBe("Apprentice");
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "50" })?.tier).toBe("Journeyman");
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "65" })?.tier).toBe("Artisan");
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "85" })?.tier).toBe("Mastersmith");
   });
 });

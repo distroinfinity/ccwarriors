@@ -104,6 +104,44 @@ describe("cors", () => {
   });
 });
 
+describe("leaderboard craft privacy gate", () => {
+  it("private-visibility user craft is absent from /leaderboard REST response", async () => {
+    const { app, store } = makeApp();
+    // Seed an entry with craft set (simulating a consented user whose visibility is now private)
+    store.upsert(
+      entry("priv", {
+        githubLogin: "privatecrafter",
+        cost30d: 100,
+        // The craft field must NOT be in the store for private users, but let's
+        // verify the REST endpoint forwards what the store has faithfully.
+        // We inject NO craft here — matching what setCraft(id, undefined) leaves.
+      }),
+    );
+    const res = await app.request("/leaderboard");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: Array<{ craft?: unknown }> };
+    const privEntry = body.entries.find((e) => (e as { id?: string }).id === "priv");
+    expect(privEntry).toBeDefined();
+    expect(privEntry?.craft).toBeUndefined();
+  });
+
+  it("public+consented craft is present in /leaderboard REST response", async () => {
+    const { app, store } = makeApp();
+    store.upsert(
+      entry("pub", {
+        githubLogin: "publiccrafter",
+        cost30d: 100,
+        craft: { score: 77, tier: "Artisan" },
+      }),
+    );
+    const res = await app.request("/leaderboard");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: Array<{ craft?: { score: number; tier: string } }> };
+    const pubEntry = body.entries.find((e) => (e as { id?: string }).id === "pub");
+    expect(pubEntry?.craft).toEqual({ score: 77, tier: "Artisan" });
+  });
+});
+
 describe("OG profile metadata", () => {
   it("only exposes archetype when insights are consented and public", async () => {
     const db = await makeDb();

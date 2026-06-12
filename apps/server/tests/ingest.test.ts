@@ -461,6 +461,53 @@ describe("spark on ingest v3", () => {
   });
 });
 
+describe("craft score carry-through on cost sync", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: LeaderboardStore;
+
+  const raw = (tools: RawIngestPayload["tools"]): RawIngestPayload => ({
+    kind: "raw",
+    tools,
+    machineId: "aabbccdd00112233",
+  });
+
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new LeaderboardStore();
+    await seedUser(db, { login: "crafter", token: TOKEN });
+  });
+
+  it("cost sync preserves craft for a public+consented user with a DB craftScore", async () => {
+    // Seed the user with craft score, consent, and public visibility.
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "crafter"));
+    await db.update(users).set({ insightsConsent: true, insightsVisibility: "public", craftScore: "72" }).where(eq(users.id, u!.id));
+
+    const res = await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    expect(res.ok).toBe(true);
+    const entry = store.get(u!.id);
+    expect(entry?.craft).toBeDefined();
+    expect(entry?.craft?.score).toBe(72);
+    expect(typeof entry?.craft?.tier).toBe("string");
+  });
+
+  it("cost sync does NOT set craft for a private-visibility user (even with craftScore in DB)", async () => {
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "crafter"));
+    await db.update(users).set({ insightsConsent: true, insightsVisibility: "private", craftScore: "72" }).where(eq(users.id, u!.id));
+
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    const entry = store.get(u!.id);
+    expect(entry?.craft).toBeUndefined();
+  });
+
+  it("cost sync does NOT set craft when craftScore is null", async () => {
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "crafter"));
+    await db.update(users).set({ insightsConsent: true, insightsVisibility: "public", craftScore: null }).where(eq(users.id, u!.id));
+
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    expect(store.get(u!.id)?.craft).toBeUndefined();
+  });
+});
+
 describe("POST /ingest route validation", () => {
   let app: Hono;
 
