@@ -288,8 +288,8 @@ export function insightsRoute(deps: InsightsDeps) {
 
       const { windowDays, sessions } = c.req.valid("json");
 
-      // Total-size guard: even within the session count limit a maximally-dense
-      // payload (300 sessions × 60 prompts × 2000 chars) can blow the LLM budget.
+      // Total-size guard: a handful of maximally-dense sessions (7 × ~120k
+      // chars) already exceeds this — the count cap alone doesn't bound bytes.
       // 800k chars ≈ 1.3× the 600k server input cap — reject early rather than
       // silently truncating. Old CLIs send ≤30 sessions, well under this limit.
       if (JSON.stringify(sessions).length > 800_000) {

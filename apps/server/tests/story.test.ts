@@ -385,6 +385,15 @@ describe("generateStory (SDK integration, stubbed transport)", () => {
     expect(result.doc.windowDays).toBe(40);
   });
 
+  it("fails typed when every session trims away — never calls Claude with an empty array", async () => {
+    const fetcher = vi.fn() as unknown as typeof fetch;
+    // One session whose serialized form alone exceeds the 600k input cap.
+    const oversized = { windowDays: 40, sessions: [{ prompts: ["x".repeat(700_000)] }] };
+    const result = await generateStory({ apiKey: "test-key", fetcher }, "x", oversized);
+    expect("failed" in result && result.failed).toBe("no_sessions_after_trim");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("reports a typed failure instead of a silent null", async () => {
     const fetcher = (async () =>
       new Response(JSON.stringify({ type: "error", error: { type: "rate_limit_error", message: "slow down" } }), {

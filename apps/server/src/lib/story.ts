@@ -147,6 +147,9 @@ export async function generateStory(
   const prepared = prepareStorySource(source);
   if ("failed" in prepared) return { failed: prepared.failed };
   const { serialized, sessionsUsed, sessionsReceived, windowDays } = prepared;
+  // A source whose every session is oversized trims to nothing — never ask
+  // Claude to invent a story from an empty transcript array.
+  if (sessionsUsed === 0) return { failed: "no_sessions_after_trim" };
 
   try {
     const model = opts.model ?? STORY_MODEL;

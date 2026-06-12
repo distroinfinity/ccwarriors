@@ -41,7 +41,7 @@ export async function maybeGenerateStory(deps: StoryDeps, user: User): Promise<v
     // sessionsReceived vs sessionsUsed divergence = truncation canary.
     captureEvent("story_generated", user.githubLogin, {
       model: result.model,
-      sessions: (source.payload as { sessions?: unknown[] })?.sessions?.length ?? 0,
+      sessionsReceived: "sessionsReceived" in result ? result.sessionsReceived : undefined,
       sessionsUsed: "sessionsUsed" in result ? result.sessionsUsed : undefined,
       ...(result.usage ?? {}),
     });
