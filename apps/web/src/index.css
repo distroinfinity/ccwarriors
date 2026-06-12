@@ -499,6 +499,9 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .axis-fill.f0{ opacity:1; } .axis-fill.f1{ opacity:.75; } .axis-fill.f2{ opacity:.5; }
 .axis-v{ width:26px; text-align:right; font-weight:700; }
 .axis-note{ margin-top:12px; font-size:10.5px; color:var(--muted); letter-spacing:.04em; }
+/* Sample-size provenance under pillar/axis bars and the card deck — same
+   muted small-print register as .axis-note. */
+.craft-provenance,.deck-provenance{ margin:12px 0 0; font-size:10.5px; color:var(--muted); letter-spacing:.04em; }
 
 .arch-foot{ display:flex; justify-content:space-between; margin-top:18px; padding-top:12px;
   border-top:1px dashed var(--line); font-size:10.5px; color:var(--muted); }

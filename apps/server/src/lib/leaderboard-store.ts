@@ -98,7 +98,7 @@ export class LeaderboardStore {
   /**
    * Stable total-order sort:
    *   1. board metric desc (primary rank signal)
-   *   2. costAllTime desc (breaks equal 30d spend)
+   *   2. costAllTime desc (breaks equal 30d spend; no-op on the allTime board)
    *   3. lastSyncedAt asc (earlier sync wins — "got there first"; undefined sinks to last)
    *   4. githubLogin asc (lexicographic guarantee — always unique)
    */

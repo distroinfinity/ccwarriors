@@ -5,7 +5,7 @@ import { formatUsd, tierLabel } from "../util";
 function buildItems(entries: Entry[], count: number): string[] {
   if (entries.length === 0) return [`<b>${count}</b> warrior${count === 1 ? "" : "s"} enlisted`];
   const top = entries[0]!;
-  const monthTotal = entries.reduce((s, e) => s + e.cost30d, 0);
+  const total30d = entries.reduce((s, e) => s + e.cost30d, 0);
   const elite =
     entries.find((e) => /diamond|netherite/i.test(e.tier)) ?? entries[Math.min(2, entries.length - 1)]!;
   const second = entries[1];
@@ -21,7 +21,7 @@ function buildItems(entries: Entry[], count: number): string[] {
       `<b>${third.githubLogin}</b> chasing <b>${second.githubLogin}</b> for <span class="o">#2</span>`,
     );
   }
-  items.push(`<span class="o">${formatUsd(monthTotal)}</span> burned in the last 30 days`);
+  items.push(`<span class="o">${formatUsd(total30d)}</span> burned in the last 30 days`);
   if (entries.length > 3) {
     const r = entries[3]!;
     items.push(`<b>${r.githubLogin}</b> pulled <span class="o">${tierLabel(r.tier)}</span>`);
