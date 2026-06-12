@@ -38,9 +38,11 @@ export async function maybeGenerateStory(deps: StoryDeps, user: User): Promise<v
       captureEvent("story_generate_failed", user.githubLogin, { reason: result && "failed" in result ? result.failed : "null_result" });
       return; // keep the old story; the source stays for a later retry
     }
+    // sessionsReceived vs sessionsUsed divergence = truncation canary.
     captureEvent("story_generated", user.githubLogin, {
       model: result.model,
       sessions: (source.payload as { sessions?: unknown[] })?.sessions?.length ?? 0,
+      sessionsUsed: "sessionsUsed" in result ? result.sessionsUsed : undefined,
       ...(result.usage ?? {}),
     });
 

@@ -114,6 +114,8 @@ const sessionRecordSchema = z.object({
 });
 
 const MAX_DEEP_SESSIONS = 2000;
+// CLI targets 250 sessions / 500k chars; server adds headroom for older clients and burst.
+const MAX_STORY_SESSIONS_SERVER = 300;
 const deepBodySchema = z.object({
   machineId: z.string().regex(/^[a-f0-9]{8,64}$/i),
   windowDays: z.number().int().min(1).max(60),
@@ -268,7 +270,7 @@ export function insightsRoute(deps: InsightsDeps) {
       z.object({
         machineId: z.string().regex(/^[a-f0-9]{8,64}$/i),
         windowDays: z.number().int().min(1).max(60),
-        sessions: z.array(transcriptSessionSchema).min(1).max(30),
+        sessions: z.array(transcriptSessionSchema).min(1).max(MAX_STORY_SESSIONS_SERVER),
       }),
     ),
     async (c) => {
@@ -285,6 +287,16 @@ export function insightsRoute(deps: InsightsDeps) {
       }
 
       const { windowDays, sessions } = c.req.valid("json");
+
+      // Total-size guard: even within the session count limit a maximally-dense
+      // payload (300 sessions × 60 prompts × 2000 chars) can blow the LLM budget.
+      // 800k chars ≈ 1.3× the 600k server input cap — reject early rather than
+      // silently truncating. Old CLIs send ≤30 sessions, well under this limit.
+      if (JSON.stringify(sessions).length > 800_000) {
+        captureEvent("transcripts_rejected", user.githubLogin, { reason: "payload_too_large" });
+        return c.json({ error: "payload_too_large" }, 400);
+      }
+
       const payload = { windowDays, sessions };
       await deps.db
         .insert(storySources)

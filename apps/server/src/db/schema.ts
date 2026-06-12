@@ -312,7 +312,8 @@ export type StoryDoc = {
   growthAreas: Array<{ title: string; detail: string }>;
   aiArchetypes: Array<{ name: string; blurb: string; evidence: number }>;
   crypticPrompt: string | null; // most cryptic prompt, LLM-picked (already redacted client-side)
-  sessionsAnalyzed: number;
+  sessionsAnalyzed: number; // server-stamped from sessionsUsed — never trusted from LLM
+  windowDays?: number; // server-stamped from source payload (jsonb — no migration needed)
 };
 
 export const userStories = pgTable(
