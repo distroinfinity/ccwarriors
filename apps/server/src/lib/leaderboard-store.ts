@@ -20,7 +20,7 @@ export interface Entry {
   orgs?: string[];
   // Epoch ms of the user's last sync — used as a tie-breaker in sorted().
   lastSyncedAt?: number;
-  // 8 levels (0-7) over the last 30 days, one bucket per ~3.75d. Absent when
+  // 8 buckets (levels 0-8) over the last 30 days, one per ~3.75d. Absent when
   // the user has no spend in the window (legacy rows before spark rollout).
   spark?: number[];
 }

@@ -31,19 +31,19 @@ describe("computeSpark", () => {
     expect(spark).toHaveLength(8);
   });
 
-  it("max bucket normalizes to 7", () => {
-    // Single day with all cost → one bucket = max → normalized to 7
+  it("max bucket normalizes to 8", () => {
+    // Single day with all cost → one bucket = max → normalized to 8
     const rows = [{ day: daysAgo(1), cost: 100 }];
     const spark = computeSpark(rows, NOW)!;
-    expect(Math.max(...spark)).toBe(7);
+    expect(Math.max(...spark)).toBe(8);
   });
 
-  it("zero buckets stay 0, nonzero bucket is 7 (sole spend = max)", () => {
+  it("zero buckets stay 0, nonzero bucket is 8 (sole spend = max)", () => {
     // Day in bucket 7 (1 day ago) only
     const rows = [{ day: daysAgo(1), cost: 5 }];
     const spark = computeSpark(rows, NOW)!;
-    // Last bucket (idx 7) should be 7 (sole nonzero = max)
-    expect(spark[7]).toBe(7);
+    // Last bucket (idx 7) should be 8 (sole nonzero = max)
+    expect(spark[7]).toBe(8);
     // All other buckets should be 0
     expect(spark.slice(0, 7).every((v) => v === 0)).toBe(true);
   });
@@ -61,7 +61,7 @@ describe("computeSpark", () => {
     // The tiny bucket must still be at least 1
     const bucket0 = spark[0];
     expect(bucket0).toBeGreaterThanOrEqual(1);
-    expect(spark[7]).toBe(7);
+    expect(spark[7]).toBe(8);
   });
 
   it("day in bucket 0 (29 days ago) is correctly included", () => {

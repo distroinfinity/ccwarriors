@@ -25,7 +25,7 @@ export const MAX_MACHINES_PER_USER = 5;
 // Accept raw days for a rolling window; older days are dropped silently
 // (timezone drift, slow clocks — not worth flagging).
 const WINDOW_DAYS = 40;
-const BOARD_DAYS = 30;
+export const BOARD_DAYS = 30;
 
 export interface LegacyIngestPayload {
   kind: "legacy";
@@ -163,7 +163,9 @@ async function ingestLegacy(
   const burn = checkBurnRate(Number(user.cost30d), totals.cost30d, user.lastSyncedAt, now);
   if (burn) signals.push(burn);
 
-  // Legacy path has no per-day data — carry the spark from the live store entry.
+  // Legacy path has no per-day data — carry the spark from the live store
+  // entry. It can go stale if the user stays on a legacy client as activity
+  // ages out; self-heals on the next raw-client sync or server restart.
   const spark = store.get(user.id)?.spark;
 
   return finalize(db, store, user, {
@@ -378,8 +380,9 @@ async function ingestRaw(
       }
     }
     spark = computeSpark([...dayMap.entries()].map(([day, cost]) => ({ day, cost })), new Date(now));
-  } catch {
-    // spark failure must not block the sync
+  } catch (err) {
+    // spark failure must not block the sync — but it must not be invisible.
+    console.warn("spark skipped:", (err as Error).message);
   }
 
   return finalize(db, store, user, {

@@ -9,6 +9,7 @@ import { InsightsStore } from "./lib/insights-store.js";
 import { createApp } from "./app.js";
 import { generateStory } from "./lib/story.js";
 import { computeSpark } from "./lib/spark.js";
+import { BOARD_DAYS } from "./services/ingest.js";
 import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
@@ -86,7 +87,7 @@ async function main() {
   // Attach 30d sparks to all entries loaded above. Separate try: a spark
   // failure must not prevent the server from starting.
   try {
-    const cutoff30 = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+    const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
     const sparkRows = await db
       .select({
         userId: usageDays.userId,

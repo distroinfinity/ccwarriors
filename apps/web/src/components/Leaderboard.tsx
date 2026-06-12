@@ -56,7 +56,7 @@ function EmptyBoard() {
   );
 }
 
-// Renders real 30d activity bars from entry.spark (levels 0-7).
+// Renders real 30d activity bars from entry.spark (levels 0-8, one glyph each).
 // Fixed-width placeholder when absent so the row grid doesn't shift.
 function Sparkline({ spark }: { spark?: number[] }) {
   if (!spark) {
