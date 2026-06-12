@@ -54,6 +54,16 @@ describe("buildStack", () => {
     expect(langs.at(0)?.share).toBe(100);
   });
 
+  it("excludes meta categories (Config, Markdown) from language shares", () => {
+    // 500 config/md edits must not outrank 100 real-language edits.
+    const sessions = [makeSession({ json: 300, md: 200, ts: 60, py: 40 })];
+    const result = buildStack(sessions, null, null);
+    const langs = result!.languages;
+    expect(langs.map((l) => l.name)).toEqual(["TypeScript", "Python"]);
+    expect(langs.at(0)?.share).toBe(60);
+    expect(langs.at(1)?.share).toBe(40);
+  });
+
   it("caps at top 6 languages", () => {
     // 8 different known extensions
     const extensions: Record<string, number> = {

@@ -44,6 +44,10 @@ const EXT_LANGUAGE: Record<string, string> = {
   zig: "Zig",
 };
 
+// Mapped but not signal-bearing: README tweaks and CI configs would otherwise
+// outrank real languages on share — excluded from the language fold entirely.
+const META_LANGS = new Set(["Config", "Markdown"]);
+
 export interface StackProfile {
   languages: Array<{ name: string; share: number }>;
   models: Array<{ family: string; share: number }>;
@@ -67,7 +71,7 @@ export function buildStack(
   const langCounts = new Map<string, number>();
   for (const [ext, n] of extCounts) {
     const lang = EXT_LANGUAGE[ext];
-    if (!lang) continue; // unknown ext — omit
+    if (!lang || META_LANGS.has(lang)) continue; // unknown or meta — omit
     langCounts.set(lang, (langCounts.get(lang) ?? 0) + n);
   }
 
