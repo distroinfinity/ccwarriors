@@ -24,6 +24,7 @@ import { tierOf, outcomeEconomics, type CraftTier, type Pillars, type OutcomeEco
 import { applyPins, buildInsightCards, selectDeck, type InsightCard } from "../lib/insight-cards.js";
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
+import { buildStack, type StackProfile } from "../lib/stack.js";
 
 export interface ProfileDeps {
   db: DB;
@@ -154,6 +155,7 @@ export function profileRoute(deps: ProfileDeps) {
             longestSessionMinutes: number;
           };
           economics: OutcomeEconomics | null;
+          stack: StackProfile | null;
         };
     if (!user?.insightsConsent) {
       insights = { locked: true, reason: "no_consent" };
@@ -196,6 +198,12 @@ export function profileRoute(deps: ProfileDeps) {
       const craftEconomics = craft
         ? outcomeEconomics(craft.input.sessions, craft.input.windowCostUsd)
         : null;
+      // Stack profile: verified from real agent edits. Consent-gated (deep data).
+      const stack = buildStack(
+        craft?.input.sessions ?? null,
+        efficiency?.modelMix ?? null,
+        github,
+      );
       const baseCards = craft
         ? buildInsightCards({
             sessions: craft.input.sessions,
@@ -266,6 +274,7 @@ export function profileRoute(deps: ProfileDeps) {
           longestSessionMinutes: Math.round(merged.longestSessionMinutes),
         },
         economics: craftEconomics,
+        stack,
       };
     }
 

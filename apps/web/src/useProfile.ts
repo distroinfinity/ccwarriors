@@ -85,6 +85,14 @@ export interface ProfileInsights {
     costPerSurvivingLoc: number | null;
     commitsPer100Usd: number | null;
   } | null;
+  // Verified "builds with" stack: languages from real agent edits, model mix,
+  // and GitHub top languages. Optional/nullable: absent on older servers or
+  // when no deep data is available.
+  stack?: {
+    languages: Array<{ name: string; share: number }>;
+    models: Array<{ family: string; share: number }>;
+    ghLanguages: string[];
+  } | null;
 }
 
 // Verified-by-GitHub public footprint. Public data — present (when fetched)

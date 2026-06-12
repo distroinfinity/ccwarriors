@@ -348,3 +348,72 @@ describe("percentilePool", () => {
     expect(pool.every((m) => m.sessions >= MIN_SESSIONS)).toBe(true);
   });
 });
+
+// ── stack block ───────────────────────────────────────────────────────────────
+
+describe("stack in profile response", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: InsightsStore;
+
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new InsightsStore();
+  });
+
+  function app() {
+    return profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, sessionSecret: SECRET });
+  }
+
+  it("stack is present for a deep user with extensions seeded", async () => {
+    const u = (await seedUser(db, { login: "stackuser", token: "tok_stack" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    const sessions: SessionRecord[] = [
+      deepRecord({ extensions: { ts: 150, py: 50 } }),
+      deepRecord({ extensions: { ts: 100, rs: 75 } }),
+    ];
+    await db.insert(userDeepSessions).values({ userId: u.id, machineId: "m1", sessions, windowDays: 40 });
+    store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40 }));
+
+    const res = await app().request("/stackuser");
+    const body = (await res.json()) as {
+      insights: {
+        locked: boolean;
+        stack?: {
+          languages: Array<{ name: string; share: number }>;
+          models: Array<{ family: string; share: number }>;
+          ghLanguages: string[];
+        } | null;
+      };
+    };
+    expect(body.insights.locked).toBe(false);
+    const s = body.insights.stack!;
+    expect(s).not.toBeNull();
+    // ts: 250, py: 50, rs: 75 → total 375. TypeScript is top.
+    expect(s.languages.at(0)?.name).toBe("TypeScript");
+    expect(s.languages.find((l) => l.name === "Rust")).toBeTruthy();
+    expect(s.languages.find((l) => l.name === "Python")).toBeTruthy();
+    // ghLanguages: no github data seeded → empty array
+    expect(Array.isArray(s.ghLanguages)).toBe(true);
+  });
+
+  it("stack is null for aggregate-only user (no deep sessions)", async () => {
+    const u = (await seedUser(db, { login: "aggstack", token: "tok_as" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    store.upsert(u.id, "m1", payload({ sessions: 3, windowDays: 30 }));
+
+    const res = await app().request("/aggstack");
+    const body = (await res.json()) as { insights: { locked: boolean; stack?: unknown } };
+    expect(body.insights.locked).toBe(false);
+    // no deep sessions → craft is null → sessions null → stack null
+    expect(body.insights.stack).toBeNull();
+  });
+
+  it("stack is absent on locked (non-consented) responses", async () => {
+    await seedUser(db, { login: "lockstack", token: "tok_ls" });
+
+    const res = await app().request("/lockstack");
+    const body = (await res.json()) as { insights: { locked: boolean; stack?: unknown } };
+    expect(body.insights.locked).toBe(true);
+    expect(body.insights.stack).toBeUndefined();
+  });
+});

@@ -9,6 +9,7 @@ import { GithubPanel } from "./GithubPanel";
 import { RhythmPanel } from "./RhythmPanel";
 import { SessionStatsPanel } from "./SessionStatsPanel";
 import { OwnerControls } from "./OwnerControls";
+import { StackPanel } from "./StackPanel";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -48,6 +49,7 @@ export function ProfilePage({ login }: { login: string }) {
           <SessionStatsPanel profile={p} />
           <EfficiencyPanel profile={p} />
           <GithubPanel profile={p} />
+          <StackPanel profile={p} />
         </div>
       </div>
       <InsightCards
