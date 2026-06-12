@@ -71,6 +71,7 @@ async function main() {
         breakdown,
         flagged: !!u.flaggedAt,
         orgs: orgsByUser.get(u.id) ?? [],
+        lastSyncedAt: u.lastSyncedAt?.getTime(),
       });
     }
     // Warm insights (consented users only — revokes deleted their rows).

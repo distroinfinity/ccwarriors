@@ -222,6 +222,7 @@ export function profileRoute(deps: ProfileDeps) {
         trustTier: craft?.trustTier ?? null,
         provisional: merged.sessions < MIN_SESSIONS || !usePercentiles,
         sampleSessions: merged.sessions,
+        windowDays: merged.windowDays,
         githubVerified: githubVerified(craft?.trustTier ?? null, github),
         pinnedCards: pins,
         cards,

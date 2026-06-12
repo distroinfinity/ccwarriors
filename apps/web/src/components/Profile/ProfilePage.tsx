@@ -54,6 +54,8 @@ export function ProfilePage({ login }: { login: string }) {
         isOwner={!!p.owner}
         pinnedCards={!p.insights.locked ? (p.insights.pinnedCards ?? []) : []}
         onPinsChanged={refetch}
+        sampleSessions={!p.insights.locked ? p.insights.sampleSessions : undefined}
+        windowDays={!p.insights.locked ? p.insights.windowDays : undefined}
       />
       <RhythmPanel profile={p} />
       <OwnerControls profile={p} onConsentChanged={refetch} />

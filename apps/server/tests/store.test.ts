@@ -81,4 +81,37 @@ describe("LeaderboardStore (multi-tool)", () => {
       { key: "gemini", count: 1 },
     ]);
   });
+
+  it("breaks ties by lastSyncedAt asc then login asc — order is stable regardless of upsert order", () => {
+    // Two entries with identical cost30d and costAllTime; "early" synced first.
+    const t1 = 1_000_000;
+    const t2 = 2_000_000;
+
+    // Upsert order A: early first
+    const storeA = new LeaderboardStore();
+    storeA.upsert(entry("early", { cost30d: 50, costAllTime: 100, lastSyncedAt: t1 }));
+    storeA.upsert(entry("late", { cost30d: 50, costAllTime: 100, lastSyncedAt: t2 }));
+
+    // Upsert order B: late first
+    const storeB = new LeaderboardStore();
+    storeB.upsert(entry("late", { cost30d: 50, costAllTime: 100, lastSyncedAt: t2 }));
+    storeB.upsert(entry("early", { cost30d: 50, costAllTime: 100, lastSyncedAt: t1 }));
+
+    const orderA = storeA.getTop("30d", 10).map((e) => e.id);
+    const orderB = storeB.getTop("30d", 10).map((e) => e.id);
+
+    // "got there first" wins — earlier sync is rank 1.
+    expect(orderA).toEqual(["early", "late"]);
+    // Identical regardless of upsert order.
+    expect(orderB).toEqual(orderA);
+  });
+
+  it("falls back to login asc when lastSyncedAt is identical", () => {
+    const t = 1_000_000;
+    const store = new LeaderboardStore();
+    store.upsert(entry("zebra", { cost30d: 50, costAllTime: 100, lastSyncedAt: t }));
+    store.upsert(entry("alpha", { cost30d: 50, costAllTime: 100, lastSyncedAt: t }));
+
+    expect(store.getTop("30d", 10).map((e) => e.id)).toEqual(["alpha", "zebra"]);
+  });
 });

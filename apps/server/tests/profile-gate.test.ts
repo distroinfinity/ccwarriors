@@ -53,7 +53,7 @@ describe("profile gate removal", () => {
   it("unlocks the full insights block from a single session", async () => {
     const u = (await seedUser(db, { login: "rookie", token: "tok_r" }))!;
     await consent("rookie");
-    store.upsert(u.id, "m1", payload({ sessions: 1 }));
+    store.upsert(u.id, "m1", payload({ sessions: 1, windowDays: 40 }));
 
     const res = await app().request("/rookie");
     const body = (await res.json()) as {
@@ -62,6 +62,7 @@ describe("profile gate removal", () => {
         archetype?: string;
         provisional?: boolean;
         sampleSessions?: number;
+        windowDays?: number;
         scoresArePercentiles?: boolean;
         axes?: Record<string, number>;
       };
@@ -70,9 +71,20 @@ describe("profile gate removal", () => {
     expect(body.insights.archetype).toBeTruthy();
     expect(body.insights.provisional).toBe(true);
     expect(body.insights.sampleSessions).toBe(1);
+    expect(body.insights.windowDays).toBe(40);
     // A 1-session user never gets rank-normalized scores.
     expect(body.insights.scoresArePercentiles).toBe(false);
     expect(Object.values(body.insights.axes!).every((v) => v >= 0 && v <= 100)).toBe(true);
+  });
+
+  it("locked insights do not include windowDays", async () => {
+    await seedUser(db, { login: "anon", token: "tok_a" });
+    // No consent, no store upsert.
+
+    const res = await app().request("/anon");
+    const body = (await res.json()) as { insights: { locked: boolean; windowDays?: number } };
+    expect(body.insights.locked).toBe(true);
+    expect(body.insights.windowDays).toBeUndefined();
   });
 
   it("consented-but-nothing-uploaded shows forging to the owner only", async () => {

@@ -18,6 +18,8 @@ export interface Entry {
   // Verified org memberships (slugs from the org registry). Drives org-scoped
   // boards and the org badge on the global board.
   orgs?: string[];
+  // Epoch ms of the user's last sync — used as a tie-breaker in sorted().
+  lastSyncedAt?: number;
 }
 
 export interface ToolSummary {
@@ -93,11 +95,27 @@ export class LeaderboardStore {
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   }
 
+  /**
+   * Stable total-order sort:
+   *   1. board metric desc (primary rank signal)
+   *   2. costAllTime desc (breaks equal 30d spend)
+   *   3. lastSyncedAt asc (earlier sync wins — "got there first"; undefined sinks to last)
+   *   4. githubLogin asc (lexicographic guarantee — always unique)
+   */
   private sorted(board: Board, tool?: string, org?: string): Entry[] {
     const pool = tool
       ? this.visible(org).filter((e) => metric(e, board, tool) > 0)
       : this.visible(org);
-    return pool.sort((a, b) => metric(b, board, tool) - metric(a, board, tool));
+    return pool.sort((a, b) => {
+      const md = metric(b, board, tool) - metric(a, board, tool);
+      if (md !== 0) return md;
+      const ad = b.costAllTime - a.costAllTime;
+      if (ad !== 0) return ad;
+      const aAt = a.lastSyncedAt ?? Infinity;
+      const bAt = b.lastSyncedAt ?? Infinity;
+      if (aAt !== bAt) return aAt - bAt;
+      return a.githubLogin.localeCompare(b.githubLogin);
+    });
   }
 
   getTop(board: Board, limit: number, offset = 0, tool?: string, org?: string): Entry[] {

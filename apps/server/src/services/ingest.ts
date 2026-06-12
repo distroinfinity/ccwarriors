@@ -484,6 +484,7 @@ async function finalize(
       : { claude: args.totals.cost30d },
     flagged,
     orgs,
+    lastSyncedAt: syncedAt.getTime(),
   });
 
   return {

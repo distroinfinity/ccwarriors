@@ -12,7 +12,7 @@ function buildItems(entries: Entry[], count: number): string[] {
   const third = entries[2];
 
   const items = [
-    `<b>${top.githubLogin}</b> burned <span class="o">${formatUsd(top.cost30d)}</span> this month`,
+    `<b>${top.githubLogin}</b> burned <span class="o">${formatUsd(top.cost30d)}</span> in the last 30 days`,
     `<b>${elite.githubLogin}</b> reached <span class="o">${elite.tier.toUpperCase()}</span>`,
     `<b>${count}</b> warrior${count === 1 ? "" : "s"} enlisted`,
   ];
@@ -21,7 +21,7 @@ function buildItems(entries: Entry[], count: number): string[] {
       `<b>${third.githubLogin}</b> chasing <b>${second.githubLogin}</b> for <span class="o">#2</span>`,
     );
   }
-  items.push(`<span class="o">${formatUsd(monthTotal)}</span> burned this month`);
+  items.push(`<span class="o">${formatUsd(monthTotal)}</span> burned in the last 30 days`);
   if (entries.length > 3) {
     const r = entries[3]!;
     items.push(`<b>${r.githubLogin}</b> pulled <span class="o">${tierLabel(r.tier)}</span>`);

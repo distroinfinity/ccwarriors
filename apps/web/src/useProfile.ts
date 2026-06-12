@@ -58,6 +58,8 @@ export interface ProfileInsights {
   pinnedCards?: string[];
   // Sessions behind these scores. Absent on older servers.
   sampleSessions?: number;
+  // Rolling window length for the sessions above. Absent on older servers.
+  windowDays?: number;
   // Local-git verified AND public GitHub commits in the same window.
   githubVerified?: boolean;
 }
