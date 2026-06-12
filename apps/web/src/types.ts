@@ -12,6 +12,9 @@ export interface Entry {
   breakdown?: Partial<Record<string, number>>;
   // Verified org memberships (slugs) — drives the org badge on rows.
   orgs?: string[];
+  // 8 activity levels (0-7) over the last 30 days (~3.75d per bucket).
+  // Absent on entries from an old server or users with no spend in the window.
+  spark?: number[];
 }
 
 export interface ToolInfo {

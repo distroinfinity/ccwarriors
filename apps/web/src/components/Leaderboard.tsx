@@ -5,7 +5,7 @@ import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { FilterChips } from "./FilterChips";
-import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
+import { BLOCKS, formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { PixelGlyph } from "./PixelGlyph";
@@ -56,13 +56,19 @@ function EmptyBoard() {
   );
 }
 
-function Sparkline({ id }: { id: string }) {
-  const bars = sparkBars(id);
+// Renders real 30d activity bars from entry.spark (levels 0-7).
+// Fixed-width placeholder when absent so the row grid doesn't shift.
+function Sparkline({ spark }: { spark?: number[] }) {
+  if (!spark) {
+    // Preserve grid column width; no visible bars.
+    return <div className="spark" aria-hidden="true" />;
+  }
   return (
     <div className="spark">
-      {bars.map((b, i) =>
-        i === bars.length - 1 ? <b key={i}>{BLOCKS[b - 1]}</b> : <span key={i}>{BLOCKS[b - 1]}</span>,
-      )}
+      {spark.map((level, i) => {
+        const glyph = level === 0 ? " " : BLOCKS[level - 1];
+        return i === spark.length - 1 ? <b key={i}>{glyph}</b> : <span key={i}>{glyph}</span>;
+      })}
     </div>
   );
 }
@@ -111,7 +117,7 @@ function Row({
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </a>
       <div className="tierc">{tierLabel(entry.tier)}</div>
-      <Sparkline id={entry.id} />
+      <Sparkline spark={entry.spark} />
       <div className="amt mono">
         {/* Slow honest tween — glides toward each confirmed value, flashes green on growth. */}
         <TickerValue

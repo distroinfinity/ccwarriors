@@ -408,6 +408,59 @@ describe("ingest v3 (raw token counts)", () => {
   });
 });
 
+describe("spark on ingest v3", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: LeaderboardStore;
+
+  const raw = (tools: RawIngestPayload["tools"], machineId = "aabbccdd00112233"): RawIngestPayload => ({
+    kind: "raw",
+    tools,
+    machineId,
+  });
+
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new LeaderboardStore();
+    await seedUser(db, { login: "sparkuser", token: TOKEN });
+  });
+
+  it("store entry has a spark array of length 8 after a raw sync with spend", async () => {
+    const res = await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    expect(res.ok).toBe(true);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "sparkuser"));
+    const entry = store.get(u!.id);
+    expect(entry?.spark).toHaveLength(8);
+  });
+
+  it("the bucket containing the synced day has a nonzero level", async () => {
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "sparkuser"));
+    const spark = store.get(u!.id)?.spark;
+    expect(spark).toBeDefined();
+    // At least one bucket must be nonzero (day 1 ago is always in the 30d window)
+    expect(spark!.some((v) => v > 0)).toBe(true);
+  });
+
+  it("legacy sync carries forward an existing spark from the store", async () => {
+    // First a raw sync to establish a spark
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "sparkuser"));
+    const sparkBefore = store.get(u!.id)?.spark;
+    expect(sparkBefore).toBeDefined();
+
+    // Now a legacy sync — spark must be preserved
+    await ingestUsage(
+      db,
+      store,
+      TOKEN,
+      { kind: "legacy", cost30d: expectedOpusCost(), costAllTime: expectedOpusCost() },
+      NOW + 60_000,
+    );
+    const sparkAfter = store.get(u!.id)?.spark;
+    expect(sparkAfter).toEqual(sparkBefore);
+  });
+});
+
 describe("POST /ingest route validation", () => {
   let app: Hono;
 

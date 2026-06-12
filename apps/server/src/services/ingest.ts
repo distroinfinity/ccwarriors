@@ -1,4 +1,4 @@
-import { and, eq, gte } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { users, snapshots, usageDays, orgMembers, type ModelTokens, type ToolBreakdown, type User } from "../db/schema.js";
 import { hashToken } from "../lib/token.js";
@@ -6,6 +6,7 @@ import { computeTier } from "../lib/tier.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import { isKnownTool, OTHER_TOOL } from "../lib/tools.js";
 import { priceModels } from "../lib/pricing.js";
+import { computeSpark } from "../lib/spark.js";
 import {
   GATES,
   checkBurnRate,
@@ -162,6 +163,9 @@ async function ingestLegacy(
   const burn = checkBurnRate(Number(user.cost30d), totals.cost30d, user.lastSyncedAt, now);
   if (burn) signals.push(burn);
 
+  // Legacy path has no per-day data — carry the spark from the live store entry.
+  const spark = store.get(user.id)?.spark;
+
   return finalize(db, store, user, {
     totals,
     breakdown: user.hasBreakdown ? next : null,
@@ -170,6 +174,7 @@ async function ingestLegacy(
     clientBuildId: null,
     signals,
     now,
+    spark,
   });
 }
 
@@ -351,6 +356,32 @@ async function ingestRaw(
     : checkBurnRate(Number(user.cost30d), round2(trackedNext), user.lastSyncedAt, now);
   if (burn) signals.push(burn);
 
+  // Query the full 30d usage_days picture for this user (across all machines
+  // and tools) to get an accurate spark. The in-scope merged map only covers
+  // the 40d window for THIS machine's payload, so it may miss other machines.
+  let spark: number[] | undefined;
+  try {
+    const sparkRows = await db
+      .select({
+        day: usageDays.day,
+        cost: sql<number>`sum(${usageDays.cost})`,
+      })
+      .from(usageDays)
+      .where(and(eq(usageDays.userId, user.id), gte(usageDays.day, cutoff30Day)))
+      .groupBy(usageDays.day);
+    // Overlay the current sync's priced rows (not yet committed to DB) so the
+    // spark reflects the state after this sync.
+    const dayMap = new Map<string, number>(sparkRows.map((r) => [r.day, Number(r.cost)]));
+    for (const p of priced) {
+      if (p.day >= cutoff30Day) {
+        dayMap.set(p.day, (dayMap.get(p.day) ?? 0) + Math.max(0, p.cost - p.prevCost));
+      }
+    }
+    spark = computeSpark([...dayMap.entries()].map(([day, cost]) => ({ day, cost })), new Date(now));
+  } catch {
+    // spark failure must not block the sync
+  }
+
   return finalize(db, store, user, {
     totals,
     breakdown: next,
@@ -359,6 +390,7 @@ async function ingestRaw(
     clientBuildId: payload.clientBuildId ?? null,
     signals,
     now,
+    spark,
     usageRows: priced.map((p) => ({
       userId: user.id,
       machineId: payload.machineId,
@@ -402,6 +434,7 @@ interface FinalizeArgs {
   signals: FlagSignal[];
   now: number;
   usageRows?: (typeof usageDays.$inferInsert)[];
+  spark?: number[];
 }
 
 async function finalize(
@@ -485,6 +518,7 @@ async function finalize(
     flagged,
     orgs,
     lastSyncedAt: syncedAt.getTime(),
+    spark: args.spark,
   });
 
   return {
