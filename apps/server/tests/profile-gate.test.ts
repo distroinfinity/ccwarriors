@@ -6,7 +6,7 @@ import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
 import { createSessionToken } from "../src/lib/session.js";
 import { mergeInsights, percentilePool, MIN_SESSIONS } from "../src/lib/insights.js";
 import { makeDb, seedUser } from "./helpers/db.js";
-import { users, type InsightsPayload } from "../src/db/schema.js";
+import { users, userDeepSessions, type InsightsPayload, type SessionRecord } from "../src/db/schema.js";
 
 // The 10-session "forging" gate is gone: every stat we can compute renders
 // from session #1 (marked provisional). "forging" survives only for the
@@ -119,6 +119,119 @@ describe("profile gate removal", () => {
     const res = await app().request("/nine");
     const body = (await res.json()) as { insights: { locked: boolean } };
     expect(body.insights.locked).toBe(false);
+  });
+});
+
+// ── depth block ──────────────────────────────────────────────────────────────
+
+function deepRecord(over: Partial<SessionRecord> = {}): SessionRecord {
+  return {
+    startHour: 10,
+    durationMinutes: 60,
+    prompts: 4,
+    interrupts: 0,
+    usedPlanMode: true,
+    exploreBeforeFirstEdit: false,
+    hadEdits: true,
+    subagentSpawns: 2,
+    maxParallel: 3,
+    editCalls: 5,
+    assistantTurns: 10,
+    wordBuckets: { "1-5": 2, "6-10": 1, "11-25": 1, "26+": 0 },
+    model: "claude-opus-4-8",
+    timing: { events: 11, medianGapMs: 1000, p10GapMs: 150, subSecondFraction: 0.1 },
+    git: null,
+    ...over,
+  };
+}
+
+describe("depth block", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: InsightsStore;
+
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new InsightsStore();
+  });
+
+  function app() {
+    return profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, sessionSecret: SECRET });
+  }
+
+  it("depth is present and correct when deep sessions exist", async () => {
+    const u = (await seedUser(db, { login: "deepuser", token: "tok_deep" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    // Two sessions: 60m plan-mode with subagents, 120m no-plan no-subagents.
+    const sessions: SessionRecord[] = [
+      deepRecord({ durationMinutes: 60, usedPlanMode: true, subagentSpawns: 2, maxParallel: 3 }),
+      deepRecord({ durationMinutes: 120, usedPlanMode: false, subagentSpawns: 0, maxParallel: 1 }),
+    ];
+    await db.insert(userDeepSessions).values({ userId: u.id, machineId: "m1", sessions, windowDays: 40 });
+    // Seed aggregate so insights unlock (longestSessionMinutes matches the deep sessions max).
+    store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40, planModeSessionsPct: 50, subagentSpawnsPerSession: 1, maxParallelAgents: 3, longestSessionMinutes: 120 }));
+
+    const res = await app().request("/deepuser");
+    const body = (await res.json()) as {
+      insights: {
+        locked: boolean;
+        depth?: {
+          sessions: number;
+          windowDays: number;
+          totalHours: number | null;
+          planModeSessionsPct: number;
+          subagentSessionsPct: number | null;
+          subagentSpawnsPerSession: number;
+          maxParallelAgents: number;
+          avgSessionMinutes: number | null;
+          longestSessionMinutes: number;
+        };
+      };
+    };
+    expect(body.insights.locked).toBe(false);
+    const d = body.insights.depth!;
+    expect(d).toBeDefined();
+    // sessions and window from merged aggregate
+    expect(d.sessions).toBe(2);
+    expect(d.windowDays).toBe(40);
+    // totalHours: (60 + 120) / 60 = 3.0
+    expect(d.totalHours).toBe(3.0);
+    // avgSessionMinutes: (60 + 120) / 2 = 90
+    expect(d.avgSessionMinutes).toBe(90);
+    // longestSessionMinutes: max(60, 120) = 120
+    expect(d.longestSessionMinutes).toBe(120);
+    // subagentSessionsPct: 1 of 2 sessions had spawns → 50%
+    expect(d.subagentSessionsPct).toBe(50);
+    // planModeSessionsPct from merged aggregate
+    expect(d.planModeSessionsPct).toBe(50);
+    // maxParallelAgents from merged
+    expect(d.maxParallelAgents).toBe(3);
+  });
+
+  it("depth has null deep-derived fields when no deep sessions exist (aggregate-only user)", async () => {
+    const u = (await seedUser(db, { login: "aggonly", token: "tok_agg" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    // Only aggregate, no deep rows.
+    store.upsert(u.id, "m1", payload({ sessions: 5, windowDays: 30, planModeSessionsPct: 20 }));
+
+    const res = await app().request("/aggonly");
+    const body = (await res.json()) as { insights: { locked: boolean; depth?: { totalHours: unknown; avgSessionMinutes: unknown; subagentSessionsPct: unknown } } };
+    expect(body.insights.locked).toBe(false);
+    const d = body.insights.depth!;
+    expect(d).toBeDefined();
+    // Deep-derived fields are null when no deep rows.
+    expect(d.totalHours).toBeNull();
+    expect(d.avgSessionMinutes).toBeNull();
+    expect(d.subagentSessionsPct).toBeNull();
+  });
+
+  it("depth is absent on locked (non-consented) responses", async () => {
+    await seedUser(db, { login: "noconsent", token: "tok_nc" });
+    // No consent, no store upsert.
+
+    const res = await app().request("/noconsent");
+    const body = (await res.json()) as { insights: { locked: boolean; depth?: unknown } };
+    expect(body.insights.locked).toBe(true);
+    expect(body.insights.depth).toBeUndefined();
   });
 });
 

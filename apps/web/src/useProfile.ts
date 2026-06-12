@@ -62,6 +62,20 @@ export interface ProfileInsights {
   windowDays?: number;
   // Local-git verified AND public GitHub commits in the same window.
   githubVerified?: boolean;
+  // Session depth panel: prominent first-class stats. All optional/nullable to
+  // tolerate servers that predate this field.
+  depth?: {
+    sessions: number;
+    windowDays: number;
+    totalHours: number | null;
+    planModeSessionsPct: number;
+    subagentSessionsPct: number | null;
+    subagentSpawnsPerSession: number;
+    maxParallelAgents: number;
+    maxConcurrentSessions?: number;
+    avgSessionMinutes: number | null;
+    longestSessionMinutes: number;
+  } | null;
 }
 
 // Verified-by-GitHub public footprint. Public data — present (when fetched)

@@ -141,6 +141,18 @@ export function profileRoute(deps: ProfileDeps) {
           githubVerified: boolean;
           pinnedCards: string[];
           cards: InsightCard[];
+          depth: {
+            sessions: number;
+            windowDays: number;
+            totalHours: number | null;
+            planModeSessionsPct: number;
+            subagentSessionsPct: number | null;
+            subagentSpawnsPerSession: number;
+            maxParallelAgents: number;
+            maxConcurrentSessions?: number;
+            avgSessionMinutes: number | null;
+            longestSessionMinutes: number;
+          };
         };
     if (!user?.insightsConsent) {
       insights = { locked: true, reason: "no_consent" };
@@ -208,6 +220,18 @@ export function profileRoute(deps: ProfileDeps) {
         : null;
       // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
       const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
+      // Deep-session-derived signals (null when user has aggregate-only data).
+      const deepSessions = craft?.input.sessions ?? null;
+      const totalHours = deepSessions
+        ? Math.round((deepSessions.reduce((s, r) => s + r.durationMinutes, 0) / 60) * 10) / 10
+        : null;
+      const avgSessionMinutes = deepSessions && deepSessions.length > 0
+        ? Math.round(deepSessions.reduce((s, r) => s + r.durationMinutes, 0) / deepSessions.length)
+        : null;
+      const subagentSessionsPct = deepSessions && deepSessions.length > 0
+        ? Math.round((deepSessions.filter((r) => r.subagentSpawns > 0).length / deepSessions.length) * 100)
+        : null;
+
       insights = {
         locked: false,
         scoresArePercentiles: usePercentiles,
@@ -227,6 +251,18 @@ export function profileRoute(deps: ProfileDeps) {
         githubVerified: githubVerified(craft?.trustTier ?? null, github),
         pinnedCards: pins,
         cards,
+        depth: {
+          sessions: merged.sessions,
+          windowDays: merged.windowDays,
+          totalHours,
+          planModeSessionsPct: Math.round(merged.planModeSessionsPct),
+          subagentSessionsPct,
+          subagentSpawnsPerSession: Math.round(merged.subagentSpawnsPerSession * 10) / 10,
+          maxParallelAgents: merged.maxParallelAgents,
+          ...(extras?.maxConcurrentSessions !== undefined ? { maxConcurrentSessions: extras.maxConcurrentSessions } : {}),
+          avgSessionMinutes,
+          longestSessionMinutes: Math.round(merged.longestSessionMinutes),
+        },
       };
     }
 
