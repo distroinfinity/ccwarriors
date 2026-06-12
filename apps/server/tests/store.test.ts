@@ -114,4 +114,12 @@ describe("LeaderboardStore (multi-tool)", () => {
 
     expect(store.getTop("30d", 10).map((e) => e.id)).toEqual(["alpha", "zebra"]);
   });
+
+  it("sinks entries without lastSyncedAt behind synced ones among ties", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("nosync", { cost30d: 50, costAllTime: 100 }));
+    store.upsert(entry("synced", { cost30d: 50, costAllTime: 100, lastSyncedAt: 1_000_000 }));
+
+    expect(store.getTop("30d", 10).map((e) => e.id)).toEqual(["synced", "nosync"]);
+  });
 });

@@ -137,6 +137,7 @@ export function profileRoute(deps: ProfileDeps) {
           trustTier: 0 | 1 | null;
           provisional: boolean;
           sampleSessions: number;
+          windowDays: number;
           githubVerified: boolean;
           pinnedCards: string[];
           cards: InsightCard[];
