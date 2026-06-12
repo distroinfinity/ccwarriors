@@ -654,6 +654,9 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .eff-letter{ font-size:34px; font-weight:700; color:var(--or); }
 .eff-sub{ font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .eff-mix{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); }
+/* Economics sub-section inside .ppanel — visual separator + minor label. */
+.ppanel-section{ margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); }
+.seclabel-minor{ font-size:10px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; font-weight:600; margin-bottom:6px; }
 .gh-meta{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
 
 .rhythm{ margin-top:18px; }

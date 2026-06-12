@@ -679,7 +679,9 @@ function outcomePerDollarCard(input: InsightCardInput): InsightCard | null {
 
   let headline: string;
   let stat: string;
-  let secondary: string;
+  let secondary: string | null;
+  let body: string;
+  const costPart = `$${e.windowCostUsd % 1 === 0 ? e.windowCostUsd.toFixed(0) : e.windowCostUsd.toFixed(2)} burned in 30d`;
   if (e.costPerSurvivingLoc !== null) {
     // Format: $0.21 per surviving line, or $0.0034 when < $0.01.
     const fmt = e.costPerSurvivingLoc < 0.01
@@ -687,18 +689,20 @@ function outcomePerDollarCard(input: InsightCardInput): InsightCard | null {
       : `$${e.costPerSurvivingLoc.toFixed(2)}`;
     headline = `${fmt} per surviving line`;
     stat = fmt;
-    secondary = e.commitsPer100Usd !== null ? `${e.commitsPer100Usd} commits per $100` : "";
+    secondary = e.commitsPer100Usd !== null ? `${e.commitsPer100Usd} commits per $100` : null;
+    const locPart = `${e.survivingLoc.toLocaleString("en-US")} lines that survived 14 days`;
+    body = secondary
+      ? `${secondary} — ${locPart}, ${costPart}`
+      : `${locPart}, ${costPart}`;
   } else {
+    // commits-only: no surviving-LOC figure to show; body describes commits + spend.
     headline = `${e.commitsPer100Usd} commits per $100`;
     stat = String(e.commitsPer100Usd);
-    secondary = "";
+    secondary = null;
+    const commitsPart = `${e.shippedCommits} commit${e.shippedCommits === 1 ? "" : "s"}`;
+    const locNote = e.survivingLoc > 0 ? `, ${e.survivingLoc.toLocaleString("en-US")} lines that survived 14 days` : "";
+    body = `${commitsPart}${locNote}, ${costPart}`;
   }
-
-  const locPart = `${e.survivingLoc.toLocaleString("en-US")} lines that survived 14 days`;
-  const costPart = `$${e.windowCostUsd % 1 === 0 ? e.windowCostUsd.toFixed(0) : e.windowCostUsd.toFixed(2)} burned in 30d`;
-  const body = secondary
-    ? `${secondary} — ${locPart}, ${costPart}`
-    : `${locPart}, ${costPart}`;
 
   return card("outcome_per_dollar", "What does a dollar buy?", headline, body, stat);
 }
@@ -848,6 +852,8 @@ const DEDUPE_FAMILIES: string[][] = [
   ["night_owl", "commits_at_night"],
   ["gh_streak", "grind_streak"],
   ["breadth_local", "gh_languages"],
+  // outcome_per_dollar is richer (cost+LOC); shipped shows the same survivingLoc. Keep only one.
+  ["outcome_per_dollar", "shipped"],
 ];
 
 /**

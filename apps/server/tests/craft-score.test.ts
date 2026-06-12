@@ -386,6 +386,16 @@ describe("outcomeEconomics", () => {
     expect(e.commitsPer100Usd).toBeNull();
   });
 
+  it("zero cost → costPerSurvivingLoc null (no $0/line display)", () => {
+    // survivingLoc >= 50 but windowCostUsd = 0 → null, not 0
+    const sessions = [record({ git: git({ linesAdded: 200, revertedLinesWithin14d: 0, commitsInWindow: 5 }) })];
+    const e = outcomeEconomics(sessions, 0);
+    expect(e.survivingLoc).toBe(200);
+    expect(e.costPerSurvivingLoc).toBeNull();
+    // commitsPer100Usd also null: cost < $1
+    expect(e.commitsPer100Usd).toBeNull();
+  });
+
   it("below survivingLoc threshold (< 50) → costPerSurvivingLoc null", () => {
     const sessions = [record({ git: git({ linesAdded: 30, revertedLinesWithin14d: 0, commitsInWindow: 5 }) })];
     const e = outcomeEconomics(sessions, 10);
@@ -461,7 +471,7 @@ describe("outcomeEconomics", () => {
     const e = outcomeEconomics(sessions, 20);
     expect(e.survivingLoc).toBe(130);
     expect(e.shippedCommits).toBe(7);
-    expect(e.costPerSurvivingLoc).toBeCloseTo(0.15, 1);
+    expect(e.costPerSurvivingLoc).toBe(0.15);
     expect(e.commitsPer100Usd).toBe(35.0);
   });
 });

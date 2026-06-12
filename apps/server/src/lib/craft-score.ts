@@ -337,9 +337,9 @@ export function outcomeEconomics(sessions: SessionRecord[], windowCostUsd: numbe
   const totalSurvivingLoc = sum(sessions.map(survivingLoc));
   const totalShippedCommits = sum(sessions.map((s) => s.git?.commitsInWindow ?? 0));
 
-  // costPerSurvivingLoc: null if fewer than 50 surviving LOC — too noisy.
+  // costPerSurvivingLoc: null if fewer than 50 surviving LOC or cost is zero — too noisy / misleading.
   let costPerSurvivingLoc: number | null = null;
-  if (totalSurvivingLoc >= 50) {
+  if (totalSurvivingLoc >= 50 && windowCostUsd > 0) {
     const raw = windowCostUsd / totalSurvivingLoc;
     // < $0.01: keep 4 significant decimals. ≥ $0.01: round to 2 decimals.
     costPerSurvivingLoc = raw < 0.01

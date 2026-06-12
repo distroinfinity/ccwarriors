@@ -568,6 +568,31 @@ describe("selectDeck — curation layer (Wrapped-sized, not everything-bagel)", 
     const tiny = all.slice(0, 3);
     expect(selectDeck(tiny, [])).toEqual(tiny);
   });
+
+  it("outcome_per_dollar and shipped never co-occur (dedupe family)", () => {
+    // Build a deck where both cards would qualify: enough commits, enough surviving LOC,
+    // and non-zero cost so costPerSurvivingLoc is set.
+    const richSessions = Array.from({ length: 4 }, () =>
+      session({ git: git({ linesAdded: 100, revertedLinesWithin14d: 0, commitsInWindow: 3 }) }),
+    );
+    const cards = buildInsightCards({
+      sessions: richSessions,
+      merged: deriveAggregate(richSessions, 30),
+      efficiency: null,
+      archetype: null,
+      pillars: null,
+      economics: {
+        survivingLoc: 400,
+        shippedCommits: 12,
+        windowCostUsd: 20,
+        costPerSurvivingLoc: 0.05,
+        commitsPer100Usd: 60.0,
+      },
+    });
+    const picked = selectDeck(cards, []);
+    const keys = picked.map((c) => c.key);
+    expect(keys.includes("outcome_per_dollar") && keys.includes("shipped")).toBe(false);
+  });
 });
 
 describe("buildInsightCards — kitchen sink", () => {
@@ -714,7 +739,7 @@ describe("buildInsightCards — outcome_per_dollar card", () => {
       buildInsightCards({
         ...base,
         economics: {
-          survivingLoc: 10, // below 50 threshold
+          survivingLoc: 10, // below 50 threshold but non-zero
           shippedCommits: 5,
           windowCostUsd: 20,
           costPerSurvivingLoc: null,
@@ -726,6 +751,49 @@ describe("buildInsightCards — outcome_per_dollar card", () => {
     expect(c).toBeDefined();
     expect(c.headline).toBe("25 commits per $100");
     expect(c.stat).toBe("25");
+    // commits-only body: mentions commits + spend + surviving lines (non-zero)
+    expect(c.body).toContain("5 commits");
+    expect(c.body).toContain("$20");
+  });
+
+  it("commits-only body omits surviving lines when survivingLoc is 0", () => {
+    // survivingLoc=0: costPerSurvivingLoc null (< 50), body must not say "0 lines that survived"
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 0,
+          shippedCommits: 5,
+          windowCostUsd: 20,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: 25.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c.body).toContain("5 commits");
+    expect(c.body).toContain("$20");
+    expect(c.body).not.toContain("lines that survived");
+  });
+
+  it("commits-only body mentions surviving lines when survivingLoc > 0", () => {
+    // survivingLoc=30 (non-zero but below 50 LOC threshold → costPerSurvivingLoc null)
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 30,
+          shippedCommits: 5,
+          windowCostUsd: 20,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: 25.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c.body).toContain("5 commits");
+    expect(c.body).toContain("30");
+    expect(c.body).toContain("lines that survived");
   });
 
   it("does NOT emit when both ratios are null (below thresholds)", () => {

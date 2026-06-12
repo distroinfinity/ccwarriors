@@ -312,9 +312,8 @@ describe("economics in profile response", () => {
     expect(econ.shippedCommits).toBe(8);
     // windowCostUsd = 0 (no usage_days seeded for this user)
     expect(typeof econ.windowCostUsd).toBe("number");
-    // survivingLoc >= 50 but windowCostUsd = 0 → costPerSurvivingLoc is 0/$280 = 0 (or could be 0.00)
-    // Actually: windowCostUsd=0, survivingLoc>=50 → costPerSurvivingLoc = 0/280 = 0
-    expect(econ.costPerSurvivingLoc).toBe(0);
+    // survivingLoc >= 50 but windowCostUsd = 0 → costPerSurvivingLoc must be null (not "$0 per line")
+    expect(econ.costPerSurvivingLoc).toBeNull();
   });
 
   it("economics is null for aggregate-only user (no deep sessions)", async () => {
