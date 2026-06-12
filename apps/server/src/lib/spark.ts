@@ -22,7 +22,7 @@ export function computeSpark(
     if (!Number.isFinite(dayMs) || dayMs < windowStart || dayMs >= now.getTime()) continue;
     const offset = dayMs - windowStart;
     const idx = Math.min(Math.floor(offset / BUCKET_WIDTH_MS), BUCKETS - 1);
-    buckets[idx] += cost;
+    buckets[idx] = (buckets[idx] ?? 0) + cost;
   }
 
   const max = Math.max(...buckets);

@@ -71,7 +71,7 @@ describe("computeSpark", () => {
     expect(spark).toBeDefined();
     expect(spark!.some((v) => v > 0)).toBe(true);
     // Should land in bucket 0 or 1 (early window)
-    expect(spark![0] > 0 || spark![1] > 0).toBe(true);
+    expect((spark![0] ?? 0) > 0 || (spark![1] ?? 0) > 0).toBe(true);
   });
 
   it("costs for the same day across multiple rows are summed", () => {
