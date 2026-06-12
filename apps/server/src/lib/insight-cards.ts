@@ -8,7 +8,7 @@
 // commit-timing histograms before an upgraded-CLI sync) simply don't appear.
 import type { GithubStats, InsightsPayload, SessionRecord } from "../db/schema.js";
 import type { Efficiency } from "./efficiency.js";
-import { shipped, survivingLoc } from "./craft-score.js";
+import { shipped, survivingLoc, type OutcomeEconomics } from "./craft-score.js";
 
 export interface InsightCard {
   key: string; // stable id, e.g. "model", "night_owl"
@@ -35,6 +35,9 @@ export interface InsightCardInput {
     maxConcurrentSessions?: number;
     topPrompt?: { text: string; count: number; sessions: number } | null;
   } | null;
+  // Outcome economics (cost per surviving line, commits per $100). Optional:
+  // absent on older callers or when craft data is unavailable.
+  economics?: OutcomeEconomics | null;
 }
 
 const round = (n: number) => Math.round(n);
@@ -666,6 +669,40 @@ function goToPromptCard(input: InsightCardInput): InsightCard | null {
   );
 }
 
+// ── Outcome economics ────────────────────────────────────────────────────────
+// Emits only when economics is present AND at least one ratio is non-null.
+
+function outcomePerDollarCard(input: InsightCardInput): InsightCard | null {
+  const e = input.economics;
+  if (!e) return null;
+  if (e.costPerSurvivingLoc === null && e.commitsPer100Usd === null) return null;
+
+  let headline: string;
+  let stat: string;
+  let secondary: string;
+  if (e.costPerSurvivingLoc !== null) {
+    // Format: $0.21 per surviving line, or $0.0034 when < $0.01.
+    const fmt = e.costPerSurvivingLoc < 0.01
+      ? `$${e.costPerSurvivingLoc}`
+      : `$${e.costPerSurvivingLoc.toFixed(2)}`;
+    headline = `${fmt} per surviving line`;
+    stat = fmt;
+    secondary = e.commitsPer100Usd !== null ? `${e.commitsPer100Usd} commits per $100` : "";
+  } else {
+    headline = `${e.commitsPer100Usd} commits per $100`;
+    stat = String(e.commitsPer100Usd);
+    secondary = "";
+  }
+
+  const locPart = `${e.survivingLoc.toLocaleString("en-US")} lines that survived 14 days`;
+  const costPart = `$${e.windowCostUsd % 1 === 0 ? e.windowCostUsd.toFixed(0) : e.windowCostUsd.toFixed(2)} burned in 30d`;
+  const body = secondary
+    ? `${secondary} — ${locPart}, ${costPart}`
+    : `${locPart}, ${costPart}`;
+
+  return card("outcome_per_dollar", "What does a dollar buy?", headline, body, stat);
+}
+
 // ── Usage/rhythm cards (cost ground truth + active-day cadence) ─────────────
 
 function cacheWarmCard(input: InsightCardInput): InsightCard | null {
@@ -722,6 +759,7 @@ function grindStreakCard(input: InsightCardInput): InsightCard | null {
 const BUILDERS: Array<(i: InsightCardInput) => InsightCard | null> = [
   archetypeCard,
   goToPromptCard,
+  outcomePerDollarCard,
   totalHoursCard,
   modelCard,
   burstProfileCard,
@@ -765,7 +803,7 @@ const BUILDERS: Array<(i: InsightCardInput) => InsightCard | null> = [
 
 /** Every key the deck can emit — the pins endpoint validates against this. */
 export const CARD_KEYS = new Set([
-  "archetype", "go_to_prompt", "total_hours", "model", "burst_profile", "dialogue", "max_concurrent",
+  "archetype", "go_to_prompt", "outcome_per_dollar", "total_hours", "model", "burst_profile", "dialogue", "max_concurrent",
   "night_owl", "ships_on", "commits_at_night", "plan_mode", "agents", "prompt_length", "avg_prompt_words",
   "course_correction", "recovery", "longest_run", "marathoner", "explore_first", "first_try", "shipped",
   "fixes_features", "ai_commits", "local_repos", "breadth_local", "clean_history", "you_test", "thank_yous",
@@ -791,7 +829,7 @@ export const DECK_LIMIT = 14;
 // Lower rank = stronger card. 1 = headliner, 2 = strong, 3 = filler that only
 // appears on thin profiles where nothing better exists.
 const CARD_RANK: Record<string, number> = {
-  story: 1, archetype: 1, go_to_prompt: 1, total_hours: 1, max_concurrent: 1, shipped: 1,
+  story: 1, archetype: 1, go_to_prompt: 1, outcome_per_dollar: 1, total_hours: 1, max_concurrent: 1, shipped: 1,
   model: 2, burst_profile: 2, night_owl: 2, thank_yous: 2, recovery: 2, fixes_features: 2,
   first_try: 2, you_test: 2, agents: 2, task_model_fit: 2, gh_merged_prs: 2, gh_stars: 2, gh_streak: 2,
   dialogue: 3, plan_mode: 3, prompt_length: 3, avg_prompt_words: 3, course_correction: 3,

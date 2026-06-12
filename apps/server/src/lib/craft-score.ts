@@ -318,6 +318,45 @@ export function pillarPercentiles(me: CraftInput, population: CraftInput[]): Pil
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Outcome economics — cost per surviving line and commits per $100.
+// The anti-burn metric: what a dollar buys in lasting outcomes.
+//
+// NOTE: honest window mismatch — sessions span the deep window (≤60d,
+// typically 40d); windowCostUsd is the 30d usage window. Same mismatch that
+// pillarYield already carries; we label it, we don't hide it.
+// ──────────────────────────────────────────────────────────────────────────
+export interface OutcomeEconomics {
+  survivingLoc: number;      // sum max(0, linesAdded - revertedLinesWithin14d) across sessions with git
+  shippedCommits: number;    // total commits across sessions with git
+  windowCostUsd: number;
+  costPerSurvivingLoc: number | null;  // windowCostUsd / survivingLoc; null if survivingLoc < 50
+  commitsPer100Usd: number | null;     // shippedCommits / windowCostUsd * 100; null if windowCostUsd < 1 or shippedCommits < 3
+}
+
+export function outcomeEconomics(sessions: SessionRecord[], windowCostUsd: number): OutcomeEconomics {
+  const totalSurvivingLoc = sum(sessions.map(survivingLoc));
+  const totalShippedCommits = sum(sessions.map((s) => s.git?.commitsInWindow ?? 0));
+
+  // costPerSurvivingLoc: null if fewer than 50 surviving LOC — too noisy.
+  let costPerSurvivingLoc: number | null = null;
+  if (totalSurvivingLoc >= 50) {
+    const raw = windowCostUsd / totalSurvivingLoc;
+    // < $0.01: keep 4 significant decimals. ≥ $0.01: round to 2 decimals.
+    costPerSurvivingLoc = raw < 0.01
+      ? Math.round(raw * 10_000) / 10_000
+      : Math.round(raw * 100) / 100;
+  }
+
+  // commitsPer100Usd: null if cost < $1 (denominator noise) or commits < 3.
+  let commitsPer100Usd: number | null = null;
+  if (windowCostUsd >= 1 && totalShippedCommits >= 3) {
+    commitsPer100Usd = Math.round((totalShippedCommits / windowCostUsd) * 100 * 10) / 10;
+  }
+
+  return { survivingLoc: totalSurvivingLoc, shippedCommits: totalShippedCommits, windowCostUsd, costPerSurvivingLoc, commitsPer100Usd };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Trust tier — how much we trust the git signal behind the score.
 //   1 = local-git credential: at least one session has a non-null git outcome
 //       with commitsInWindow>0 AND hasRemote (real repo, real remote).

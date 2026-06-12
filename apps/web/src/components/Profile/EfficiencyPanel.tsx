@@ -1,7 +1,37 @@
-import type { Profile } from "../../useProfile";
+import type { Profile, ProfileInsights } from "../../useProfile";
+
+function EconomicsBlock({ economics }: { economics: NonNullable<ProfileInsights["economics"]> }) {
+  const hasCostPerLoc = economics.costPerSurvivingLoc !== null;
+  const hasCommitsPer100 = economics.commitsPer100Usd !== null;
+  if (!hasCostPerLoc && !hasCommitsPer100) return null;
+  const fmt = (n: number) =>
+    n < 0.01 ? `$${n}` : `$${n.toFixed(2)}`;
+  return (
+    <div className="ppanel-section">
+      <div className="seclabel-minor">Economics</div>
+      {hasCostPerLoc && (
+        <div className="habit">
+          <b className="mono">{fmt(economics.costPerSurvivingLoc!)}</b>
+          <span>per surviving line</span>
+        </div>
+      )}
+      {hasCommitsPer100 && (
+        <div className="habit">
+          <b className="mono">{economics.commitsPer100Usd}</b>
+          <span>commits per $100</span>
+        </div>
+      )}
+      <div className="eff-caption muted">
+        outcomes from local-git hashes · spend server-priced, last 30d
+      </div>
+    </div>
+  );
+}
 
 export function EfficiencyPanel({ profile }: { profile: Profile }) {
   const e = profile.efficiency;
+  const ins = profile.insights.locked ? null : profile.insights;
+  const economics = ins?.economics ?? null;
   if (!e || !e.grade) return null;
   return (
     <div className="ppanel">
@@ -25,6 +55,7 @@ export function EfficiencyPanel({ profile }: { profile: Profile }) {
           ))}
         </div>
       )}
+      {economics && <EconomicsBlock economics={economics} />}
     </div>
   );
 }

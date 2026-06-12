@@ -12,6 +12,7 @@ import {
   craftScore,
   pillarPercentiles,
   trustTierOf,
+  outcomeEconomics,
   shipped,
   survivingLoc,
   verifiedTestSession,
@@ -373,5 +374,94 @@ describe("derive-from-real-shaped SessionRecords (integration)", () => {
     expect(score).toBeGreaterThan(0);
     expect(score).toBeLessThanOrEqual(100);
     expect(trustTierOf(sessions)).toBe(1);
+  });
+});
+
+describe("outcomeEconomics", () => {
+  it("zero sessions → zero counts, both ratios null", () => {
+    const e = outcomeEconomics([], 50);
+    expect(e.survivingLoc).toBe(0);
+    expect(e.shippedCommits).toBe(0);
+    expect(e.costPerSurvivingLoc).toBeNull();
+    expect(e.commitsPer100Usd).toBeNull();
+  });
+
+  it("below survivingLoc threshold (< 50) → costPerSurvivingLoc null", () => {
+    const sessions = [record({ git: git({ linesAdded: 30, revertedLinesWithin14d: 0, commitsInWindow: 5 }) })];
+    const e = outcomeEconomics(sessions, 10);
+    expect(e.survivingLoc).toBe(30);
+    expect(e.costPerSurvivingLoc).toBeNull();
+    // commits >= 3 and cost >= 1 → commitsPer100Usd present
+    expect(e.commitsPer100Usd).toBe(50.0);
+  });
+
+  it("below commits threshold (< 3) → commitsPer100Usd null", () => {
+    const sessions = [record({ git: git({ linesAdded: 200, revertedLinesWithin14d: 0, commitsInWindow: 2 }) })];
+    const e = outcomeEconomics(sessions, 10);
+    expect(e.commitsPer100Usd).toBeNull();
+    expect(e.costPerSurvivingLoc).toBeCloseTo(0.05, 2);
+  });
+
+  it("below cost threshold (< $1) → commitsPer100Usd null", () => {
+    const sessions = [record({ git: git({ linesAdded: 100, revertedLinesWithin14d: 0, commitsInWindow: 5 }) })];
+    const e = outcomeEconomics(sessions, 0.5);
+    expect(e.commitsPer100Usd).toBeNull();
+  });
+
+  it("normal case: correct math, reverted lines subtracted", () => {
+    // surviving = 100 - 20 = 80; cost = 40; costPerLoc = 40/80 = 0.50
+    // commits = 10; commitsPer100 = 10/40*100 = 25.0
+    const sessions = [
+      record({ git: git({ linesAdded: 100, revertedLinesWithin14d: 20, commitsInWindow: 10 }) }),
+    ];
+    const e = outcomeEconomics(sessions, 40);
+    expect(e.survivingLoc).toBe(80);
+    expect(e.shippedCommits).toBe(10);
+    expect(e.windowCostUsd).toBe(40);
+    expect(e.costPerSurvivingLoc).toBe(0.50);
+    expect(e.commitsPer100Usd).toBe(25.0);
+  });
+
+  it("reverted lines clamped at 0 (no negative surviving LOC)", () => {
+    const sessions = [record({ git: git({ linesAdded: 10, revertedLinesWithin14d: 200, commitsInWindow: 5 }) })];
+    const e = outcomeEconomics(sessions, 50);
+    expect(e.survivingLoc).toBe(0);
+    expect(e.costPerSurvivingLoc).toBeNull(); // 0 < 50 threshold
+  });
+
+  it("rounding: costPerSurvivingLoc rounds to 2 decimals when >= $0.01", () => {
+    // cost=10, surviving=333 → 10/333 = 0.030030... → rounds to 0.03
+    const sessions = [record({ git: git({ linesAdded: 333, revertedLinesWithin14d: 0, commitsInWindow: 5 }) })];
+    const e = outcomeEconomics(sessions, 10);
+    expect(e.costPerSurvivingLoc).toBe(0.03);
+  });
+
+  it("rounding: costPerSurvivingLoc keeps 4 decimals when < $0.01", () => {
+    // cost=1, surviving=200 → 1/200 = 0.005 → 4 decimals → 0.005
+    const sessions = [record({ git: git({ linesAdded: 200, revertedLinesWithin14d: 0, commitsInWindow: 5 }) })];
+    const e = outcomeEconomics(sessions, 1);
+    expect(e.costPerSurvivingLoc).toBe(0.005);
+  });
+
+  it("rounding: commitsPer100Usd rounds to 1 decimal", () => {
+    // 7 commits / 30 * 100 = 23.333... → 23.3
+    const sessions = [record({ git: git({ linesAdded: 100, revertedLinesWithin14d: 0, commitsInWindow: 7 }) })];
+    const e = outcomeEconomics(sessions, 30);
+    expect(e.commitsPer100Usd).toBe(23.3);
+  });
+
+  it("multi-session: sums correctly across sessions", () => {
+    const sessions = [
+      record({ git: git({ linesAdded: 60, revertedLinesWithin14d: 10, commitsInWindow: 4 }) }),
+      record({ git: git({ linesAdded: 80, revertedLinesWithin14d: 0, commitsInWindow: 3 }) }),
+      record({ git: null }), // no git → contributes nothing
+    ];
+    // surviving = 50 + 80 = 130; commits = 7; cost = 20
+    // costPerLoc = 20/130 ≈ 0.15; commitsPer100 = 7/20*100 = 35.0
+    const e = outcomeEconomics(sessions, 20);
+    expect(e.survivingLoc).toBe(130);
+    expect(e.shippedCommits).toBe(7);
+    expect(e.costPerSurvivingLoc).toBeCloseTo(0.15, 1);
+    expect(e.commitsPer100Usd).toBe(35.0);
   });
 });

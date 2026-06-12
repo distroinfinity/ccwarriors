@@ -236,6 +236,108 @@ describe("depth block", () => {
   });
 });
 
+describe("economics in profile response", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: InsightsStore;
+
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new InsightsStore();
+  });
+
+  function app() {
+    return profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, sessionSecret: SECRET });
+  }
+
+  it("economics is present in unlocked response for a deep user with git outcomes", async () => {
+    const u = (await seedUser(db, { login: "econuser", token: "tok_econ" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    const sessions: SessionRecord[] = [
+      deepRecord({
+        git: {
+          repoIdHash: "r1",
+          branchHash: "b1",
+          commitsInWindow: 5,
+          linesAdded: 200,
+          linesDeleted: 10,
+          filesChanged: 8,
+          testFilesTouched: 2,
+          aiLinkedCommits: 4,
+          revertedLinesWithin14d: 20,
+          squashMergeDetected: false,
+          rebaseDetected: false,
+          isMonorepo: false,
+          hasRemote: true,
+        },
+      }),
+      deepRecord({
+        git: {
+          repoIdHash: "r1",
+          branchHash: "b1",
+          commitsInWindow: 3,
+          linesAdded: 100,
+          linesDeleted: 5,
+          filesChanged: 4,
+          testFilesTouched: 1,
+          aiLinkedCommits: 2,
+          revertedLinesWithin14d: 0,
+          squashMergeDetected: false,
+          rebaseDetected: false,
+          isMonorepo: false,
+          hasRemote: true,
+        },
+      }),
+    ];
+    await db.insert(userDeepSessions).values({ userId: u.id, machineId: "m1", sessions, windowDays: 40 });
+    store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40 }));
+
+    const res = await app().request("/econuser");
+    const body = (await res.json()) as {
+      insights: {
+        locked: boolean;
+        economics?: {
+          survivingLoc: number;
+          shippedCommits: number;
+          windowCostUsd: number;
+          costPerSurvivingLoc: number | null;
+          commitsPer100Usd: number | null;
+        } | null;
+      };
+    };
+    expect(body.insights.locked).toBe(false);
+    const econ = body.insights.economics!;
+    expect(econ).toBeDefined();
+    // surviving = (200-20) + (100-0) = 180+100 = 280; commits = 8
+    expect(econ.survivingLoc).toBe(280);
+    expect(econ.shippedCommits).toBe(8);
+    // windowCostUsd = 0 (no usage_days seeded for this user)
+    expect(typeof econ.windowCostUsd).toBe("number");
+    // survivingLoc >= 50 but windowCostUsd = 0 → costPerSurvivingLoc is 0/$280 = 0 (or could be 0.00)
+    // Actually: windowCostUsd=0, survivingLoc>=50 → costPerSurvivingLoc = 0/280 = 0
+    expect(econ.costPerSurvivingLoc).toBe(0);
+  });
+
+  it("economics is null for aggregate-only user (no deep sessions)", async () => {
+    const u = (await seedUser(db, { login: "aggonlyecon", token: "tok_ae" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    store.upsert(u.id, "m1", payload({ sessions: 5, windowDays: 30 }));
+
+    const res = await app().request("/aggonlyecon");
+    const body = (await res.json()) as { insights: { locked: boolean; economics?: unknown } };
+    expect(body.insights.locked).toBe(false);
+    expect(body.insights.economics).toBeNull();
+  });
+
+  it("economics is absent on locked (non-consented) responses", async () => {
+    await seedUser(db, { login: "lockeduser", token: "tok_lu" });
+
+    const res = await app().request("/lockeduser");
+    const body = (await res.json()) as { insights: { locked: boolean; economics?: unknown } };
+    expect(body.insights.locked).toBe(true);
+    expect(body.insights.economics).toBeUndefined();
+  });
+});
+
 describe("percentilePool", () => {
   it("excludes sub-MIN_SESSIONS users so tiny samples never shred the ranks", () => {
     const tiny = mergeInsights([payload({ sessions: 1 })]);

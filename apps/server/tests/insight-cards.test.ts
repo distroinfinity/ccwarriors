@@ -676,3 +676,98 @@ describe("buildInsightCards — full commit-timing fixture", () => {
     expect(byKey(cards).get("ships_on")?.headline).toBe("Fridays");
   });
 });
+
+describe("buildInsightCards — outcome_per_dollar card", () => {
+  const base = {
+    sessions: [session()],
+    merged: deriveAggregate([session()], 30),
+    efficiency: null,
+    archetype: null,
+    pillars: null,
+  };
+
+  it("emits when both ratios are non-null (costPerSurvivingLoc preferred)", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 200,
+          shippedCommits: 10,
+          windowCostUsd: 50,
+          costPerSurvivingLoc: 0.25,
+          commitsPer100Usd: 20.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c).toBeDefined();
+    expect(c.question).toBe("What does a dollar buy?");
+    expect(c.headline).toBe("$0.25 per surviving line");
+    expect(c.stat).toBe("$0.25");
+    expect(c.body).toContain("20 commits per $100");
+    expect(c.body).toContain("200");
+    expect(c.shareText).toMatch(/@ccwarriorsxyz/);
+  });
+
+  it("falls back to commitsPer100Usd headline when costPerSurvivingLoc is null", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 10, // below 50 threshold
+          shippedCommits: 5,
+          windowCostUsd: 20,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: 25.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c).toBeDefined();
+    expect(c.headline).toBe("25 commits per $100");
+    expect(c.stat).toBe("25");
+  });
+
+  it("does NOT emit when both ratios are null (below thresholds)", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 10,
+          shippedCommits: 2,
+          windowCostUsd: 0.5,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: null,
+        },
+      }),
+    );
+    expect(m.has("outcome_per_dollar")).toBe(false);
+  });
+
+  it("does NOT emit when economics is null (no deep data)", () => {
+    const m = byKey(buildInsightCards({ ...base, economics: null }));
+    expect(m.has("outcome_per_dollar")).toBe(false);
+  });
+
+  it("does NOT emit when economics is absent (older caller)", () => {
+    const m = byKey(buildInsightCards(base));
+    expect(m.has("outcome_per_dollar")).toBe(false);
+  });
+
+  it("formats sub-cent costPerSurvivingLoc without losing precision", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 300,
+          shippedCommits: 5,
+          windowCostUsd: 1,
+          costPerSurvivingLoc: 0.0033,
+          commitsPer100Usd: null,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c.headline).toBe("$0.0033 per surviving line");
+  });
+});

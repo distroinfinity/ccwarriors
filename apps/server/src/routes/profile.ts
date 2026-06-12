@@ -20,7 +20,7 @@ import {
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
 import { computeCraftForUser, loadDeepExtras } from "../lib/craft-score-service.js";
-import { tierOf, type CraftTier, type Pillars } from "../lib/craft-score.js";
+import { tierOf, outcomeEconomics, type CraftTier, type Pillars, type OutcomeEconomics } from "../lib/craft-score.js";
 import { applyPins, buildInsightCards, selectDeck, type InsightCard } from "../lib/insight-cards.js";
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
@@ -153,6 +153,7 @@ export function profileRoute(deps: ProfileDeps) {
             avgSessionMinutes: number | null;
             longestSessionMinutes: number;
           };
+          economics: OutcomeEconomics | null;
         };
     if (!user?.insightsConsent) {
       insights = { locked: true, reason: "no_consent" };
@@ -192,6 +193,9 @@ export function profileRoute(deps: ProfileDeps) {
         .select({ doc: userStories.doc })
         .from(userStories)
         .where(eq(userStories.userId, user.id));
+      const craftEconomics = craft
+        ? outcomeEconomics(craft.input.sessions, craft.input.windowCostUsd)
+        : null;
       const baseCards = craft
         ? buildInsightCards({
             sessions: craft.input.sessions,
@@ -201,6 +205,7 @@ export function profileRoute(deps: ProfileDeps) {
             pillars: craft.pillars,
             github,
             extras,
+            economics: craftEconomics,
             rhythm: {
               weekendShare: rhythm.weekendShare,
               currentStreak: rhythm.currentStreak,
@@ -260,6 +265,7 @@ export function profileRoute(deps: ProfileDeps) {
           avgSessionMinutes,
           longestSessionMinutes: Math.round(merged.longestSessionMinutes),
         },
+        economics: craftEconomics,
       };
     }
 

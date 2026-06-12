@@ -76,6 +76,15 @@ export interface ProfileInsights {
     avgSessionMinutes: number | null;
     longestSessionMinutes: number;
   } | null;
+  // Outcome economics: cost per surviving line and commits per $100.
+  // Optional/nullable: absent on older servers or when no deep data.
+  economics?: {
+    survivingLoc: number;
+    shippedCommits: number;
+    windowCostUsd: number;
+    costPerSurvivingLoc: number | null;
+    commitsPer100Usd: number | null;
+  } | null;
 }
 
 // Verified-by-GitHub public footprint. Public data — present (when fetched)
