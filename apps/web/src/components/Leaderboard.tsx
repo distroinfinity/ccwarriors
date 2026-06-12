@@ -183,7 +183,9 @@ export function Leaderboard({
   const [loadingMore, setLoadingMore] = useState(false);
   const [locatedLogin, setLocatedLogin] = useState<string | null>(null);
   // Track previous rank per id (across renders) to compute ▲ deltas.
+  // Keyed by board so switching boards never produces spurious deltas.
   const prevRanks = useRef<Map<string, number>>(new Map());
+  const prevBoard = useRef<Board>(board);
   const boardRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
@@ -196,6 +198,11 @@ export function Leaderboard({
     setExtra([]);
     setVisibleN(PAGE);
     boardRef.current?.scrollTo({ top: 0 });
+    // Reset rank-delta tracking on board switch so old ordering doesn't pollute deltas.
+    if (board !== prevBoard.current) {
+      prevRanks.current = new Map();
+      prevBoard.current = board;
+    }
   }, [board, tool]);
 
   // If the active tool disappears (reconnect to an old server, last warrior of
@@ -300,17 +307,26 @@ export function Leaderboard({
           <button className={board === "30d" ? "on" : ""} onClick={() => setBoard("30d")}>
             30 Days
           </button>
-          {/* All Time hidden for now: local agent logs prune after ~30 days, so
-              ccusage "all-time" ≈ last 30 days. Re-enable once server-side
-              accumulation has aged enough to be meaningful. */}
+          <button
+            className={board === "allTime" ? "on" : ""}
+            onClick={() => { if (tool) setTool(null); setBoard("allTime"); }}
+            title="Accumulated since enlistment (plus ~40-day backfill at first sync) — pre-enlistment history isn't recoverable from pruned local logs."
+          >
+            All Time
+          </button>
         </div>
-        <FilterChips tools={tools} active={tool} onSelect={setTool} />
+        {board === "30d" && <FilterChips tools={tools} active={tool} onSelect={setTool} />}
         <div className="live">
           <span className="dot" />
           {connected ? "live" : "reconnecting…"}
         </div>
       </div>
 
+      {board === "allTime" && (
+        <p className="board-end" style={{ padding: "6px 0 10px", letterSpacing: "normal" }}>
+          since enlistment · local logs prune ~30d, so totals accumulate from first sync
+        </p>
+      )}
       <div className="board" ref={boardRef}>
         {isConnecting ? (
           <BoardSkeleton />

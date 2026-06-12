@@ -6,7 +6,7 @@ import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
 import { createSessionToken } from "../src/lib/session.js";
 import { mergeInsights, percentilePool, MIN_SESSIONS } from "../src/lib/insights.js";
 import { makeDb, seedUser } from "./helpers/db.js";
-import { users, userDeepSessions, type InsightsPayload, type SessionRecord } from "../src/db/schema.js";
+import { users, userDeepSessions, usageDays, type InsightsPayload, type SessionRecord } from "../src/db/schema.js";
 
 // The 10-session "forging" gate is gone: every stat we can compute renders
 // from session #1 (marked provisional). "forging" survives only for the
@@ -415,5 +415,48 @@ describe("stack in profile response", () => {
     const body = (await res.json()) as { insights: { locked: boolean; stack?: unknown } };
     expect(body.insights.locked).toBe(true);
     expect(body.insights.stack).toBeUndefined();
+  });
+});
+
+// ── tokensAllTime ─────────────────────────────────────────────────────────────
+
+describe("tokensAllTime in profile response", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: InsightsStore;
+
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new InsightsStore();
+  });
+
+  function app() {
+    return profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, sessionSecret: SECRET });
+  }
+
+  it("sums all four token columns across all usage_days rows", async () => {
+    const u = (await seedUser(db, { login: "tokenuser", token: "tok_tu" }))!;
+    // Row 1: 100 input + 50 output + 10 cacheCreation + 5 cacheRead = 165
+    await db.insert(usageDays).values({
+      userId: u.id, machineId: "m1", tool: "claude", day: "2025-01-01",
+      inputTokens: 100, outputTokens: 50, cacheCreationTokens: 10, cacheReadTokens: 5, cost: "1.00",
+    });
+    // Row 2: 200 input + 80 output + 0 + 0 = 280
+    await db.insert(usageDays).values({
+      userId: u.id, machineId: "m1", tool: "claude", day: "2025-01-02",
+      inputTokens: 200, outputTokens: 80, cacheCreationTokens: 0, cacheReadTokens: 0, cost: "2.00",
+    });
+
+    const res = await app().request("/tokenuser");
+    const body = (await res.json()) as { tokensAllTime: number | null };
+    // 165 + 280 = 445
+    expect(body.tokensAllTime).toBe(445);
+  });
+
+  it("returns null for a user with no usage_days rows", async () => {
+    await seedUser(db, { login: "notokenuser", token: "tok_ntu" });
+
+    const res = await app().request("/notokenuser");
+    const body = (await res.json()) as { tokensAllTime: number | null };
+    expect(body.tokensAllTime).toBeNull();
   });
 });

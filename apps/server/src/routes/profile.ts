@@ -99,11 +99,32 @@ export function profileRoute(deps: ProfileDeps) {
     // Rhythm + efficiency from usage_days (all history retained in the table).
     const rows = user
       ? await deps.db
-          .select({ day: usageDays.day, cost: usageDays.cost, modelBreakdown: usageDays.modelBreakdown })
+          .select({
+            day: usageDays.day,
+            cost: usageDays.cost,
+            modelBreakdown: usageDays.modelBreakdown,
+            inputTokens: usageDays.inputTokens,
+            outputTokens: usageDays.outputTokens,
+            cacheCreationTokens: usageDays.cacheCreationTokens,
+            cacheReadTokens: usageDays.cacheReadTokens,
+          })
           .from(usageDays)
           .where(eq(usageDays.userId, user.id))
       : [];
     const dayRows = rows.map((r) => ({ day: r.day, cost: Number(r.cost), modelBreakdown: r.modelBreakdown }));
+    // Sum all tokens across every row — bigint columns come back as numbers (mode:"number").
+    const tokensAllTime: number | null =
+      rows.length > 0
+        ? rows.reduce(
+            (sum, r) =>
+              sum +
+              Number(r.inputTokens) +
+              Number(r.outputTokens) +
+              Number(r.cacheCreationTokens) +
+              Number(r.cacheReadTokens),
+            0,
+          )
+        : null;
     const today = new Date().toISOString().slice(0, 10);
     const cutoff30 = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
     const rhythm = computeRhythm(dayRows, today);
@@ -295,6 +316,7 @@ export function profileRoute(deps: ProfileDeps) {
       costAllTime: entry?.costAllTime ?? Number(user?.costAllTime ?? 0),
       rank30d: entry && !flagged ? deps.store.getRank("30d", entry.id) : null,
       rankAllTime: entry && !flagged ? deps.store.getRank("allTime", entry.id) : null,
+      tokensAllTime,
       underReview: flagged,
       memberSince: user?.createdAt?.toISOString() ?? null,
       lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,

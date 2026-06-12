@@ -4,7 +4,7 @@ import { API_HTTP } from "../../api";
 import type { Profile, ProfileInsights, ProfilePillars, LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { PixelGlyph } from "../PixelGlyph";
-import { tierLabel } from "../../util";
+import { tierLabel, formatUsd, formatTokens } from "../../util";
 
 const AXIS_ORDER = ["summoning", "steering", "velocity", "autonomy", "planning"] as const;
 const AXIS_LABEL: Record<(typeof AXIS_ORDER)[number], string> = {
@@ -425,7 +425,19 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
               <div className="arch-rank mono">
                 {profile.underReview ? "rank —" : profile.rank30d ? `rank #${profile.rank30d}` : "unranked"} &middot;{" "}
                 <span className="arch-tier">{tierLabel(profile.tier)}</span>
+                {!profile.underReview && profile.costAllTime > 0 && (
+                  <span>
+                    {" "}&middot;{" "}
+                    {formatUsd(Math.round(profile.costAllTime))} all&#8209;time
+                    {profile.rankAllTime ? ` (#${profile.rankAllTime})` : ""}
+                  </span>
+                )}
               </div>
+              {profile.tokensAllTime != null && profile.tokensAllTime > 0 && (
+                <div className="arch-rank mono" style={{ marginTop: 1 }}>
+                  {formatTokens(profile.tokensAllTime)} tokens since enlisting
+                </div>
+              )}
             </div>
           </div>
           <div className="arch-brand">

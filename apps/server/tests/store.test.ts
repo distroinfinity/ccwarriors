@@ -106,6 +106,18 @@ describe("LeaderboardStore (multi-tool)", () => {
     expect(orderB).toEqual(orderA);
   });
 
+  it("allTime board ranks by costAllTime desc", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10, costAllTime: 500 }));
+    store.upsert(entry("b", { cost30d: 200, costAllTime: 50 }));
+    store.upsert(entry("c", { cost30d: 5, costAllTime: 300 }));
+
+    expect(store.getTop("allTime", 10).map((e) => e.id)).toEqual(["a", "c", "b"]);
+    expect(store.getRank("allTime", "a")).toBe(1);
+    expect(store.getRank("allTime", "c")).toBe(2);
+    expect(store.getRank("allTime", "b")).toBe(3);
+  });
+
   it("falls back to login asc when lastSyncedAt is identical", () => {
     const t = 1_000_000;
     const store = new LeaderboardStore();
