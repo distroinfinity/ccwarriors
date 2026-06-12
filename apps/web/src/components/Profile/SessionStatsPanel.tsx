@@ -2,6 +2,14 @@ import type { Profile, ProfileInsights } from "../../useProfile";
 
 const CLAMP_MINUTES = 10080; // 7 days — resume artifacts at the extractor ceiling
 
+// "95m" reads worse than "1h 35m" once past the hour.
+function fmtMinutes(m: number): string {
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rest = Math.round(m % 60);
+  return rest > 0 ? `${h}h ${rest}m` : `${h}h`;
+}
+
 export function SessionStatsPanel({ profile }: { profile: Profile }) {
   if (profile.insights.locked) return null;
   const d = (profile.insights as ProfileInsights).depth;
@@ -27,14 +35,14 @@ export function SessionStatsPanel({ profile }: { profile: Profile }) {
 
       {d.avgSessionMinutes !== null && (
         <div className="habit">
-          <b className="mono">{d.avgSessionMinutes}m</b>
+          <b className="mono">{fmtMinutes(d.avgSessionMinutes)}</b>
           <span>avg session length</span>
         </div>
       )}
 
       <div className="habit">
         <b className="mono">
-          {d.longestSessionMinutes}m
+          {fmtMinutes(d.longestSessionMinutes)}
           {d.longestSessionMinutes >= CLAMP_MINUTES ? " (clamped)" : ""}
         </b>
         <span>longest session</span>
@@ -48,7 +56,7 @@ export function SessionStatsPanel({ profile }: { profile: Profile }) {
       {d.subagentSpawnsPerSession > 0 && (
         <div className="habit">
           <b className="mono">
-            {d.subagentSpawnsPerSession} agents/session · peak {d.maxParallelAgents} parallel
+            {d.subagentSpawnsPerSession} spawns/session · peak {d.maxParallelAgents} parallel
           </b>
           <span>orchestration</span>
         </div>

@@ -221,14 +221,11 @@ export function profileRoute(deps: ProfileDeps) {
       // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
       const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
       // Deep-session-derived signals (null when user has aggregate-only data).
-      const deepSessions = craft?.input.sessions ?? null;
-      const totalHours = deepSessions
-        ? Math.round((deepSessions.reduce((s, r) => s + r.durationMinutes, 0) / 60) * 10) / 10
-        : null;
-      const avgSessionMinutes = deepSessions && deepSessions.length > 0
-        ? Math.round(deepSessions.reduce((s, r) => s + r.durationMinutes, 0) / deepSessions.length)
-        : null;
-      const subagentSessionsPct = deepSessions && deepSessions.length > 0
+      const deepSessions = craft && craft.input.sessions.length > 0 ? craft.input.sessions : null;
+      const deepMinutes = deepSessions ? deepSessions.reduce((s, r) => s + r.durationMinutes, 0) : 0;
+      const totalHours = deepSessions ? Math.round((deepMinutes / 60) * 10) / 10 : null;
+      const avgSessionMinutes = deepSessions ? Math.round(deepMinutes / deepSessions.length) : null;
+      const subagentSessionsPct = deepSessions
         ? Math.round((deepSessions.filter((r) => r.subagentSpawns > 0).length / deepSessions.length) * 100)
         : null;
 

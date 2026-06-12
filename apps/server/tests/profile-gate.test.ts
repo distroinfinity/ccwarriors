@@ -197,7 +197,8 @@ describe("depth block", () => {
     expect(d.totalHours).toBe(3.0);
     // avgSessionMinutes: (60 + 120) / 2 = 90
     expect(d.avgSessionMinutes).toBe(90);
-    // longestSessionMinutes: max(60, 120) = 120
+    // longestSessionMinutes comes from the merged AGGREGATE (seeded as 120),
+    // not recomputed from deep sessions.
     expect(d.longestSessionMinutes).toBe(120);
     // subagentSessionsPct: 1 of 2 sessions had spawns → 50%
     expect(d.subagentSessionsPct).toBe(50);
