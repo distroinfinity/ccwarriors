@@ -127,7 +127,7 @@ export interface Profile {
   cardScene: string;
   cost30d: number;
   costAllTime: number;
-  tokensAllTime: number | null;
+  tokensAllTime?: number | null;
   rank30d: number | null;
   rankAllTime: number | null;
   underReview: boolean;

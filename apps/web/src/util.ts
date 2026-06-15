@@ -13,12 +13,14 @@ const TIER_GLYPH: Record<string, string> = {
   iron: "✦",
   stone: "⬡",
 };
-/** Compact token count: 1.2B, 480M, 9.5K, etc. */
+/** Compact token count: 1.2B, 480M, 9.5K, etc. Drops a trailing ".0". */
 export function formatTokens(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
+  // Round at the tier boundary so 999,990 reads "1M", not "1000.0K".
+  const tier = (v: number, suffix: string) => `${(v).toFixed(1).replace(/\.0$/, "")}${suffix}`;
+  if (n >= 999_999_950) return tier(n / 1_000_000_000, "B");
+  if (n >= 999_950) return tier(n / 1_000_000, "M");
+  if (n >= 999.95) return tier(n / 1_000, "K");
+  return String(Math.round(n));
 }
 
 export function tierLabel(tier: string): string {

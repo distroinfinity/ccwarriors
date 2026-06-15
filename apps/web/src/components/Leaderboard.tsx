@@ -183,9 +183,9 @@ export function Leaderboard({
   const [loadingMore, setLoadingMore] = useState(false);
   const [locatedLogin, setLocatedLogin] = useState<string | null>(null);
   // Track previous rank per id (across renders) to compute ▲ deltas.
-  // Keyed by board so switching boards never produces spurious deltas.
+  // Scoped to board+tool so switching never produces spurious deltas.
   const prevRanks = useRef<Map<string, number>>(new Map());
-  const prevBoard = useRef<Board>(board);
+  const prevScope = useRef<string>(`${board}:${tool ?? ""}`);
   const boardRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
@@ -198,11 +198,6 @@ export function Leaderboard({
     setExtra([]);
     setVisibleN(PAGE);
     boardRef.current?.scrollTo({ top: 0 });
-    // Reset rank-delta tracking on board switch so old ordering doesn't pollute deltas.
-    if (board !== prevBoard.current) {
-      prevRanks.current = new Map();
-      prevBoard.current = board;
-    }
   }, [board, tool]);
 
   // If the active tool disappears (reconnect to an old server, last warrior of
@@ -218,6 +213,14 @@ export function Leaderboard({
     return [...liveEntries, ...extra.filter((e) => !seen.has(e.id))];
   }, [liveEntries, extra]);
 
+  // Drop stale rank tracking inline (before computing deltas) when the
+  // board/tool scope changes — an effect would fire post-paint and let one
+  // frame of phantom ▲ deltas through.
+  const scope = `${board}:${tool ?? ""}`;
+  if (scope !== prevScope.current) {
+    prevRanks.current = new Map();
+    prevScope.current = scope;
+  }
   const ranked = all.map((e, i) => {
     const prev = prevRanks.current.get(e.id);
     const delta = prev !== undefined && prev > i ? prev - i : 0;
