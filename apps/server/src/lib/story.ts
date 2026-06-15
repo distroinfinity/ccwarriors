@@ -119,13 +119,15 @@ export function prepareStorySource(source: unknown):
   const windowDays =
     typeof s.windowDays === "number" && Number.isFinite(s.windowDays) ? s.windowDays : null;
 
-  // Pre-stringify each session, accumulate in order, stop when the cap would be exceeded.
+  // Pre-stringify each session, accumulate in order (client sends newest first),
+  // skipping any that won't fit. Skip-and-continue rather than break so one
+  // oversized session can't starve the smaller older ones behind it.
   const kept: string[] = [];
   let totalLen = 2; // "[" + "]"
   for (const session of sessions) {
     const encoded = JSON.stringify(session);
     const addLen = kept.length === 0 ? encoded.length : 1 + encoded.length; // comma separator
-    if (totalLen + addLen > SERVER_INPUT_CHAR_CAP) break;
+    if (totalLen + addLen > SERVER_INPUT_CHAR_CAP) continue;
     kept.push(encoded);
     totalLen += addLen;
   }

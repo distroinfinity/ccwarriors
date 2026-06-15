@@ -7,6 +7,7 @@ import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import type { InsightsStore } from "../lib/insights-store.js";
 import { readSessionToken } from "../lib/session.js";
 import { computeEfficiency, computeRhythm } from "../lib/efficiency.js";
+import { BOARD_DAYS } from "../services/ingest.js";
 import {
   AXES,
   archetypeOf,
@@ -126,7 +127,7 @@ export function profileRoute(deps: ProfileDeps) {
           )
         : null;
     const today = new Date().toISOString().slice(0, 10);
-    const cutoff30 = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+    const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
     const rhythm = computeRhythm(dayRows, today);
     const efficiency = dayRows.length > 0 ? computeEfficiency(dayRows, cutoff30) : null;
 

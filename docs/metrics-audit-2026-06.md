@@ -105,6 +105,11 @@ and verified, beats a raw spend number.**
 - **Outcome window mismatch** — outcome-per-dollar divides a 30-day spend figure by
   a session window that can be up to ~40 days; labeled honestly now, align the
   windows in the next craft refit.
+- **Sparkline boundary day** — `computeSpark` filters by millisecond `windowStart`
+  while `cost30d` includes the boundary day by date-string, so the day exactly 30
+  days ago can be absent from the oldest spark bucket. Cosmetic (far-left bar of a
+  decorative sparkline); aligning it shifts the 3.75-day bucket math and isn't worth
+  churning the bucket tests for now.
 
 ## Rollout note
 
