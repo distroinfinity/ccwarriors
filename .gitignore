@@ -19,3 +19,11 @@ tmp/
 
 # Superpowers Claude plan/spec scratch files — local-only, not committed
 docs/superpowers/
+
+# Product video workspace — generated media stays local (regenerate via scripts/).
+# Committed: source, configs, and public/fonts. Everything below is reproducible.
+tools/video/out/
+tools/video/data/
+tools/video/public/sfx/
+tools/video/public/avatars/
+tools/video/public/runway/
