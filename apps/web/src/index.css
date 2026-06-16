@@ -661,6 +661,9 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 /* Economics sub-section inside .ppanel — visual separator + minor label. */
 .ppanel-section{ margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); }
 .seclabel-minor{ font-size:10px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; font-weight:600; margin-bottom:6px; }
+.gh-profile{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600;
+  color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
+.gh-profile:hover{ color:var(--or); }
 .gh-meta{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
 
 .rhythm{ margin-top:18px; }
