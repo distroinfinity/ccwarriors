@@ -329,17 +329,24 @@ export interface OutcomeEconomics {
   survivingLoc: number;      // sum max(0, linesAdded - revertedLinesWithin14d) across sessions with git
   shippedCommits: number;    // total commits across sessions with git
   windowCostUsd: number;
-  costPerSurvivingLoc: number | null;  // windowCostUsd / survivingLoc; null if survivingLoc < 50
-  commitsPer100Usd: number | null;     // shippedCommits / windowCostUsd * 100; null if windowCostUsd < 1 or shippedCommits < 3
+  costPerSurvivingLoc: number | null;  // windowCostUsd / survivingLoc; null below MIN_SURVIVING_LOC_FOR_ECONOMICS
+  commitsPer100Usd: number | null;     // commits / cost * 100; null below MIN_COST/MIN_COMMITS thresholds
 }
+
+// Significance floors — below these the ratio is noise, so we show nothing
+// rather than a misleading number. v1 placeholders to tune on real data, like
+// the calibration anchors above.
+const MIN_SURVIVING_LOC_FOR_ECONOMICS = 50;
+const MIN_COST_USD_FOR_ECONOMICS = 1;
+const MIN_COMMITS_FOR_ECONOMICS = 3;
 
 export function outcomeEconomics(sessions: SessionRecord[], windowCostUsd: number): OutcomeEconomics {
   const totalSurvivingLoc = sum(sessions.map(survivingLoc));
   const totalShippedCommits = sum(sessions.map((s) => s.git?.commitsInWindow ?? 0));
 
-  // costPerSurvivingLoc: null if fewer than 50 surviving LOC or cost is zero — too noisy / misleading.
+  // Null below the LOC floor or at zero cost — too noisy / misleading.
   let costPerSurvivingLoc: number | null = null;
-  if (totalSurvivingLoc >= 50 && windowCostUsd > 0) {
+  if (totalSurvivingLoc >= MIN_SURVIVING_LOC_FOR_ECONOMICS && windowCostUsd > 0) {
     const raw = windowCostUsd / totalSurvivingLoc;
     // < $0.01: keep 4 significant decimals. ≥ $0.01: round to 2 decimals.
     costPerSurvivingLoc = raw < 0.01
@@ -347,9 +354,9 @@ export function outcomeEconomics(sessions: SessionRecord[], windowCostUsd: numbe
       : Math.round(raw * 100) / 100;
   }
 
-  // commitsPer100Usd: null if cost < $1 (denominator noise) or commits < 3.
+  // Null below the cost floor (denominator noise) or the commit floor.
   let commitsPer100Usd: number | null = null;
-  if (windowCostUsd >= 1 && totalShippedCommits >= 3) {
+  if (windowCostUsd >= MIN_COST_USD_FOR_ECONOMICS && totalShippedCommits >= MIN_COMMITS_FOR_ECONOMICS) {
     commitsPer100Usd = Math.round((totalShippedCommits / windowCostUsd) * 100 * 10) / 10;
   }
 

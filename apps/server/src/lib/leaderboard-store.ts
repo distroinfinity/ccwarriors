@@ -60,9 +60,18 @@ const metric = (e: Entry, b: Board, tool?: string): number => {
 
 export class LeaderboardStore {
   private entries = new Map<string, Entry>();
+  // Secondary index: lowercased login → id, so getByLogin (hit on every profile
+  // request) is O(1) instead of a full scan. Kept in sync by upsert.
+  private loginIndex = new Map<string, string>();
 
   upsert(e: Entry): void {
+    const prev = this.entries.get(e.id);
+    // On a GitHub rename the old login key would dangle — drop it.
+    if (prev && prev.githubLogin.toLowerCase() !== e.githubLogin.toLowerCase()) {
+      this.loginIndex.delete(prev.githubLogin.toLowerCase());
+    }
     this.entries.set(e.id, e);
+    this.loginIndex.set(e.githubLogin.toLowerCase(), e.id);
   }
 
   get(id: string): Entry | undefined {
@@ -72,10 +81,12 @@ export class LeaderboardStore {
   /** Case-insensitive login lookup (profile URLs arrive in user-typed case). */
   getByLogin(login: string): Entry | undefined {
     const lower = login.toLowerCase();
-    for (const e of this.entries.values()) {
-      if (e.githubLogin.toLowerCase() === lower) return e;
-    }
-    return undefined;
+    const id = this.loginIndex.get(lower);
+    if (!id) return undefined;
+    const e = this.entries.get(id);
+    // Defensive: only return on an exact (case-insensitive) login match, so a
+    // stale index key can never resolve to the wrong warrior.
+    return e && e.githubLogin.toLowerCase() === lower ? e : undefined;
   }
 
   setFlagged(id: string, flagged: boolean): void {

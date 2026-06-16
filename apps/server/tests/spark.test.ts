@@ -106,4 +106,28 @@ describe("computeSpark", () => {
     const spark = computeSpark(rows, NOW)!;
     expect(spark[3]).toBeGreaterThan(0);
   });
+
+  // ── Boundary cases ────────────────────────────────────────────────────────
+  it("boundary: today's spend lands in the last bucket", () => {
+    // daysAgo(0) = today's date string; its UTC midnight is < NOW (noon), so it
+    // is in-window and at the far edge → bucket 7.
+    const rows = [{ day: daysAgo(0), cost: 10 }];
+    const spark = computeSpark(rows, NOW)!;
+    expect(spark[7]).toBeGreaterThan(0);
+    expect(spark.slice(0, 7).every((v) => v === 0)).toBe(true);
+  });
+
+  it("boundary: the day exactly WINDOW_DAYS ago is excluded (ms cutoff vs midnight)", () => {
+    // windowStart = NOW − 30d (noon). The 30-days-ago date's UTC midnight is
+    // before that, so it falls outside — documents the known date/ms boundary.
+    const rows = [{ day: daysAgo(30), cost: 100 }];
+    expect(computeSpark(rows, NOW)).toBeUndefined();
+  });
+
+  it("boundary: a day one slice-width in lands one bucket up (no off-by-one)", () => {
+    // 26 days ago = ~3.5d from windowStart < one 3.75d slice → still bucket 0;
+    // 25 days ago = ~4.5d from windowStart ≥ one slice → bucket 1.
+    expect(computeSpark([{ day: daysAgo(26), cost: 5 }], NOW)![0]).toBeGreaterThan(0);
+    expect(computeSpark([{ day: daysAgo(25), cost: 5 }], NOW)![1]).toBeGreaterThan(0);
+  });
 });

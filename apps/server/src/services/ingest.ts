@@ -383,7 +383,8 @@ async function ingestRaw(
     spark = computeSpark([...dayMap.entries()].map(([day, cost]) => ({ day, cost })), new Date(now));
   } catch (err) {
     // spark failure must not block the sync — but it must not be invisible.
-    console.warn("spark skipped:", (err as Error).message);
+    // PostHog (not just Railway logs) so it's alertable like every other gate.
+    captureEvent("spark_failed", user.githubLogin, { reason: (err as Error).message });
   }
 
   return finalize(db, store, user, {

@@ -136,6 +136,32 @@ describe("LeaderboardStore (multi-tool)", () => {
   });
 });
 
+describe("getByLogin (indexed lookup)", () => {
+  it("finds an entry case-insensitively", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("u1", { githubLogin: "DistroInfinity" }));
+    expect(store.getByLogin("distroinfinity")?.id).toBe("u1");
+    expect(store.getByLogin("DISTROINFINITY")?.id).toBe("u1");
+    expect(store.getByLogin("nobody")).toBeUndefined();
+  });
+
+  it("follows a GitHub rename and drops the stale login key", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("u1", { githubLogin: "oldname" }));
+    store.upsert(entry("u1", { githubLogin: "newname" })); // same id, renamed
+    expect(store.getByLogin("newname")?.id).toBe("u1");
+    expect(store.getByLogin("oldname")).toBeUndefined(); // stale key no longer resolves
+  });
+
+  it("does not let one user's id be reached via another's login", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("u1", { githubLogin: "alice" }));
+    store.upsert(entry("u2", { githubLogin: "bob" }));
+    expect(store.getByLogin("alice")?.id).toBe("u1");
+    expect(store.getByLogin("bob")?.id).toBe("u2");
+  });
+});
+
 describe("setCraft", () => {
   it("sets craft on an existing entry", () => {
     const store = new LeaderboardStore();

@@ -186,6 +186,10 @@ function shipsOnCard(input: InsightCardInput): InsightCard | null {
 }
 
 // ── 5. commits_at_night ───────────────────────────────────────────────────
+// Only a real night signal earns this card — "after dark" is the story. A
+// daytime committer has no commits-at-night story, so we emit nothing and let a
+// stronger card take the slot (matches the "no filler" doctrine above).
+const MIN_COMMITS_FOR_NIGHT = 5;
 function commitsAtNightCard(input: InsightCardInput): InsightCard | null {
   const hours = Array(24).fill(0) as number[];
   let any = false;
@@ -197,22 +201,15 @@ function commitsAtNightCard(input: InsightCardInput): InsightCard | null {
   }
   if (!any) return null;
   const total = sum(hours);
-  if (total < 1) return null;
+  if (total < MIN_COMMITS_FOR_NIGHT) return null; // too few commits to read a pattern
   const nightShare = sum([22, 23, 0, 1, 2].map((h) => hours[h] ?? 0)) / total;
+  if (nightShare <= 0.4) return null; // not night-concentrated — no story to tell
   const pct = round(nightShare * 100);
-  if (nightShare > 0.4) {
-    return card(
-      "commits_at_night",
-      "When do your commits land?",
-      "After dark",
-      `${pct}% of your commits land between 10 PM and 2 AM`,
-    );
-  }
   return card(
     "commits_at_night",
     "When do your commits land?",
-    "Steady through the day",
-    `Only ${pct}% of your commits land between 10 PM and 2 AM`,
+    "After dark",
+    `${pct}% of your commits land between 10 PM and 2 AM`,
   );
 }
 
@@ -760,60 +757,57 @@ function grindStreakCard(input: InsightCardInput): InsightCard | null {
   return card("grind_streak", "How relentless are you?", `${r.longestStreak} days straight`, body, `${r.longestStreak}d`);
 }
 
-const BUILDERS: Array<(i: InsightCardInput) => InsightCard | null> = [
-  archetypeCard,
-  goToPromptCard,
-  outcomePerDollarCard,
-  totalHoursCard,
-  modelCard,
-  burstProfileCard,
-  dialogueCard,
-  maxConcurrentCard,
-  nightOwlCard,
-  shipsOnCard,
-  commitsAtNightCard,
-  planModeCard,
-  agentsCard,
-  promptLengthCard,
-  avgPromptWordsCard,
-  courseCorrectionCard,
-  recoveryCard,
-  longestRunCard,
-  marathonerCard,
-  exploreFirstCard,
-  firstTryCard,
-  shippedCard,
-  fixesFeaturesCard,
-  aiCommitsCard,
-  localReposCard,
-  breadthLocalCard,
-  cleanHistoryCard,
-  youTestCard,
-  thankYousCard,
-  taskModelFitCard,
-  ghMergedPrsCard,
-  ghPrsWorkedCard,
-  ghStarsCard,
-  ghLanguagesCard,
-  ghStreakCard,
-  ghReviewsCard,
-  ghFootprintCard,
-  ghVeteranCard,
-  cacheWarmCard,
-  modelMixCard,
-  weekendWarriorCard,
-  grindStreakCard,
-];
+// Keyed registry: the key is the card's stable id (matches what each builder
+// passes to card()). Declaration order is the deck order — preserved by
+// Object.values. CARD_KEYS derives from this, so the two can never drift.
+const BUILDERS: Record<string, (i: InsightCardInput) => InsightCard | null> = {
+  archetype: archetypeCard,
+  go_to_prompt: goToPromptCard,
+  outcome_per_dollar: outcomePerDollarCard,
+  total_hours: totalHoursCard,
+  model: modelCard,
+  burst_profile: burstProfileCard,
+  dialogue: dialogueCard,
+  max_concurrent: maxConcurrentCard,
+  night_owl: nightOwlCard,
+  ships_on: shipsOnCard,
+  commits_at_night: commitsAtNightCard,
+  plan_mode: planModeCard,
+  agents: agentsCard,
+  prompt_length: promptLengthCard,
+  avg_prompt_words: avgPromptWordsCard,
+  course_correction: courseCorrectionCard,
+  recovery: recoveryCard,
+  longest_run: longestRunCard,
+  marathoner: marathonerCard,
+  explore_first: exploreFirstCard,
+  first_try: firstTryCard,
+  shipped: shippedCard,
+  fixes_features: fixesFeaturesCard,
+  ai_commits: aiCommitsCard,
+  local_repos: localReposCard,
+  breadth_local: breadthLocalCard,
+  clean_history: cleanHistoryCard,
+  you_test: youTestCard,
+  thank_yous: thankYousCard,
+  task_model_fit: taskModelFitCard,
+  gh_merged_prs: ghMergedPrsCard,
+  gh_prs_worked: ghPrsWorkedCard,
+  gh_stars: ghStarsCard,
+  gh_languages: ghLanguagesCard,
+  gh_streak: ghStreakCard,
+  gh_reviews: ghReviewsCard,
+  gh_footprint: ghFootprintCard,
+  gh_veteran: ghVeteranCard,
+  cache_warm: cacheWarmCard,
+  model_mix: modelMixCard,
+  weekend_warrior: weekendWarriorCard,
+  grind_streak: grindStreakCard,
+};
 
-/** Every key the deck can emit — the pins endpoint validates against this. */
-export const CARD_KEYS = new Set([
-  "archetype", "go_to_prompt", "outcome_per_dollar", "total_hours", "model", "burst_profile", "dialogue", "max_concurrent",
-  "night_owl", "ships_on", "commits_at_night", "plan_mode", "agents", "prompt_length", "avg_prompt_words",
-  "course_correction", "recovery", "longest_run", "marathoner", "explore_first", "first_try", "shipped",
-  "fixes_features", "ai_commits", "local_repos", "breadth_local", "clean_history", "you_test", "thank_yous",
-  "task_model_fit", "gh_merged_prs", "gh_prs_worked", "gh_stars", "gh_languages", "gh_streak", "gh_reviews", "gh_footprint",
-  "gh_veteran", "cache_warm", "model_mix", "weekend_warrior", "grind_streak", "story",
-]);
+/** Every key the deck can emit — the pins endpoint validates against this.
+ *  "story" is built in the profile route, not by a BUILDER, so it's added here. */
+export const CARD_KEYS = new Set([...Object.keys(BUILDERS), "story"]);
 
 /** Reorder a deck so pinned keys lead (their relative pin order preserved). */
 export function applyPins(cards: InsightCard[], pins: string[] | null | undefined): InsightCard[] {
@@ -892,5 +886,7 @@ export function selectDeck(cards: InsightCard[], pins: string[] | null | undefin
 
 /** Build the ordered deck of insight cards, emitting only cards with real data. */
 export function buildInsightCards(input: InsightCardInput): InsightCard[] {
-  return BUILDERS.map((b) => b(input)).filter((c): c is InsightCard => c !== null);
+  return Object.values(BUILDERS)
+    .map((b) => b(input))
+    .filter((c): c is InsightCard => c !== null);
 }

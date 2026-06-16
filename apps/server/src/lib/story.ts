@@ -183,12 +183,17 @@ export async function generateStory(
       windowDays: windowDays ?? 40,
     };
     const price = STORY_PRICES[model];
+    let estCostUsd: number | null = null;
+    if (price) {
+      // Prices are $/million-tokens, so divide the token×price products by 1e6,
+      // then round to 5 decimals ($0.00001) to keep sub-cent runs visible.
+      const usd = (response.usage.input_tokens * price.input + response.usage.output_tokens * price.output) / 1_000_000;
+      estCostUsd = Math.round(usd * 100_000) / 100_000;
+    }
     const usage: StoryUsage = {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
-      estCostUsd: price
-        ? Math.round((response.usage.input_tokens * price.input + response.usage.output_tokens * price.output) / 10) / 100_000
-        : null,
+      estCostUsd,
       durationMs: Date.now() - startedAt,
     };
     return { doc: docStamped, model, usage, sessionsUsed, sessionsReceived };

@@ -21,6 +21,8 @@ const WINDOW_DAYS = 40;
 // (10080 min) and the whole upload 400s. Same cap as insights.ts.
 const MAX_SESSION_MINUTES = 7 * 24 * 60;
 const RECENT_BUDGET_SHARE = 0.85;           // 85% recency-greedy / 15% stratified older sample
+// Chars reserved for the recency-greedy pass; the rest fills the stratified sample.
+const RECENT_BUDGET = RECENT_BUDGET_SHARE * STORY_CHAR_BUDGET;
 const MIN_SESSION_PROMPTS = 2;              // triviality filter
 const MIN_SESSION_MINUTES = 2;
 const STALE_PROJECT_DAYS = 14;             // project "dead" if no in-window activity in 14d…
@@ -51,6 +53,20 @@ interface ParsedTranscript extends TranscriptSession {
 }
 
 type ProjectStats = Map<string, { count: number; lastEndMs: number }>;
+
+// The exact shape that leaves the machine — local-only fields (endMs,
+// projectKey, jsonChars) are never included. Single source of the wire field
+// list, used both for budget sizing and the final payload.
+function toWire(s: TranscriptSession): TranscriptSession {
+  return {
+    startedDay: s.startedDay,
+    durationMinutes: s.durationMinutes,
+    model: s.model,
+    interrupts: s.interrupts,
+    prompts: s.prompts,
+    toolCounts: s.toolCounts,
+  };
+}
 
 const EDIT_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
 
@@ -181,16 +197,11 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
       try {
         const parsed = await parseFile(f.path);
         if (!parsed) continue;
-        // Compute wire shape without local fields to measure serialized size.
-        const wireShape: TranscriptSession = {
-          startedDay: parsed.startedDay,
-          durationMinutes: parsed.durationMinutes,
-          model: parsed.model,
-          interrupts: parsed.interrupts,
-          prompts: parsed.prompts,
-          toolCounts: parsed.toolCounts,
-        };
-        const jsonChars = JSON.stringify(wireShape).length + 1; // +1 for array comma
+        // Size of the wire shape only (drops the local endMs). The +1 charges
+        // this session's separator in the serialized array ("[a,b,c]"); summed,
+        // it keeps `used` within ~1 char of the real payload length, so the
+        // budget is a true bound rather than an undercount.
+        const jsonChars = JSON.stringify(toWire(parsed)).length + 1;
         allSessions.push({ ...parsed, projectKey: f.projectKey, jsonChars });
       } catch {
         continue;
@@ -232,12 +243,11 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
     activePool.sort((a, b) => b.endMs - a.endMs);
     const picked: ParsedTranscript[] = [];
     let used = 0;
-    const recentBudget = RECENT_BUDGET_SHARE * STORY_CHAR_BUDGET;
     const pickedSet = new Set<ParsedTranscript>();
 
     for (const s of activePool) {
       if (picked.length >= MAX_STORY_SESSIONS) break;
-      if (used + s.jsonChars > recentBudget) continue; // oversized: skip, don't stop
+      if (used + s.jsonChars > RECENT_BUDGET) continue; // oversized: skip, don't stop
       picked.push(s);
       pickedSet.add(s);
       used += s.jsonChars;
@@ -291,7 +301,7 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
     picked.sort((a, b) => b.endMs - a.endMs);
     return {
       windowDays: WINDOW_DAYS,
-      sessions: picked.map(({ endMs: _e, projectKey: _pk, jsonChars: _jc, ...s }) => s),
+      sessions: picked.map(toWire),
     };
   } catch {
     return null;

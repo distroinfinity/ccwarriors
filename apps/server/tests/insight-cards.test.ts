@@ -643,7 +643,7 @@ describe("buildInsightCards — kitchen sink", () => {
 });
 
 describe("buildInsightCards — commit-timing cards at bare floor", () => {
-  it("emits ships_on and commits_at_night from a single commit's histograms", () => {
+  it("emits ships_on from a single commit but suppresses commits_at_night below the volume floor", () => {
     const dows = [0, 0, 0, 0, 0, 1, 0]; // one Friday commit
     const hours = Array(24).fill(0) as number[];
     hours[23] = 1;
@@ -656,8 +656,23 @@ describe("buildInsightCards — commit-timing cards at bare floor", () => {
       pillars: null,
     });
     const m = byKey(cards);
-    expect(m.get("ships_on")?.headline).toBe("Fridays");
-    expect(m.get("commits_at_night")?.headline).toBe("After dark");
+    expect(m.get("ships_on")?.headline).toBe("Fridays"); // ships_on reads from one commit
+    expect(m.has("commits_at_night")).toBe(false); // <5 commits — too few to read a pattern
+  });
+
+  it("suppresses commits_at_night when commits are not night-concentrated", () => {
+    // 8 daytime commits (well above the volume floor) but ~0% at night.
+    const hours = Array(24).fill(0) as number[];
+    hours[14] = 8; // all at 2 PM
+    const day = [session({ git: git({ commitHours: hours, commitsInWindow: 8 }) })];
+    const cards = buildInsightCards({
+      sessions: day,
+      merged: deriveAggregate(day, 30),
+      efficiency: null,
+      archetype: null,
+      pillars: null,
+    });
+    expect(byKey(cards).has("commits_at_night")).toBe(false); // no night story to tell
   });
 });
 

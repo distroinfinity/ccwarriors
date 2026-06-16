@@ -38,6 +38,50 @@ export interface ProfileDeps {
   githubFetcher?: typeof fetch;
 }
 
+// Locked unless consented AND (public OR owner). "forging" is the owner-only
+// consented-but-nothing-uploaded state; visitors see "no_consent" either way.
+type ProfileInsightsLocked = { locked: true; reason: "no_consent" | "forging" };
+
+// Deep, consent-gated session signals — promoted to a first-class profile block.
+interface ProfileDepth {
+  sessions: number;
+  windowDays: number;
+  totalHours: number | null;
+  planModeSessionsPct: number;
+  subagentSessionsPct: number | null;
+  subagentSpawnsPerSession: number;
+  maxParallelAgents: number;
+  maxConcurrentSessions?: number;
+  avgSessionMinutes: number | null;
+  longestSessionMinutes: number;
+}
+
+interface ProfileInsightsUnlocked {
+  locked: false;
+  scoresArePercentiles: boolean;
+  population: number;
+  axes: Record<(typeof AXES)[number], number>;
+  archetype: string;
+  trait: string | null;
+  habits: ReturnType<typeof habitStats>;
+  growthEdge: string;
+  craftScore: number | null;
+  craftTier: CraftTier | null;
+  pillars: Pillars | null;
+  trustTier: 0 | 1 | null;
+  provisional: boolean;
+  sampleSessions: number;
+  windowDays: number;
+  githubVerified: boolean;
+  pinnedCards: string[];
+  cards: InsightCard[];
+  depth: ProfileDepth;
+  economics: OutcomeEconomics | null;
+  stack: StackProfile | null;
+}
+
+type ProfileInsights = ProfileInsightsLocked | ProfileInsightsUnlocked;
+
 const LOGIN_RE = /^[a-zA-Z0-9-]{1,39}$/; // GitHub login charset
 
 export function profileRoute(deps: ProfileDeps) {
@@ -143,42 +187,7 @@ export function profileRoute(deps: ProfileDeps) {
     // Insights: locked unless consented AND (public OR owner). There is no
     // session-count gate — every stat we can compute renders from session #1.
     const merged = user ? deps.insightsStore.merged(user.id) : null;
-    let insights:
-      | { locked: true; reason: "no_consent" | "forging" }
-      | {
-          locked: false;
-          scoresArePercentiles: boolean;
-          population: number;
-          axes: Record<(typeof AXES)[number], number>;
-          archetype: string;
-          trait: string | null;
-          habits: ReturnType<typeof habitStats>;
-          growthEdge: string;
-          craftScore: number | null;
-          craftTier: CraftTier | null;
-          pillars: Pillars | null;
-          trustTier: 0 | 1 | null;
-          provisional: boolean;
-          sampleSessions: number;
-          windowDays: number;
-          githubVerified: boolean;
-          pinnedCards: string[];
-          cards: InsightCard[];
-          depth: {
-            sessions: number;
-            windowDays: number;
-            totalHours: number | null;
-            planModeSessionsPct: number;
-            subagentSessionsPct: number | null;
-            subagentSpawnsPerSession: number;
-            maxParallelAgents: number;
-            maxConcurrentSessions?: number;
-            avgSessionMinutes: number | null;
-            longestSessionMinutes: number;
-          };
-          economics: OutcomeEconomics | null;
-          stack: StackProfile | null;
-        };
+    let insights: ProfileInsights;
     if (!user?.insightsConsent) {
       insights = { locked: true, reason: "no_consent" };
     } else if (user.insightsVisibility === "private" && !isOwner) {
