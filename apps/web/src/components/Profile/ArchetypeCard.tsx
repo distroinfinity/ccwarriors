@@ -4,7 +4,7 @@ import { API_HTTP } from "../../api";
 import type { Profile, ProfileInsights, ProfilePillars, LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { PixelGlyph } from "../PixelGlyph";
-import { tierLabel, formatUsd, formatTokens } from "../../util";
+import { formatUsd } from "../../util";
 
 const AXIS_ORDER = ["summoning", "steering", "velocity", "autonomy", "planning"] as const;
 const AXIS_LABEL: Record<(typeof AXIS_ORDER)[number], string> = {

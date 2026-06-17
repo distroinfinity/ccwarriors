@@ -439,12 +439,6 @@ html[data-theme="dark"] .arch-card{ background:linear-gradient(180deg,#17171a,#1
 html[data-theme="dark"] .arch-name{ color:var(--ink); }
 .arch-trait{ font-size:12.5px; color:var(--muted); margin-top:4px; line-height:1.5; }
 
-/* Craft Score hero: the headline. A large tabular-mono number a recruiter reads
-   first, badges to its right, archetype demoted to flavour underneath. */
-.craft{ margin-top:18px; }
-.craft-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
-.craft-num-wrap{ display:flex; flex-direction:column; }
-.craft-label{ font-size:10px; letter-spacing:.22em; color:var(--muted); }
 /* Pixelify utility (brand display type). */
 .px{ font-family:'Pixelify Sans',monospace; }
 /* Forge tiers: ink → bronze → terracotta → ember. The score wears its band. */
@@ -453,8 +447,6 @@ html[data-theme="dark"] .arch-name{ color:var(--ink); }
 .tier-artisan{ color:var(--or); }
 .tier-mastersmith{ color:#8C2F1B; text-shadow:0 0 16px color-mix(in srgb,var(--or) 40%,transparent); }
 html[data-theme="dark"] .tier-mastersmith{ color:#E8845C; }
-.craft-tier{ font-size:13px; letter-spacing:.08em; margin-top:4px; }
-
 /* ── Pillar tooltips + score explainer (#58): progressive disclosure ───────── */
 .pillar-row{ position:relative; cursor:help; outline:none; }
 .pillar-tip{ display:none; position:absolute; left:0; bottom:calc(100% + 6px); z-index:5;
@@ -475,15 +467,6 @@ html[data-theme="dark"] .pillar-tip{ background:#1a1b1f; box-shadow:0 12px 28px 
 .craft-explain-body p{ font-size:12px; line-height:1.6; color:var(--muted); margin:0 0 8px; }
 .craft-explain-body p:last-child{ margin-bottom:0; }
 .craft-explain-body b{ color:var(--ink); font-weight:600; }
-/* Tier color wins over the dark theme's plain-ink score. */
-html[data-theme="dark"] .craft-score.tier-apprentice{ color:var(--muted); }
-html[data-theme="dark"] .craft-score.tier-journeyman{ color:var(--bronze); }
-html[data-theme="dark"] .craft-score.tier-artisan{ color:var(--or); }
-html[data-theme="dark"] .craft-score.tier-mastersmith{ color:#E8845C; }
-.craft-score{ font-size:clamp(58px,12vw,80px); line-height:.92; font-weight:600;
-  font-variant-numeric:tabular-nums; letter-spacing:-.02em; color:var(--or); margin-top:2px; }
-html[data-theme="dark"] .craft-score{ color:var(--ink); }
-.craft-badges{ display:flex; flex-direction:column; align-items:flex-end; gap:7px; padding-top:4px; }
 .trust-badge{ display:inline-flex; align-items:center; gap:5px; font-size:9.5px; font-weight:600;
   letter-spacing:.1em; padding:4px 9px; border-radius:999px; white-space:nowrap; }
 .trust-badge.t1{ color:var(--or); border:1px solid var(--or);
@@ -493,12 +476,6 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
   background:color-mix(in srgb, var(--bronze) 5%, transparent); margin-top:6px; }
 .provisional-chip{ font-size:10px; letter-spacing:.02em; color:var(--bronze);
   border:1px dashed var(--line); border-radius:999px; padding:3px 9px; max-width:220px; text-align:right; }
-.craft-flavor{ font-family:'Pixelify Sans'; font-size:15px; letter-spacing:.04em; color:var(--muted);
-  margin-top:14px; }
-.craft-flavor b{ color:var(--ink); font-weight:400; }
-.craft .axes{ margin-top:16px; }
-.craft .axis-k.pillar-k{ width:120px; flex:none; }
-
 /* Editorial masthead (direction C). The score stays a prominent inline figure. */
 .mast-head{ align-items:flex-start; }
 .mast-kicker{ font-size:9px; letter-spacing:.2em; color:var(--bronze); display:block; }
@@ -687,9 +664,6 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .eff-letter{ font-size:34px; font-weight:700; color:var(--or); }
 .eff-sub{ font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .eff-mix{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); }
-/* Economics sub-section inside .ppanel — visual separator + minor label. */
-.ppanel-section{ margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); }
-.seclabel-minor{ font-size:10px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; font-weight:600; margin-bottom:6px; }
 .gh-profile{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600;
   color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
 .gh-profile:hover{ color:var(--or); }
