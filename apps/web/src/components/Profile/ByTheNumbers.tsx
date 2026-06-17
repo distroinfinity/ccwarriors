@@ -1,12 +1,17 @@
 import { useState, type ReactNode } from "react";
 import type { Profile, ProfileInsights } from "../../useProfile";
 
+const CLAMP_MINUTES = 10080; // 7 days: the session extractor ceiling for resume artifacts.
+
 function fmtMinutes(m: number): string {
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   const rest = Math.round(m % 60);
   return rest > 0 ? `${h}h ${rest}m` : `${h}h`;
 }
+// Sub-cent precision matters here: per-surviving-line costs run below $0.01,
+// where util.formatUsd (fixed 2 decimals) would collapse them to "$0.00". This
+// keeps the full figure (e.g. "$0.0034"), so it is deliberately not formatUsd.
 const fmtUsd = (n: number) => (n < 0.01 ? `$${n}` : `$${n.toFixed(2)}`);
 
 function GithubMark({ size = 13 }: { size?: number }) {
@@ -19,12 +24,17 @@ function GithubMark({ size = 13 }: { size?: number }) {
 
 type Stat = { v: string; label: string };
 
-function Group({ title, headline, more }: { title: string; headline: Stat[]; more: ReactNode }) {
+// `persistent` is an always-visible anchor (e.g. the GitHub profile link) that
+// renders whether or not the group has headline stats and whether or not "more"
+// is expanded. A group renders when it has any headline stat OR a persistent
+// anchor; the collapsible "more" alone never forces an otherwise-empty group.
+function Group({ title, headline, persistent, more }: { title: string; headline: Stat[]; persistent?: ReactNode; more?: ReactNode }) {
   const [open, setOpen] = useState(false);
-  if (headline.length === 0) return null;
+  if (headline.length === 0 && !persistent) return null;
   return (
     <div className="bynum-grp">
       <div className="bynum-gl mono">{title}</div>
+      {persistent}
       {headline.map((s) => (
         <div className="bynum-stat" key={s.label}>
           <b className="mono">{s.v}</b>
@@ -75,8 +85,9 @@ export function ByTheNumbers({ profile }: { profile: Profile }) {
     <>
       {d.totalHours != null && <div className="bynum-stat"><b className="mono">{d.totalHours}h</b><span>total active hours</span></div>}
       {d.avgSessionMinutes != null && <div className="bynum-stat"><b className="mono">{fmtMinutes(d.avgSessionMinutes)}</b><span>avg session</span></div>}
-      <div className="bynum-stat"><b className="mono">{fmtMinutes(d.longestSessionMinutes)}</b><span>longest session</span></div>
+      <div className="bynum-stat"><b className="mono">{fmtMinutes(d.longestSessionMinutes)}{d.longestSessionMinutes >= CLAMP_MINUTES ? " (clamped)" : ""}</b><span>longest session</span></div>
       {d.subagentSpawnsPerSession > 0 && <div className="bynum-stat"><b className="mono">{d.subagentSpawnsPerSession}/session</b><span>subagent spawns, peak {d.maxParallelAgents}</span></div>}
+      {d.maxConcurrentSessions != null && <div className="bynum-stat"><b className="mono">{d.maxConcurrentSessions}</b><span>max concurrent sessions</span></div>}
     </>
   );
 
@@ -86,16 +97,29 @@ export function ByTheNumbers({ profile }: { profile: Profile }) {
     if (g.totalStars > 0) ghHead.push({ v: `★ ${g.totalStars.toLocaleString("en-US")}`, label: "stars" });
     if (g.mergedPublicPrs > 0) ghHead.push({ v: String(g.mergedPublicPrs), label: "public PRs merged" });
   }
-  const ghMore = g && (
+  // The profile link is the group's anchor: it shows whenever the account is
+  // linked, even with zero public stars and zero merged PRs (the old panel
+  // always rendered it). So it is a persistent element, not a "more" row.
+  const ghPersistent = g ? (
+    <a className="gh-profile mono" href={`https://github.com/${encodeURIComponent(profile.login)}`} target="_blank" rel="noopener noreferrer">
+      <GithubMark size={13} /><span>@{profile.login}</span>
+    </a>
+  ) : null;
+  const ghSinceYear = g ? new Date(g.accountCreatedAt).getUTCFullYear() : NaN;
+  const hasGhMore =
+    !!g && (g.reposContributedTo > 0 || g.longestStreakDays > 1 || g.topLanguages.length > 0 || Number.isFinite(ghSinceYear));
+  const ghMore = hasGhMore ? (
     <>
-      {g.reposContributedTo > 0 && <div className="bynum-stat"><b className="mono">{g.reposContributedTo}</b><span>repos contributed to</span></div>}
-      {g.longestStreakDays > 1 && <div className="bynum-stat"><b className="mono">{g.longestStreakDays}d</b><span>longest streak</span></div>}
-      {g.topLanguages.length > 0 && <div className="gh-meta mono"><span>{g.topLanguages.slice(0, 3).map((l) => l.name).join(" · ")}</span></div>}
-      <a className="gh-profile mono" href={`https://github.com/${encodeURIComponent(profile.login)}`} target="_blank" rel="noopener noreferrer">
-        <GithubMark size={13} /><span>@{profile.login}</span>
-      </a>
+      {g!.reposContributedTo > 0 && <div className="bynum-stat"><b className="mono">{g!.reposContributedTo}</b><span>repos contributed to</span></div>}
+      {g!.longestStreakDays > 1 && <div className="bynum-stat"><b className="mono">{g!.longestStreakDays}d</b><span>longest streak</span></div>}
+      {(g!.topLanguages.length > 0 || Number.isFinite(ghSinceYear)) && (
+        <div className="gh-meta mono">
+          {g!.topLanguages.length > 0 && <span>{g!.topLanguages.slice(0, 3).map((l) => l.name).join(" · ")}</span>}
+          {Number.isFinite(ghSinceYear) && <span>since {ghSinceYear}</span>}
+        </div>
+      )}
     </>
-  );
+  ) : null;
 
   // -- Builds with --
   const stackHead: Stat[] = [];
@@ -120,20 +144,20 @@ export function ByTheNumbers({ profile }: { profile: Profile }) {
     </>
   );
 
-  const groups = [
-    { title: "Outcomes", headline: outHead, more: outMore },
-    { title: "Sessions", headline: sessHead, more: sessMore },
-    { title: g ? "GitHub · verified" : "GitHub", headline: ghHead, more: ghMore },
-    { title: "Builds with", headline: stackHead, more: stackMore },
+  const groups: { title: string; headline: Stat[]; persistent: ReactNode; more: ReactNode }[] = [
+    { title: "Outcomes", headline: outHead, persistent: null, more: outMore },
+    { title: "Sessions", headline: sessHead, persistent: null, more: sessMore },
+    { title: g ? "GitHub · verified" : "GitHub", headline: ghHead, persistent: ghPersistent, more: ghMore },
+    { title: "Builds with", headline: stackHead, persistent: null, more: stackMore },
   ];
-  if (groups.every((grp) => grp.headline.length === 0)) return null;
+  if (groups.every((grp) => grp.headline.length === 0 && !grp.persistent)) return null;
 
   return (
     <section className="bynum">
       <div className="seclabel">By the numbers</div>
       <div className="bynum-grid">
         {groups.map((grp) => (
-          <Group key={grp.title} title={grp.title} headline={grp.headline} more={grp.more} />
+          <Group key={grp.title} title={grp.title} headline={grp.headline} persistent={grp.persistent} more={grp.more} />
         ))}
       </div>
     </section>

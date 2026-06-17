@@ -4,6 +4,9 @@ import { API_HTTP } from "../../api";
 // The story page (#50): the LLM-derived narrative as an editorial dossier.
 // Long-form text gets its own page — narrow measure, big type, no card grid.
 
+// Mirror of the server's StoryDoc (apps/server/src/db/schema.ts), which is the
+// source of truth. The web and server are separate packages with no shared
+// types module, so keep this in sync by hand when the server type changes.
 export interface StoryDoc {
   tagline?: string;
   narrative: string;
@@ -85,20 +88,22 @@ export function StoryPage({ login }: { login: string }) {
         <p className="story-body">{story.narrative}</p>
       </section>
 
-      {story.decisionPatterns.length > 0 && (
+      {(story.decisionPatterns.length > 0 || story.aiArchetypes.length > 0) && (
         <section className="story-sec">
           <h2 className="seclabel">How you think with AI</h2>
-          <ol className="story-patterns">
-            {story.decisionPatterns.map((p) => (
-              <li key={p.name}>
-                <span className="pattern-count mono">×{p.count}</span>
-                <div>
-                  <b className="pattern-name">{p.name}</b>
-                  <p className="story-body">{p.evidence}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
+          {story.decisionPatterns.length > 0 && (
+            <ol className="story-patterns">
+              {story.decisionPatterns.map((p) => (
+                <li key={p.name}>
+                  <span className="pattern-count mono">×{p.count}</span>
+                  <div>
+                    <b className="pattern-name">{p.name}</b>
+                    <p className="story-body">{p.evidence}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
           {story.aiArchetypes.length > 0 && (
             <div className="story-stamps">
               {story.aiArchetypes.map((a) => (

@@ -910,7 +910,11 @@ export function featuredDeck(
   if (cards.length <= FEATURED_LIMIT) return cards.map((c) => c.key);
   const pinned = new Set(pins ?? []);
   const seed = String(hashStr(`${login}:${yyyymm}`));
-  // The story card and owner pins are always featured.
+  // The story card and owner pins are always featured, bypassing FEATURED_LIMIT
+  // the same way selectDeck lets pins bypass DECK_LIMIT (the owner outranks the
+  // curator). Pins are capped at 4 upstream (the pins endpoint and the deck UI),
+  // so forced is at most 5 (4 pins + story) and the result stays within the
+  // limit in practice; this code does not re-clamp it.
   const forced = new Set(cards.filter((c) => c.key === "story" || pinned.has(c.key)).map((c) => c.key));
   // Fill the rest by rank, breaking ties with a month-seeded hash so the
   // selection reshuffles each month.
