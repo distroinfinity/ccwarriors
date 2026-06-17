@@ -884,6 +884,51 @@ export function selectDeck(cards: InsightCard[], pins: string[] | null | undefin
   return survivors.filter((c) => keep.has(c.key));
 }
 
+// ── Monthly featuring: the curated "this month" set ──────────────────────────
+// Deterministic given (cards, login, yyyymm, pins). The month is in the seed,
+// so mid-rank cards rotate month to month while the strongest persist. Safe to
+// cache within a month. No Date.now / Math.random in here.
+export const FEATURED_LIMIT = 6;
+
+// FNV-1a string hash to a uint32. Stable across processes.
+function hashStr(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** Pick the featured card keys for one month, in deck order. */
+export function featuredDeck(
+  cards: InsightCard[],
+  login: string,
+  yyyymm: string,
+  pins: string[] | null | undefined,
+): string[] {
+  if (cards.length <= FEATURED_LIMIT) return cards.map((c) => c.key);
+  const pinned = new Set(pins ?? []);
+  const seed = String(hashStr(`${login}:${yyyymm}`));
+  // The story card and owner pins are always featured.
+  const forced = new Set(cards.filter((c) => c.key === "story" || pinned.has(c.key)).map((c) => c.key));
+  // Fill the rest by rank, breaking ties with a month-seeded hash so the
+  // selection reshuffles each month.
+  const rest = cards
+    .filter((c) => !forced.has(c.key))
+    .sort(
+      (a, b) =>
+        (CARD_RANK[a.key] ?? 3) - (CARD_RANK[b.key] ?? 3) ||
+        hashStr(a.key + seed) - hashStr(b.key + seed),
+    );
+  const chosen = new Set(forced);
+  for (const c of rest) {
+    if (chosen.size >= FEATURED_LIMIT) break;
+    chosen.add(c.key);
+  }
+  return cards.filter((c) => chosen.has(c.key)).map((c) => c.key);
+}
+
 /** Build the ordered deck of insight cards, emitting only cards with real data. */
 export function buildInsightCards(input: InsightCardInput): InsightCard[] {
   return Object.values(BUILDERS)
