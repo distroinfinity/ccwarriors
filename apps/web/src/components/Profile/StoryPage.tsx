@@ -77,17 +77,17 @@ export function StoryPage({ login }: { login: string }) {
           {avatarUrl && <img className="story-avatar" src={avatarUrl} alt={state.data.login} />}
           <h1 className="story-h px">{state.data.login.toUpperCase()}</h1>
         </div>
-        <p className="story-lede">{story.narrative}</p>
+        <p className="story-lede">{story.tagline && story.tagline.trim() ? story.tagline : story.narrative}</p>
       </header>
 
       <section className="story-sec">
-        <h2 className="seclabel">What you built</h2>
-        <p className="story-body">{story.whatYouBuilt}</p>
+        <h2 className="seclabel">The developer behind the tools</h2>
+        <p className="story-body">{story.narrative}</p>
       </section>
 
       {story.decisionPatterns.length > 0 && (
         <section className="story-sec">
-          <h2 className="seclabel">Decision patterns</h2>
+          <h2 className="seclabel">How you think with AI</h2>
           <ol className="story-patterns">
             {story.decisionPatterns.map((p) => (
               <li key={p.name}>
@@ -99,6 +99,17 @@ export function StoryPage({ login }: { login: string }) {
               </li>
             ))}
           </ol>
+          {story.aiArchetypes.length > 0 && (
+            <div className="story-stamps">
+              {story.aiArchetypes.map((a) => (
+                <div className="story-stamp" key={a.name}>
+                  <span className="px stamp-name">{a.name.toUpperCase()}</span>
+                  <span className="mono stamp-evidence">{a.evidence} signals</span>
+                  <p className="story-body">{a.blurb}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -127,26 +138,25 @@ export function StoryPage({ login }: { login: string }) {
         )}
       </div>
 
-      {story.aiArchetypes.length > 0 && (
+      {story.arc && story.arc.trim().length > 0 && (
         <section className="story-sec">
-          <h2 className="seclabel">How you use AI</h2>
-          <div className="story-stamps">
-            {story.aiArchetypes.map((a) => (
-              <div className="story-stamp" key={a.name}>
-                <span className="px stamp-name">{a.name.toUpperCase()}</span>
-                <span className="mono stamp-evidence">{a.evidence} signals</span>
-                <p className="story-body">{a.blurb}</p>
-              </div>
-            ))}
-          </div>
+          <h2 className="seclabel">The arc</h2>
+          <p className="story-arc">{story.arc}</p>
         </section>
       )}
 
       {story.crypticPrompt && (
         <section className="story-sec story-cryptic">
-          <h2 className="seclabel">Most cryptic prompt</h2>
+          <h2 className="seclabel">In your own words</h2>
           <blockquote className="mono">“{story.crypticPrompt}”</blockquote>
           <p className="story-body">Somehow the agent knew exactly what you meant.</p>
+        </section>
+      )}
+
+      {story.whatYouBuilt && story.whatYouBuilt.trim().length > 0 && (
+        <section className="story-built">
+          <span className="story-built-l mono">Lately working on</span>
+          <p className="story-body">{story.whatYouBuilt}</p>
         </section>
       )}
 
