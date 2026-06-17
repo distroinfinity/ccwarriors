@@ -54,6 +54,8 @@ export function ProfilePage({ login }: { login: string }) {
         onPinsChanged={refetch}
         sampleSessions={!p.insights.locked ? p.insights.sampleSessions : undefined}
         windowDays={!p.insights.locked ? p.insights.windowDays : undefined}
+        featuredKeys={!p.insights.locked ? p.insights.featuredCardKeys : undefined}
+        deckMonth={!p.insights.locked ? p.insights.deckMonth : undefined}
       />
       <RhythmPanel profile={p} />
       <OwnerControls profile={p} onConsentChanged={refetch} />
