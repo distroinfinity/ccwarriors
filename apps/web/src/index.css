@@ -495,6 +495,27 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .craft .axes{ margin-top:16px; }
 .craft .axis-k.pillar-k{ width:120px; flex:none; }
 
+/* Editorial masthead (direction C). The score stays a prominent inline figure. */
+.mast-head{ align-items:flex-start; }
+.mast-kicker{ font-size:9px; letter-spacing:.2em; color:var(--bronze); display:block; }
+.mast-namerow{ display:flex; align-items:center; gap:12px; margin-top:9px; }
+.mast-name{ font-size:clamp(30px,6vw,40px); line-height:1; letter-spacing:.03em; color:var(--ink); }
+.mast{ margin-top:18px; }
+.mast-verdict{ font-size:clamp(16px,2.4vw,18px); line-height:1.5; color:var(--ink); margin:0; max-width:34em; font-weight:500; }
+.mast-fig{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-top:16px; font-size:11px; color:var(--ink); }
+.mast-score{ font-size:40px; line-height:.9; color:var(--or); letter-spacing:-.02em; }
+.mast-craft{ letter-spacing:.16em; color:var(--muted); }
+.mast-sep{ color:var(--line); }
+.mast-tier{ font-size:13px; letter-spacing:.06em; }
+.mast-top{ color:var(--muted); }
+.mast-sig{ display:flex; gap:5px; align-items:flex-end; height:26px; margin-top:14px; }
+.mast-sig i{ display:block; flex:1; max-width:46px; background:var(--or); border-radius:2px 2px 0 0; }
+.mast-sig i.f0{ opacity:1; } .mast-sig i.f1{ opacity:.6; } .mast-sig i.f2{ opacity:.35; }
+.mast-break{ margin-top:14px; }
+.mast-break > .linklike{ font-size:11px; color:var(--muted); }
+.mast-break > .linklike:hover{ color:var(--or); }
+.mast-break-body{ margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); }
+
 .axes{ margin-top:16px; font-size:11px; }
 .axis{ display:flex; align-items:center; gap:10px; margin-top:7px; }
 .axis-k{ width:78px; color:var(--muted); letter-spacing:.08em; }
