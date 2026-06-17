@@ -5,7 +5,9 @@ import { API_HTTP } from "../../api";
 // Long-form text gets its own page — narrow measure, big type, no card grid.
 
 export interface StoryDoc {
+  tagline?: string;
   narrative: string;
+  arc?: string;
   whatYouBuilt: string;
   decisionPatterns: Array<{ name: string; count: number; evidence: string }>;
   strengths: Array<{ title: string; detail: string }>;
