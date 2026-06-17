@@ -55,14 +55,15 @@ export function ByTheNumbers({ profile }: { profile: Profile }) {
   const outHead: Stat[] = [];
   if (econ?.costPerSurvivingLoc != null) outHead.push({ v: fmtUsd(econ.costPerSurvivingLoc), label: "per surviving line" });
   if (e?.grade) outHead.push({ v: e.grade, label: "cache efficiency" });
-  const outMore = (
+  const hasOutMore = econ?.commitsPer100Usd != null || e?.cacheReadRatio != null || (e != null && e.modelMix.length > 0);
+  const outMore = hasOutMore ? (
     <>
       {econ?.commitsPer100Usd != null && <div className="bynum-stat"><b className="mono">{econ.commitsPer100Usd}</b><span>commits per $100</span></div>}
       {e?.cacheReadRatio != null && <div className="bynum-stat"><b className="mono">{Math.round(e.cacheReadRatio * 100)}%</b><span>context from cache</span></div>}
       {e && e.modelMix.length > 0 && <div className="eff-mix mono">{e.modelMix.slice(0, 3).map((m) => <span key={m.family}>{m.family} {Math.round(m.share * 100)}%</span>)}</div>}
       <div className="axis-note">outcomes from local-git hashes, spend server-priced, last 30d</div>
     </>
-  );
+  ) : null;
 
   // -- Sessions --
   const sessHead: Stat[] = [];

@@ -7,6 +7,7 @@ import { InsightCards } from "./InsightCards";
 import { RhythmPanel } from "./RhythmPanel";
 import { OwnerControls } from "./OwnerControls";
 import { ByTheNumbers } from "./ByTheNumbers";
+import { StoryCloser } from "./StoryCloser";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -37,15 +38,11 @@ export function ProfilePage({ login }: { login: string }) {
   // The insight deck only exists once insights are unlocked; the Habits stats
   // it absorbed are now individual cards inside it.
   const cards = !p.insights.locked ? p.insights.cards : [];
+  const hasStory = cards.some((c) => c.key === "story");
 
   return (
     <div className="profile">
-      <div className="profile-grid">
-        <ArchetypeCard profile={p} onConsentChanged={refetch} />
-        <div className="profile-side">
-          <ByTheNumbers profile={p} />
-        </div>
-      </div>
+      <ArchetypeCard profile={p} onConsentChanged={refetch} />
       <InsightCards
         cards={cards}
         login={p.login}
@@ -57,7 +54,9 @@ export function ProfilePage({ login }: { login: string }) {
         featuredKeys={!p.insights.locked ? p.insights.featuredCardKeys : undefined}
         deckMonth={!p.insights.locked ? p.insights.deckMonth : undefined}
       />
+      <ByTheNumbers profile={p} />
       <RhythmPanel profile={p} />
+      <StoryCloser login={p.login} hasStory={hasStory} />
       <OwnerControls profile={p} onConsentChanged={refetch} />
     </div>
   );
