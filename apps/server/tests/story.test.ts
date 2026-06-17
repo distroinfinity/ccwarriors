@@ -5,7 +5,7 @@ import { profileRoute } from "../src/routes/profile.js";
 import { InsightsStore } from "../src/lib/insights-store.js";
 import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
 import { maybeGenerateStory, STORY_REFRESH_MS } from "../src/lib/story-service.js";
-import { generateStory, prepareStorySource } from "../src/lib/story.js";
+import { generateStory, prepareStorySource, StoryDocSchema } from "../src/lib/story.js";
 import { makeDb, seedUser } from "./helpers/db.js";
 import { users, userStories, storySources, type StoryDoc } from "../src/db/schema.js";
 
@@ -18,7 +18,9 @@ const auth = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/js
 
 function doc(over: Partial<StoryDoc> = {}): StoryDoc {
   return {
+    tagline: "Plans before prompting, interrupts early, ships behind a test.",
     narrative: "You steer agents with architectural conviction.",
+    arc: "You moved from one-shot prompts to plan-first sessions.",
     whatYouBuilt: "A leaderboard platform with deep insights.",
     decisionPatterns: [{ name: "Full Stop and Investigate", count: 41, evidence: "Halts agents to verify production claims" }],
     strengths: [{ title: "Frame correction", detail: "Rewrites the question before answering" }],
@@ -325,7 +327,9 @@ describe("generateStory (SDK integration, stubbed transport)", () => {
   it("parses a structured StoryDoc from the model response; server-stamps sessionsAnalyzed and windowDays", async () => {
     // Build a canned doc WITHOUT sessionsAnalyzed (model no longer returns it).
     const modelResponse = {
+      tagline: "Plans first, verifies before shipping.",
       narrative: "Stubbed narrative.",
+      arc: "Shifted from one-shot prompts to plan-first sessions.",
       whatYouBuilt: "A leaderboard platform with deep insights.",
       decisionPatterns: [{ name: "Full Stop and Investigate", count: 41, evidence: "Halts agents" }],
       strengths: [{ title: "Frame correction", detail: "Rewrites the question" }],
@@ -354,7 +358,9 @@ describe("generateStory (SDK integration, stubbed transport)", () => {
   it("server-stamp overrides a bogus sessionsAnalyzed the LLM might include", async () => {
     // Simulate a rogue/old model that returns sessionsAnalyzed in the JSON.
     const modelResponseWithBogus = {
+      tagline: "Plans first, verifies before shipping.",
       narrative: "Override test.",
+      arc: "Shifted from one-shot prompts to plan-first sessions.",
       whatYouBuilt: "Whatever.",
       decisionPatterns: [],
       strengths: [],
@@ -414,5 +420,29 @@ describe("maybeGenerateStory failure handling", () => {
     await maybeGenerateStory({ db, generate }, u);
     expect(await db.select().from(userStories).where(eq(userStories.userId, u.id))).toHaveLength(0);
     expect(await db.select().from(storySources).where(eq(storySources.userId, u.id))).toHaveLength(1);
+  });
+});
+
+describe("StoryDocSchema — tagline + arc", () => {
+  const full = {
+    tagline: "Ships at 1am, tests twice, trusts the agent only as far as the diff.",
+    narrative: "You run the agent on a long leash with hard checkpoints.",
+    arc: "Ninety days ago you one-shot prompts. Now you plan first and verify before shipping.",
+    whatYouBuilt: "A leaderboard and a CLI installer.",
+    decisionPatterns: [{ name: "Full stop and investigate", count: 23, evidence: "You halt and read before re-prompting." }],
+    strengths: [{ title: "Verification discipline", detail: "Long runs survive because you gate on tests." }],
+    growthAreas: [{ title: "Parallelism", detail: "You rarely fan out subagents." }],
+    aiArchetypes: [{ name: "The Verifier", blurb: "Trust is earned by green.", evidence: 17 }],
+    crypticPrompt: "make it idiomatic and delete the rest",
+    sessionsAnalyzed: 142,
+  };
+
+  it("accepts a doc with tagline and arc", () => {
+    expect(StoryDocSchema.parse(full)).toMatchObject({ tagline: full.tagline, arc: full.arc });
+  });
+
+  it("rejects a doc missing tagline", () => {
+    const { tagline, ...rest } = full;
+    expect(() => StoryDocSchema.parse(rest)).toThrow();
   });
 });
