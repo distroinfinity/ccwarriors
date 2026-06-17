@@ -2,6 +2,8 @@
 // PRIVACY CONTRACT: only REDACTED user-prompt text, tool-call NAMES (never
 // inputs — no file paths, no commands), the model id, and timing counts leave
 // the machine. cwd / gitBranch / tool inputs are read but never included.
+// Project directory names (projectKey) are used for LOCAL selection scoring
+// only and NEVER leave the machine — they are stripped before returning.
 // Size-capped hard: the story needs a sample, not an archive.
 import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
@@ -10,13 +12,23 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { redact } from "./redact.js";
 
-export const MAX_STORY_SESSIONS = 30;
+export const STORY_CHAR_BUDGET = 500_000;   // total serialized chars of uploaded sessions
+export const MAX_STORY_SESSIONS = 250;      // hard count ceiling (server will allow 300)
 export const MAX_PROMPT_CHARS = 2000;
 export const MAX_PROMPTS_PER_SESSION = 60;
 const WINDOW_DAYS = 40;
 // A session left open across days otherwise blows past the server's max
 // (10080 min) and the whole upload 400s. Same cap as insights.ts.
 const MAX_SESSION_MINUTES = 7 * 24 * 60;
+const RECENT_BUDGET_SHARE = 0.85;           // 85% recency-greedy / 15% stratified older sample
+// Chars reserved for the recency-greedy pass; the rest fills the stratified sample.
+const RECENT_BUDGET = RECENT_BUDGET_SHARE * STORY_CHAR_BUDGET;
+const MIN_SESSION_PROMPTS = 2;              // triviality filter
+const MIN_SESSION_MINUTES = 2;
+const STALE_PROJECT_DAYS = 14;             // project "dead" if no in-window activity in 14d…
+const STALE_PROJECT_MAX_SESSIONS = 2;      // …and ≤2 sessions total in window
+const STRATA_COUNT = 4;                    // 4 × 10-day slices of the 40-day window
+const MAX_FILE_BYTES = 50 * 1024 * 1024;  // skip pathological files
 
 export interface TranscriptSession {
   startedDay: string | null; // YYYY-MM-DD (day granularity only)
@@ -36,9 +48,38 @@ const PROJECTS_DIR = process.env["CCWARRIORS_CLAUDE_DIR"] ?? join(homedir(), ".c
 
 interface ParsedTranscript extends TranscriptSession {
   endMs: number;
+  projectKey: string;  // parent directory name — LOCAL ONLY, never uploaded
+  jsonChars: number;   // serialized size estimate for budget accounting
 }
 
-async function parseFile(path: string): Promise<ParsedTranscript | null> {
+type ProjectStats = Map<string, { count: number; lastEndMs: number }>;
+
+// The exact shape that leaves the machine — local-only fields (endMs,
+// projectKey, jsonChars) are never included. Single source of the wire field
+// list, used both for budget sizing and the final payload.
+function toWire(s: TranscriptSession): TranscriptSession {
+  return {
+    startedDay: s.startedDay,
+    durationMinutes: s.durationMinutes,
+    model: s.model,
+    interrupts: s.interrupts,
+    prompts: s.prompts,
+    toolCounts: s.toolCounts,
+  };
+}
+
+const EDIT_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+
+// Substance score for the stratified sample: sessions with more prompts and
+// real edits from denser projects beat one-off pokes at long-dead repos.
+function score(s: ParsedTranscript, projectStats: ProjectStats): number {
+  let editCalls = 0;
+  for (const t of EDIT_TOOLS) editCalls += s.toolCounts[t] ?? 0;
+  const stats = projectStats.get(s.projectKey)!;
+  return (s.prompts.length + editCalls) * Math.log2(1 + stats.count);
+}
+
+async function parseFile(path: string): Promise<Omit<ParsedTranscript, "projectKey" | "jsonChars"> | null> {
   const rl = createInterface({ input: createReadStream(path, "utf8"), crlfDelay: Infinity });
   let firstTs: number | null = null;
   let lastTs: number | null = null;
@@ -118,16 +159,19 @@ async function parseFile(path: string): Promise<ParsedTranscript | null> {
   };
 }
 
-/** Most recent in-window sessions, capped. Null when nothing qualifies. Never throws. */
+/** Budget-packed, relevance-weighted in-window sessions. Null when nothing qualifies. Never throws. */
 export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
   try {
     if (!existsSync(PROJECTS_DIR)) return null;
-    const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
+    const now = Date.now();
+    const cutoff = now - WINDOW_DAYS * 86_400_000;
 
-    const files: Array<{ path: string; mtimeMs: number }> = [];
+    // CENSUS: enumerate all in-window files, capturing projectKey from directory name.
+    const files: Array<{ path: string; mtimeMs: number; projectKey: string }> = [];
     for (const dirent of await readdir(PROJECTS_DIR, { withFileTypes: true })) {
       if (!dirent.isDirectory()) continue;
-      const dir = join(PROJECTS_DIR, dirent.name);
+      const projectKey = dirent.name;
+      const dir = join(PROJECTS_DIR, projectKey);
       let names: string[];
       try {
         names = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
@@ -138,7 +182,8 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
         const full = join(dir, f);
         try {
           const st = await stat(full);
-          if (st.mtimeMs >= cutoff) files.push({ path: full, mtimeMs: st.mtimeMs });
+          if (st.size > MAX_FILE_BYTES) continue;  // skip pathological files
+          if (st.mtimeMs >= cutoff) files.push({ path: full, mtimeMs: st.mtimeMs, projectKey });
         } catch {
           continue;
         }
@@ -146,24 +191,117 @@ export async function collectTranscripts(): Promise<TranscriptsPayload | null> {
     }
     if (files.length === 0) return null;
 
-    // Most recent first; parse only as many as the cap needs (plus headroom
-    // for files that parse to null).
-    files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-    const sessions: ParsedTranscript[] = [];
+    // Parse ALL in-window files (census needed for project scoring and stratified sampling).
+    const allSessions: ParsedTranscript[] = [];
     for (const f of files) {
-      if (sessions.length >= MAX_STORY_SESSIONS) break;
       try {
         const parsed = await parseFile(f.path);
-        if (parsed) sessions.push(parsed);
+        if (!parsed) continue;
+        // Size of the wire shape only (drops the local endMs). The +1 charges
+        // this session's separator in the serialized array ("[a,b,c]"); summed,
+        // it keeps `used` within ~1 char of the real payload length, so the
+        // budget is a true bound rather than an undercount.
+        const jsonChars = JSON.stringify(toWire(parsed)).length + 1;
+        allSessions.push({ ...parsed, projectKey: f.projectKey, jsonChars });
       } catch {
         continue;
       }
     }
-    if (sessions.length === 0) return null;
-    sessions.sort((a, b) => b.endMs - a.endMs);
+    if (allSessions.length === 0) return null;
+
+    // TRIVIALITY FILTER: require min prompts and min duration.
+    const eligible = allSessions.filter(
+      (s) => s.prompts.length >= MIN_SESSION_PROMPTS && s.durationMinutes >= MIN_SESSION_MINUTES,
+    );
+    // Sparse users keep everything — don't penalise light usage.
+    const pool = eligible.length >= 5 ? eligible : allSessions;
+
+    // PROJECT STATS (local only — never uploaded).
+    const projectStats: ProjectStats = new Map();
+    for (const s of pool) {
+      const prev = projectStats.get(s.projectKey);
+      if (!prev) {
+        projectStats.set(s.projectKey, { count: 1, lastEndMs: s.endMs });
+      } else {
+        prev.count++;
+        if (s.endMs > prev.lastEndMs) prev.lastEndMs = s.endMs;
+      }
+    }
+
+    // STALE-PROJECT SPLIT.
+    const staleCutoffMs = STALE_PROJECT_DAYS * 86_400_000;
+    const activePool: ParsedTranscript[] = [];
+    const stalePool: ParsedTranscript[] = [];
+    for (const s of pool) {
+      const stats = projectStats.get(s.projectKey)!;
+      const isStale =
+        now - stats.lastEndMs > staleCutoffMs && stats.count <= STALE_PROJECT_MAX_SESSIONS;
+      (isStale ? stalePool : activePool).push(s);
+    }
+
+    // RECENCY-GREEDY PASS (85% of budget): sort activePool by endMs desc.
+    activePool.sort((a, b) => b.endMs - a.endMs);
+    const picked: ParsedTranscript[] = [];
+    let used = 0;
+    const pickedSet = new Set<ParsedTranscript>();
+
+    for (const s of activePool) {
+      if (picked.length >= MAX_STORY_SESSIONS) break;
+      if (used + s.jsonChars > RECENT_BUDGET) continue; // oversized: skip, don't stop
+      picked.push(s);
+      pickedSet.add(s);
+      used += s.jsonChars;
+    }
+
+    // STRATIFIED OLDER SAMPLE (rest of full budget).
+    // Leftovers = unpicked activePool ∪ stalePool.
+    const leftovers = [...activePool.filter((s) => !pickedSet.has(s)), ...stalePool];
+
+    // Divide the 40-day window into STRATA_COUNT equal slices.
+    // Slice 0 = oldest (cutoff → cutoff + sliceMs), Slice N-1 = newest.
+    const windowMs = WINDOW_DAYS * 86_400_000;
+    const sliceMs = windowMs / STRATA_COUNT;
+    const strata: ParsedTranscript[][] = Array.from({ length: STRATA_COUNT }, () => []);
+    for (const s of leftovers) {
+      const age = now - s.endMs;
+      // Clamp to window (sessions slightly outside due to clock drift).
+      const idx = Math.min(STRATA_COUNT - 1, Math.max(0, Math.floor((windowMs - age) / sliceMs)));
+      strata[idx]!.push(s);
+    }
+
+    // Sort each stratum by score desc so we can pop the best.
+    for (const stratum of strata) {
+      stratum.sort((a, b) => score(b, projectStats) - score(a, projectStats));
+    }
+
+    // Round-robin OLDEST-first; repeat rounds until no slice yields a fit.
+    let anyFit = true;
+    while (anyFit && picked.length < MAX_STORY_SESSIONS) {
+      anyFit = false;
+      for (let i = 0; i < STRATA_COUNT; i++) {
+        const stratum = strata[i]!;
+        // Pop the best-scored session in this stratum that fits; a stratum
+        // where nothing fits is simply skipped this round.
+        for (let j = 0; j < stratum.length; j++) {
+          const s = stratum[j]!;
+          if (used + s.jsonChars <= STORY_CHAR_BUDGET && picked.length < MAX_STORY_SESSIONS) {
+            picked.push(s);
+            used += s.jsonChars;
+            stratum.splice(j, 1);
+            anyFit = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (picked.length === 0) return null;
+
+    // Sort by recency desc, strip local-only fields, return wire shape.
+    picked.sort((a, b) => b.endMs - a.endMs);
     return {
       windowDays: WINDOW_DAYS,
-      sessions: sessions.map(({ endMs: _e, ...s }) => s),
+      sessions: picked.map(toWire),
     };
   } catch {
     return null;

@@ -4,7 +4,7 @@ import { API_HTTP } from "../../api";
 import type { Profile, ProfileInsights, ProfilePillars, LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { PixelGlyph } from "../PixelGlyph";
-import { tierLabel } from "../../util";
+import { tierLabel, formatUsd, formatTokens } from "../../util";
 
 const AXIS_ORDER = ["summoning", "steering", "velocity", "autonomy", "planning"] as const;
 const AXIS_LABEL: Record<(typeof AXIS_ORDER)[number], string> = {
@@ -111,9 +111,40 @@ function EarlyReadBadge({ insights }: { insights: ProfileInsights }) {
   const n = insights.sampleSessions;
   if (!insights.provisional || typeof n !== "number" || n >= 10) return null;
   return (
-    <span className="trust-badge early mono">
+    <span
+      className="trust-badge early mono"
+      title="Fewer than 10 sessions — scores are real but not yet rank-stable; this profile is not in the percentile pool yet."
+    >
       EARLY READ · {n} SESSION{n === 1 ? "" : "S"}
     </span>
+  );
+}
+
+// Calibrated badge: enough sessions to be meaningful, but percentile ranking
+// hasn't activated yet (consented population below the minimum threshold).
+function CalibratedBadge({ insights }: { insights: ProfileInsights }) {
+  const n = insights.sampleSessions;
+  if (insights.scoresArePercentiles || typeof n !== "number" || n < 10) return null;
+  return (
+    <span
+      className="trust-badge early mono"
+      title="Scores use fixed calibration anchors — percentile ranking activates once the consented population reaches 30."
+    >
+      CALIBRATED
+    </span>
+  );
+}
+
+// Persistent provenance line: shows the session count and window behind scores.
+function ProvenanceLine({ insights }: { insights: ProfileInsights }) {
+  const n = insights.sampleSessions;
+  const w = insights.windowDays;
+  if (!n && !w) return null;
+  const parts: string[] = [];
+  if (n) parts.push(`${n} session${n === 1 ? "" : "s"}`);
+  if (w) parts.push(`last ${w} days`);
+  return (
+    <p className="craft-provenance mono">based on {parts.join(" over the ")}</p>
   );
 }
 
@@ -148,12 +179,14 @@ function CraftScoreHero({
             </span>
           )}
           <EarlyReadBadge insights={insights} />
+          <CalibratedBadge insights={insights} />
         </div>
       </div>
       <div className="craft-flavor">
         plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
       </div>
       <PillarBars pillars={insights.pillars} />
+      <ProvenanceLine insights={insights} />
       <CraftExplainer />
     </div>
   );
@@ -392,7 +425,19 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
               <div className="arch-rank mono">
                 {profile.underReview ? "rank —" : profile.rank30d ? `rank #${profile.rank30d}` : "unranked"} &middot;{" "}
                 <span className="arch-tier">{tierLabel(profile.tier)}</span>
+                {!profile.underReview && profile.costAllTime > 0 && (
+                  <span>
+                    {" "}&middot;{" "}
+                    {formatUsd(Math.round(profile.costAllTime))} all&#8209;time
+                    {profile.rankAllTime ? ` (#${profile.rankAllTime})` : ""}
+                  </span>
+                )}
               </div>
+              {profile.tokensAllTime != null && profile.tokensAllTime > 0 && (
+                <div className="arch-rank mono" style={{ marginTop: 1 }}>
+                  {formatTokens(profile.tokensAllTime)} tokens since enlisting
+                </div>
+              )}
             </div>
           </div>
           <div className="arch-brand">
@@ -411,7 +456,9 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
                 {insights.growthEdge}
               </div>
               <EarlyReadBadge insights={insights} />
+              <CalibratedBadge insights={insights} />
               <AxisBars insights={insights} />
+              <ProvenanceLine insights={insights} />
             </>
           )
         ) : (

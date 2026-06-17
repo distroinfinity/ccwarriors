@@ -13,6 +13,7 @@ export interface StoryDoc {
   aiArchetypes: Array<{ name: string; blurb: string; evidence: number }>;
   crypticPrompt: string | null;
   sessionsAnalyzed: number;
+  windowDays?: number;
 }
 
 interface StoryResponse {
@@ -69,7 +70,7 @@ export function StoryPage({ login }: { login: string }) {
   return (
     <article className="story">
       <header className="story-head">
-        <p className="story-kicker mono">FIELD REPORT · {story.sessionsAnalyzed} SESSIONS · {day}</p>
+        <p className="story-kicker mono">FIELD REPORT · {story.sessionsAnalyzed} SESSIONS{story.windowDays != null ? ` · LAST ${story.windowDays} DAYS` : ""} · {day}</p>
         <div className="story-id">
           {avatarUrl && <img className="story-avatar" src={avatarUrl} alt={state.data.login} />}
           <h1 className="story-h px">{state.data.login.toUpperCase()}</h1>

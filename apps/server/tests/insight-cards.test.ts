@@ -568,6 +568,31 @@ describe("selectDeck — curation layer (Wrapped-sized, not everything-bagel)", 
     const tiny = all.slice(0, 3);
     expect(selectDeck(tiny, [])).toEqual(tiny);
   });
+
+  it("outcome_per_dollar and shipped never co-occur (dedupe family)", () => {
+    // Build a deck where both cards would qualify: enough commits, enough surviving LOC,
+    // and non-zero cost so costPerSurvivingLoc is set.
+    const richSessions = Array.from({ length: 4 }, () =>
+      session({ git: git({ linesAdded: 100, revertedLinesWithin14d: 0, commitsInWindow: 3 }) }),
+    );
+    const cards = buildInsightCards({
+      sessions: richSessions,
+      merged: deriveAggregate(richSessions, 30),
+      efficiency: null,
+      archetype: null,
+      pillars: null,
+      economics: {
+        survivingLoc: 400,
+        shippedCommits: 12,
+        windowCostUsd: 20,
+        costPerSurvivingLoc: 0.05,
+        commitsPer100Usd: 60.0,
+      },
+    });
+    const picked = selectDeck(cards, []);
+    const keys = picked.map((c) => c.key);
+    expect(keys.includes("outcome_per_dollar") && keys.includes("shipped")).toBe(false);
+  });
 });
 
 describe("buildInsightCards — kitchen sink", () => {
@@ -618,7 +643,7 @@ describe("buildInsightCards — kitchen sink", () => {
 });
 
 describe("buildInsightCards — commit-timing cards at bare floor", () => {
-  it("emits ships_on and commits_at_night from a single commit's histograms", () => {
+  it("emits ships_on from a single commit but suppresses commits_at_night below the volume floor", () => {
     const dows = [0, 0, 0, 0, 0, 1, 0]; // one Friday commit
     const hours = Array(24).fill(0) as number[];
     hours[23] = 1;
@@ -631,8 +656,23 @@ describe("buildInsightCards — commit-timing cards at bare floor", () => {
       pillars: null,
     });
     const m = byKey(cards);
-    expect(m.get("ships_on")?.headline).toBe("Fridays");
-    expect(m.get("commits_at_night")?.headline).toBe("After dark");
+    expect(m.get("ships_on")?.headline).toBe("Fridays"); // ships_on reads from one commit
+    expect(m.has("commits_at_night")).toBe(false); // <5 commits — too few to read a pattern
+  });
+
+  it("suppresses commits_at_night when commits are not night-concentrated", () => {
+    // 8 daytime commits (well above the volume floor) but ~0% at night.
+    const hours = Array(24).fill(0) as number[];
+    hours[14] = 8; // all at 2 PM
+    const day = [session({ git: git({ commitHours: hours, commitsInWindow: 8 }) })];
+    const cards = buildInsightCards({
+      sessions: day,
+      merged: deriveAggregate(day, 30),
+      efficiency: null,
+      archetype: null,
+      pillars: null,
+    });
+    expect(byKey(cards).has("commits_at_night")).toBe(false); // no night story to tell
   });
 });
 
@@ -674,5 +714,143 @@ describe("buildInsightCards — full commit-timing fixture", () => {
     // Each of 12 sessions carries dows totaling 14 → summed total 168, peak Friday.
     const cards = buildInsightCards({ sessions, merged, efficiency: null, archetype: null, pillars: null });
     expect(byKey(cards).get("ships_on")?.headline).toBe("Fridays");
+  });
+});
+
+describe("buildInsightCards — outcome_per_dollar card", () => {
+  const base = {
+    sessions: [session()],
+    merged: deriveAggregate([session()], 30),
+    efficiency: null,
+    archetype: null,
+    pillars: null,
+  };
+
+  it("emits when both ratios are non-null (costPerSurvivingLoc preferred)", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 200,
+          shippedCommits: 10,
+          windowCostUsd: 50,
+          costPerSurvivingLoc: 0.25,
+          commitsPer100Usd: 20.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c).toBeDefined();
+    expect(c.question).toBe("What does a dollar buy?");
+    expect(c.headline).toBe("$0.25 per surviving line");
+    expect(c.stat).toBe("$0.25");
+    expect(c.body).toContain("20 commits per $100");
+    expect(c.body).toContain("200");
+    expect(c.shareText).toMatch(/@ccwarriorsxyz/);
+  });
+
+  it("falls back to commitsPer100Usd headline when costPerSurvivingLoc is null", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 10, // below 50 threshold but non-zero
+          shippedCommits: 5,
+          windowCostUsd: 20,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: 25.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c).toBeDefined();
+    expect(c.headline).toBe("25 commits per $100");
+    expect(c.stat).toBe("25");
+    // commits-only body: mentions commits + spend + surviving lines (non-zero)
+    expect(c.body).toContain("5 commits");
+    expect(c.body).toContain("$20");
+  });
+
+  it("commits-only body omits surviving lines when survivingLoc is 0", () => {
+    // survivingLoc=0: costPerSurvivingLoc null (< 50), body must not say "0 lines that survived"
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 0,
+          shippedCommits: 5,
+          windowCostUsd: 20,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: 25.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c.body).toContain("5 commits");
+    expect(c.body).toContain("$20");
+    expect(c.body).not.toContain("lines that survived");
+  });
+
+  it("commits-only body mentions surviving lines when survivingLoc > 0", () => {
+    // survivingLoc=30 (non-zero but below 50 LOC threshold → costPerSurvivingLoc null)
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 30,
+          shippedCommits: 5,
+          windowCostUsd: 20,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: 25.0,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c.body).toContain("5 commits");
+    expect(c.body).toContain("30");
+    expect(c.body).toContain("lines that survived");
+  });
+
+  it("does NOT emit when both ratios are null (below thresholds)", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 10,
+          shippedCommits: 2,
+          windowCostUsd: 0.5,
+          costPerSurvivingLoc: null,
+          commitsPer100Usd: null,
+        },
+      }),
+    );
+    expect(m.has("outcome_per_dollar")).toBe(false);
+  });
+
+  it("does NOT emit when economics is null (no deep data)", () => {
+    const m = byKey(buildInsightCards({ ...base, economics: null }));
+    expect(m.has("outcome_per_dollar")).toBe(false);
+  });
+
+  it("does NOT emit when economics is absent (older caller)", () => {
+    const m = byKey(buildInsightCards(base));
+    expect(m.has("outcome_per_dollar")).toBe(false);
+  });
+
+  it("formats sub-cent costPerSurvivingLoc without losing precision", () => {
+    const m = byKey(
+      buildInsightCards({
+        ...base,
+        economics: {
+          survivingLoc: 300,
+          shippedCommits: 5,
+          windowCostUsd: 1,
+          costPerSurvivingLoc: 0.0033,
+          commitsPer100Usd: null,
+        },
+      }),
+    );
+    const c = m.get("outcome_per_dollar")!;
+    expect(c.headline).toBe("$0.0033 per surviving line");
   });
 });

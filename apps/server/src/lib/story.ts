@@ -5,7 +5,17 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import type { StoryDoc } from "../db/schema.js";
 
+// Cost notes (2026-06, claude-opus-4-8 @ $5/MTok input, $25/MTok output):
+//   Typical generation with a 500k-char budget ≈ $0.70–0.90/call.
+//   Rate: 1/day/user (STORY_REFRESH_MS throttle in story-service.ts).
+//   Prompt caching: NOT used — the system prompt is well under the 4096-token
+//   minimum cacheable prefix, and calls are ≥24h apart (cache TTL is 5 min).
+//   Batch API: NOT used — poll-loop complexity isn't worth it until ~1k calls/day.
 export const STORY_MODEL = "claude-opus-4-8";
+
+// Characters budget fed to the LLM per generation. Trimming to this cap in
+// prepareStorySource (whole-session granularity) prevents mid-JSON truncation.
+const SERVER_INPUT_CHAR_CAP = 600_000;
 
 const StoryDocSchema = z.object({
   narrative: z.string(),
@@ -15,7 +25,6 @@ const StoryDocSchema = z.object({
   growthAreas: z.array(z.object({ title: z.string(), detail: z.string() })),
   aiArchetypes: z.array(z.object({ name: z.string(), blurb: z.string(), evidence: z.number().int() })),
   crypticPrompt: z.string().nullable(),
-  sessionsAnalyzed: z.number().int(),
 });
 
 // Raw JSON Schema for output_config.format (the server is on zod v3, so the
@@ -42,9 +51,8 @@ const STORY_JSON_SCHEMA = obj(
       items: obj({ name: { type: "string" }, blurb: { type: "string" }, evidence: { type: "integer" } }, ["name", "blurb", "evidence"]),
     },
     crypticPrompt: { type: ["string", "null"] },
-    sessionsAnalyzed: { type: "integer" },
   },
-  ["narrative", "whatYouBuilt", "decisionPatterns", "strengths", "growthAreas", "aiArchetypes", "crypticPrompt", "sessionsAnalyzed"],
+  ["narrative", "whatYouBuilt", "decisionPatterns", "strengths", "growthAreas", "aiArchetypes", "crypticPrompt"],
 );
 
 const SYSTEM = `You analyze how a software developer works with AI coding agents, from their real session transcripts (user prompts + tool-call counts; code and file paths are never included). Write their profile in the second person.
@@ -64,8 +72,7 @@ Substance rules:
 - strengths: 2-4. growthAreas: 2-3, specific enough to act on this week, not career advice.
 - aiArchetypes: 2-4 behavioral archetypes, a one-line blurb, an evidence count.
 - crypticPrompt: the single most cryptic-yet-effective short prompt they sent (verbatim), or null.
-- narrative: one tight headline paragraph. whatYouBuilt: what the work was about, inferred from the prompts.
-- sessionsAnalyzed: the number of sessions in the input.`;
+- narrative: one tight headline paragraph. whatYouBuilt: what the work was about, inferred from the prompts.`;
 
 export interface GenerateStoryOpts {
   apiKey: string;
@@ -86,8 +93,48 @@ const STORY_PRICES: Record<string, { input: number; output: number }> = {
   "claude-opus-4-8": { input: 5, output: 25 },
 };
 
-export type StoryResult = { doc: StoryDoc; model: string; usage?: StoryUsage } | { failed: string };
+export type StoryResult =
+  | { doc: StoryDoc; model: string; usage?: StoryUsage; sessionsUsed: number; sessionsReceived: number }
+  | { failed: string };
 export type StoryGenerate = (login: string, source: unknown) => Promise<StoryResult | null>;
+
+/**
+ * Validate and budget-trim a raw story source payload.
+ *
+ * Sessions are accumulated in ARRAY ORDER (client sends most-recent-first),
+ * so oldest sessions are dropped when the serialized budget is exhausted.
+ * Whole sessions are always kept or dropped — never sliced mid-JSON.
+ */
+export function prepareStorySource(source: unknown):
+  | { serialized: string; sessionsUsed: number; sessionsReceived: number; windowDays: number | null }
+  | { failed: "invalid_source" } {
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    return { failed: "invalid_source" };
+  }
+  const s = source as Record<string, unknown>;
+  if (!Array.isArray(s.sessions)) return { failed: "invalid_source" };
+
+  const sessions = s.sessions as unknown[];
+  const sessionsReceived = sessions.length;
+  const windowDays =
+    typeof s.windowDays === "number" && Number.isFinite(s.windowDays) ? s.windowDays : null;
+
+  // Pre-stringify each session, accumulate in order (client sends newest first),
+  // skipping any that won't fit. Skip-and-continue rather than break so one
+  // oversized session can't starve the smaller older ones behind it.
+  const kept: string[] = [];
+  let totalLen = 2; // "[" + "]"
+  for (const session of sessions) {
+    const encoded = JSON.stringify(session);
+    const addLen = kept.length === 0 ? encoded.length : 1 + encoded.length; // comma separator
+    if (totalLen + addLen > SERVER_INPUT_CHAR_CAP) continue;
+    kept.push(encoded);
+    totalLen += addLen;
+  }
+
+  const serialized = "[" + kept.join(",") + "]";
+  return { serialized, sessionsUsed: kept.length, sessionsReceived, windowDays };
+}
 
 /** Call Claude for one user's story. Failures come back as { failed } with
     the reason — the caller keeps the old story, logs it, and retries on the
@@ -98,6 +145,14 @@ export async function generateStory(
   source: unknown,
 ): Promise<StoryResult> {
   const startedAt = Date.now();
+
+  const prepared = prepareStorySource(source);
+  if ("failed" in prepared) return { failed: prepared.failed };
+  const { serialized, sessionsUsed, sessionsReceived, windowDays } = prepared;
+  // A source whose every session is oversized trims to nothing — never ask
+  // Claude to invent a story from an empty transcript array.
+  if (sessionsUsed === 0) return { failed: "no_sessions_after_trim" };
+
   try {
     const model = opts.model ?? STORY_MODEL;
     const client = new Anthropic({
@@ -113,24 +168,35 @@ export async function generateStory(
       messages: [
         {
           role: "user",
-          content: `Developer: ${login}\n\nSession transcripts (JSON):\n${JSON.stringify(source).slice(0, 600_000)}`,
+          content: `Developer: ${login}\nWindow: last ${windowDays ?? 40} days\n\nSession transcripts (JSON, ${sessionsUsed} sessions):\n${serialized}`,
         },
       ],
       output_config: { format: { type: "json_schema", schema: STORY_JSON_SCHEMA } },
     });
     const text = response.content.find((b): b is Extract<(typeof response.content)[number], { type: "text" }> => b.type === "text");
     if (!text) return { failed: "no_text_block" };
-    const doc = StoryDocSchema.parse(JSON.parse(text.text));
+    const parsed = StoryDocSchema.parse(JSON.parse(text.text));
+    // Server-stamp sessionsAnalyzed and windowDays — never trust the LLM's count.
+    const docStamped: StoryDoc = {
+      ...parsed,
+      sessionsAnalyzed: sessionsUsed,
+      windowDays: windowDays ?? 40,
+    };
     const price = STORY_PRICES[model];
+    let estCostUsd: number | null = null;
+    if (price) {
+      // Prices are $/million-tokens, so divide the token×price products by 1e6,
+      // then round to 5 decimals ($0.00001) to keep sub-cent runs visible.
+      const usd = (response.usage.input_tokens * price.input + response.usage.output_tokens * price.output) / 1_000_000;
+      estCostUsd = Math.round(usd * 100_000) / 100_000;
+    }
     const usage: StoryUsage = {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
-      estCostUsd: price
-        ? Math.round((response.usage.input_tokens * price.input + response.usage.output_tokens * price.output) / 10) / 100_000
-        : null,
+      estCostUsd,
       durationMs: Date.now() - startedAt,
     };
-    return { doc: doc as StoryDoc, model, usage };
+    return { doc: docStamped, model, usage, sessionsUsed, sessionsReceived };
   } catch (err) {
     // Typed reasons beat opaque nulls: api_429 / api_401 / parse errors etc.
     const e = err as { status?: number; message?: string };

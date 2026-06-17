@@ -7,7 +7,9 @@ import { InsightCards } from "./InsightCards";
 import { EfficiencyPanel } from "./EfficiencyPanel";
 import { GithubPanel } from "./GithubPanel";
 import { RhythmPanel } from "./RhythmPanel";
+import { SessionStatsPanel } from "./SessionStatsPanel";
 import { OwnerControls } from "./OwnerControls";
+import { StackPanel } from "./StackPanel";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -44,8 +46,10 @@ export function ProfilePage({ login }: { login: string }) {
       <div className="profile-grid">
         <ArchetypeCard profile={p} onConsentChanged={refetch} />
         <div className="profile-side">
+          <SessionStatsPanel profile={p} />
           <EfficiencyPanel profile={p} />
           <GithubPanel profile={p} />
+          <StackPanel profile={p} />
         </div>
       </div>
       <InsightCards
@@ -54,6 +58,8 @@ export function ProfilePage({ login }: { login: string }) {
         isOwner={!!p.owner}
         pinnedCards={!p.insights.locked ? (p.insights.pinnedCards ?? []) : []}
         onPinsChanged={refetch}
+        sampleSessions={!p.insights.locked ? p.insights.sampleSessions : undefined}
+        windowDays={!p.insights.locked ? p.insights.windowDays : undefined}
       />
       <RhythmPanel profile={p} />
       <OwnerControls profile={p} onConsentChanged={refetch} />

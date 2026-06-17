@@ -185,6 +185,10 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
 .orgbadge{ flex:none; font-size:8.5px; font-weight:700; letter-spacing:.09em; line-height:1;
   padding:2.5px 5px 2px; border:1px solid color-mix(in srgb, currentColor 45%, transparent);
   background:color-mix(in srgb, currentColor 8%, transparent); }
+/* Craft Score chip on the leaderboard row — public+consented warriors only. */
+.craft-chip{ flex:none; font-size:8.5px; font-weight:700; letter-spacing:.09em; line-height:1;
+  padding:2.5px 5px 2px; border:1px solid color-mix(in srgb, var(--or) 50%, transparent);
+  background:color-mix(in srgb, var(--or) 8%, transparent); color:var(--or); }
 .who .x{ font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tierc{ font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
 .spark{ font-family:'Geist Mono'; font-size:13px; color:var(--spark); letter-spacing:-1px; }
@@ -499,6 +503,9 @@ html[data-theme="dark"] .craft-score{ color:var(--ink); }
 .axis-fill.f0{ opacity:1; } .axis-fill.f1{ opacity:.75; } .axis-fill.f2{ opacity:.5; }
 .axis-v{ width:26px; text-align:right; font-weight:700; }
 .axis-note{ margin-top:12px; font-size:10.5px; color:var(--muted); letter-spacing:.04em; }
+/* Sample-size provenance under pillar/axis bars and the card deck — same
+   muted small-print register as .axis-note. */
+.craft-provenance,.deck-provenance{ margin:12px 0 0; font-size:10.5px; color:var(--muted); letter-spacing:.04em; }
 
 .arch-foot{ display:flex; justify-content:space-between; margin-top:18px; padding-top:12px;
   border-top:1px dashed var(--line); font-size:10.5px; color:var(--muted); }
@@ -651,6 +658,9 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .eff-letter{ font-size:34px; font-weight:700; color:var(--or); }
 .eff-sub{ font-size:11px; color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
 .eff-mix{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); }
+/* Economics sub-section inside .ppanel — visual separator + minor label. */
+.ppanel-section{ margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); }
+.seclabel-minor{ font-size:10px; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; font-weight:600; margin-bottom:6px; }
 .gh-profile{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600;
   color:var(--ink); text-decoration:underline; text-underline-offset:3px; }
 .gh-profile:hover{ color:var(--or); }

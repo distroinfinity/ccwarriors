@@ -120,12 +120,16 @@ export function InsightCards({
   isOwner = false,
   pinnedCards = [],
   onPinsChanged,
+  sampleSessions,
+  windowDays,
 }: {
   cards: InsightCard[];
   login: string;
   isOwner?: boolean;
   pinnedCards?: string[];
   onPinsChanged?: () => void;
+  sampleSessions?: number;
+  windowDays?: number;
 }) {
   const [busy, setBusy] = useState(false);
   if (!cards || cards.length === 0) return null;
@@ -175,6 +179,13 @@ export function InsightCards({
           />
         ))}
       </div>
+      {(sampleSessions || windowDays) && (
+        <p className="deck-provenance mono">
+          {sampleSessions ? `from ${sampleSessions} sessions` : ""}
+          {sampleSessions && windowDays ? " · " : ""}
+          {windowDays ? `last ${windowDays} days` : ""}
+        </p>
+      )}
     </section>
   );
 }
