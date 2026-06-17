@@ -666,6 +666,19 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .gh-profile:hover{ color:var(--or); }
 .gh-meta{ display:flex; gap:14px; margin-top:12px; font-size:11px; color:var(--muted); flex-wrap:wrap; }
 
+/* By the numbers: the four side panels consolidated into calm labeled groups. */
+.bynum{ margin-top:26px; }
+.bynum-grid{ display:grid; grid-template-columns:1fr 1fr; gap:20px 28px; }
+@media (max-width:560px){ .bynum-grid{ grid-template-columns:1fr; } }
+.bynum-gl{ font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--bronze); margin-bottom:8px; }
+.bynum-stat{ display:flex; align-items:baseline; gap:9px; margin-top:5px; font-size:11.5px; color:var(--muted); }
+.bynum-stat b{ font-size:14px; color:var(--ink); min-width:52px; }
+.bynum-more{ font:inherit; font-family:'Geist Mono',monospace; font-size:9.5px; letter-spacing:.06em;
+  color:var(--or); background:none; border:0; padding:6px 0 0; cursor:pointer; }
+.bynum-more:hover{ text-decoration:underline; }
+.bynum-extra{ margin-top:4px; padding-top:6px; border-top:1px dashed var(--line); }
+.bynum-extra .axis{ margin-top:6px; }
+
 .rhythm{ margin-top:18px; }
 .heatmap{ display:grid; grid-auto-flow:column; grid-template-rows:repeat(7,10px); gap:3px; overflow-x:auto; padding-bottom:4px; }
 .hm{ width:10px; height:10px; background:var(--segoff); }

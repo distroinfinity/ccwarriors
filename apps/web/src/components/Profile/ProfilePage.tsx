@@ -4,12 +4,9 @@ import { ClawdLogo } from "../ClawdLogo";
 import { InstallBlock } from "../InstallBlock";
 import { ArchetypeCard } from "./ArchetypeCard";
 import { InsightCards } from "./InsightCards";
-import { EfficiencyPanel } from "./EfficiencyPanel";
-import { GithubPanel } from "./GithubPanel";
 import { RhythmPanel } from "./RhythmPanel";
-import { SessionStatsPanel } from "./SessionStatsPanel";
 import { OwnerControls } from "./OwnerControls";
-import { StackPanel } from "./StackPanel";
+import { ByTheNumbers } from "./ByTheNumbers";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -46,10 +43,7 @@ export function ProfilePage({ login }: { login: string }) {
       <div className="profile-grid">
         <ArchetypeCard profile={p} onConsentChanged={refetch} />
         <div className="profile-side">
-          <SessionStatsPanel profile={p} />
-          <EfficiencyPanel profile={p} />
-          <GithubPanel profile={p} />
-          <StackPanel profile={p} />
+          <ByTheNumbers profile={p} />
         </div>
       </div>
       <InsightCards
