@@ -22,7 +22,7 @@ import {
 } from "../lib/insights.js";
 import { computeCraftForUser, loadDeepExtras } from "../lib/craft-score-service.js";
 import { tierOf, outcomeEconomics, type CraftTier, type Pillars, type OutcomeEconomics } from "../lib/craft-score.js";
-import { applyPins, buildInsightCards, selectDeck, type InsightCard } from "../lib/insight-cards.js";
+import { applyPins, buildInsightCards, featuredDeck, selectDeck, type InsightCard } from "../lib/insight-cards.js";
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
 import { buildStack, type StackProfile } from "../lib/stack.js";
@@ -75,6 +75,9 @@ interface ProfileInsightsUnlocked {
   githubVerified: boolean;
   pinnedCards: string[];
   cards: InsightCard[];
+  featuredCardKeys: string[];
+  deckMonth: string;
+  tagline: string | null;
   depth: ProfileDepth;
   economics: OutcomeEconomics | null;
   stack: StackProfile | null;
@@ -264,6 +267,11 @@ export function profileRoute(deps: ProfileDeps) {
         : null;
       // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
       const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
+      // "This month" featuring: a curated 5-6, rotating monthly. The full deck stays
+      // in `cards` for the client's "see all". Pure given login, deck, month, pins.
+      const now = new Date();
+      const deckMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const featuredCardKeys = featuredDeck(cards, login, deckMonth, pins);
       // Deep-session-derived signals (null when user has aggregate-only data).
       const deepSessions = craft && craft.input.sessions.length > 0 ? craft.input.sessions : null;
       const deepMinutes = deepSessions ? deepSessions.reduce((s, r) => s + r.durationMinutes, 0) : 0;
@@ -292,6 +300,9 @@ export function profileRoute(deps: ProfileDeps) {
         githubVerified: githubVerified(craft?.trustTier ?? null, github),
         pinnedCards: pins,
         cards,
+        featuredCardKeys,
+        deckMonth,
+        tagline: story?.doc.tagline ?? null,
         depth: {
           sessions: merged.sessions,
           windowDays: merged.windowDays,
