@@ -43,6 +43,7 @@ export function ProfilePage({ login }: { login: string }) {
   return (
     <div className="profile">
       <ArchetypeCard profile={p} onConsentChanged={refetch} />
+      <ByTheNumbers profile={p} />
       <InsightCards
         cards={cards}
         login={p.login}
@@ -54,7 +55,6 @@ export function ProfilePage({ login }: { login: string }) {
         featuredKeys={!p.insights.locked ? p.insights.featuredCardKeys : undefined}
         deckMonth={!p.insights.locked ? p.insights.deckMonth : undefined}
       />
-      <ByTheNumbers profile={p} />
       <RhythmPanel profile={p} />
       <StoryCloser login={p.login} hasStory={hasStory} />
       <OwnerControls profile={p} onConsentChanged={refetch} />
