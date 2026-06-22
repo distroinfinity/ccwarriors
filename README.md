@@ -5,8 +5,9 @@
 # ccwarriors
 
 **Token burn rate, ranked.** A live leaderboard of AI coding spend — [Claude Code](https://claude.ai/code),
-Codex, Gemini CLI, Copilot, OpenCode, Amp and every other agent [ccusage](https://github.com/ryoppippi/ccusage)
-can read. See who's burning the most tokens, claim your rank, flex on the timeline.
+Codex, Gemini CLI, Copilot, OpenCode, Amp: 15 agents tracked, plus an **Other** bucket so
+anything else [ccusage](https://github.com/ryoppippi/ccusage) can read still counts.
+See who's burning the most tokens, claim your rank, flex on the timeline.
 
 **Live:** [ccwarriors.xyz](https://ccwarriors.xyz) · first org board: [ns.ccwarriors.xyz](https://ns.ccwarriors.xyz) (Network School)
 
@@ -17,10 +18,13 @@ curl -fsSL https://ccwarriors.xyz/install.sh | bash
 ```
 
 That's it. GitHub login opens in your browser, your [ccusage](https://github.com/ryoppippi/ccusage)
-totals are read locally, and you're on the board. Re-sync anytime with `ccwarriors`.
+usage is read locally, priced server-side, and you're on the board. Re-sync anytime with `ccwarriors`.
 
-Only two numbers ever leave your machine: your 30-day and all-time cost totals.
-No code, no prompts, no project data.
+By default the CLI uploads raw token counts per tool, per day, per model so the
+server can price them itself. No code, file contents, file paths, repo names,
+commit messages, or SHAs leave your machine. Optional deep-mode profile
+insights send extra counts and hashed Git outcomes only after explicit consent;
+story unlock adds redacted prompt extracts and transient transcripts.
 
 ## README badge
 
@@ -36,28 +40,28 @@ on your card at [ccwarriors.xyz](https://ccwarriors.xyz).
 ## How it works
 
 ```
-ccwarriors (CLI)                     api.ccwarriors.xyz                ccwarriors.xyz
-────────────────                     ──────────────────               ───────────────
-ccusage totals ──► POST /ingest ──►  Hono + Postgres                  React + WebSocket
-GitHub loopback OAuth                tiers, ranks, rate limits   ──►  live board, rows slide
-                                     WebSocket broadcast               as ranks change
+ccwarriors (CLI)                         api.ccwarriors.xyz                ccwarriors.xyz
+─────────────────                        ──────────────────               ───────────────
+ccusage raw token days ──► POST /ingest  Hono + Postgres                  React + WebSocket
+GitHub loopback OAuth                    pricing, ranks, profiles    ──►  live board, profiles,
+optional deep insights                   org verify, badges               cards, org boards
 ```
 
 - **CLI** (`packages/cli`) — zero-dependency single-file Node bundle. GitHub
-  loopback OAuth, reads costs via `ccusage`, posts to the API. Distributed by the
-  site itself (`/install.sh` + `/cli.js`) — every deploy is a CLI release.
+  loopback OAuth, reads raw usage via `ccusage`, posts to the API, and can run
+  autosync plus optional deep profile insights. Distributed by the site itself
+  (`/install.sh` + `/cli.js`) — every deploy is a CLI release.
 - **API** (`apps/server`) — Hono + `ws` on Railway, Postgres via Drizzle.
-  Token-authenticated ingest (rate-limited, sanity-capped, transactional),
-  Minecraft-style tiers (Stone → Netherite), debounced WebSocket broadcasts.
+  Token-authenticated ingest, server-authoritative pricing, plausibility gates,
+  profiles, org verification, badges, sponsor flows, and debounced board broadcasts.
 - **Web** (`apps/web`) — Vite + React on Vercel. Light/dark, Framer Motion
-  leaderboard that re-sorts live, collectible warrior cards (15 muted
-  anime-nature scenes), pixel Clawd branding (every UI glyph is hand-drawn
-  pixel art — no emojis).
+  leaderboard, collectible warrior cards, profile pages, story pages, org board
+  skins, and pixel Clawd branding (every UI glyph is hand-drawn pixel art).
 
 ## Org boards
 
 Communities get their own co-branded board on a subdomain — same warriors,
-same data, scoped view. First up: **[Network School](https://ns.com)** at
+same data, scoped view. First up: **Network School** at
 [ns.ccwarriors.xyz](https://ns.ccwarriors.xyz).
 
 - **Verify with Discord** — members link Discord once; the server checks the
@@ -100,9 +104,10 @@ pnpm --filter server dev
 pnpm --filter web dev
 ```
 
-Node ≥ 20 and pnpm required. See [`DEPLOY.md`](DEPLOY.md) for production setup
-(Railway, Vercel, DNS, GitHub OAuth app) and `apps/server/.env.example` for
-configuration.
+Node ≥ 20 and pnpm required. See the
+[deployment guide](docs/engineering/operations/deployment-and-environment.md) for
+production setup (Railway, Vercel, DNS, GitHub OAuth app) and
+`apps/server/.env.example` for configuration.
 
 ## Repo layout
 
@@ -111,7 +116,10 @@ apps/server     Hono API + WebSocket + Drizzle/Postgres
 apps/web        Vite + React leaderboard (serves the CLI installer)
 packages/cli    the ccwarriors CLI
 scripts/        zero-dep PNG generators (logo, OG banner, favicon)
-docs/           design spec + implementation plans
+railway.json    backend deploy config-as-code (build, start, auto-migrate)
+vercel.json     frontend deploy config-as-code (build, OG bot rewrites)
+docs/public     public-facing product docs (GitBook set)
+docs/engineering internal architecture + operations docs (GitBook set)
 ```
 
 ---
