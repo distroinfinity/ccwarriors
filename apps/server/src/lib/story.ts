@@ -17,8 +17,10 @@ export const STORY_MODEL = "claude-opus-4-8";
 // prepareStorySource (whole-session granularity) prevents mid-JSON truncation.
 const SERVER_INPUT_CHAR_CAP = 600_000;
 
-const StoryDocSchema = z.object({
+export const StoryDocSchema = z.object({
+  tagline: z.string(),
   narrative: z.string(),
+  arc: z.string(),
   whatYouBuilt: z.string(),
   decisionPatterns: z.array(z.object({ name: z.string(), count: z.number().int(), evidence: z.string() })),
   strengths: z.array(z.object({ title: z.string(), detail: z.string() })),
@@ -38,7 +40,9 @@ const obj = (properties: Record<string, unknown>, required: string[]) => ({
 });
 const STORY_JSON_SCHEMA = obj(
   {
+    tagline: { type: "string" },
     narrative: { type: "string" },
+    arc: { type: "string" },
     whatYouBuilt: { type: "string" },
     decisionPatterns: {
       type: "array",
@@ -52,27 +56,31 @@ const STORY_JSON_SCHEMA = obj(
     },
     crypticPrompt: { type: ["string", "null"] },
   },
-  ["narrative", "whatYouBuilt", "decisionPatterns", "strengths", "growthAreas", "aiArchetypes", "crypticPrompt"],
+  ["tagline", "narrative", "arc", "whatYouBuilt", "decisionPatterns", "strengths", "growthAreas", "aiArchetypes", "crypticPrompt"],
 );
 
-const SYSTEM = `You analyze how a software developer works with AI coding agents, from their real session transcripts (user prompts + tool-call counts; code and file paths are never included). Write their profile in the second person.
+const SYSTEM = `You analyze how a software developer works with AI coding agents, from their real session transcripts (user prompts plus tool-call counts; code and file paths are never included). Write about WHO this developer is, not the project they happened to build. Second person.
 
-Voice: write like a sharp senior engineer who actually read the transcripts, not like a language model. Plain words. Short sentences. Concrete specifics. It should read like a peer review from a staff engineer who respects the reader.
+Voice: a sharp senior engineer describing a peer they respect. Plain words. Short sentences, one idea each. Concrete specifics over adjectives.
 
 Style rules, hard:
 - No em-dashes or en-dashes anywhere. Use commas, periods, or parentheses.
 - Banned: delve, leverage, seamless, robust, holistic, journey, landscape, testament, masterful, elevate, empower, unleash, supercharge, "it's worth noting", "in essence", "dive into", "a consistent X emerges".
-- No flattery padding and no filler. Cut any sentence that does not carry a specific observation.
+- No flattery padding, no filler. Cut any sentence that does not carry a specific observation.
+- Numbers beat vibes. "You interrupted 41 times to check prod" beats "you are diligent".
 - Their own words beat your adjectives. Quote short verbatim phrases from their prompts where it lands.
-- Numbers over vibes. "You interrupted 41 times to check prod" beats "you are diligent".
 
-Substance rules:
-- Every claim must trace to the transcripts. Count real occurrences for decisionPatterns/aiArchetypes evidence numbers, never invent counts.
-- decisionPatterns: name recurring moves (like "Full Stop and Investigate") with how often they appear and one concrete evidence line.
-- strengths: 2-4. growthAreas: 2-3, specific enough to act on this week, not career advice.
+What to produce:
+- tagline: ONE sentence that captures who they are as a developer. Present tense, no name, no dashes. The line a peer would use to describe them. Example shape: "Plans before prompting, interrupts early, ships only behind a test."
+- narrative: one tight paragraph on HOW they work. Temperament, how long a leash they give the agent, where they checkpoint, how they plan, their prompt style. Not the project.
+- arc: how they changed across this window, grounded in real shifts (plan-mode adoption, interrupts, model range, streak growth). If no trajectory is visible, return an empty string. Never invent a trajectory.
+- decisionPatterns: recurring instincts and choices, named (like "Full stop and investigate"), each with a real count and one behavioral evidence line. Describe how they think, not what they shipped.
+- strengths: 2-4. growthAreas: 2-3, specific enough to act on this week.
 - aiArchetypes: 2-4 behavioral archetypes, a one-line blurb, an evidence count.
 - crypticPrompt: the single most cryptic-yet-effective short prompt they sent (verbatim), or null.
-- narrative: one tight headline paragraph. whatYouBuilt: what the work was about, inferred from the prompts.`;
+- whatYouBuilt: ONE short line on the kind of work, inferred from prompts. This is a footnote, keep it tight.
+
+Every claim must trace to the transcripts. Count real occurrences for evidence numbers, never invent counts.`;
 
 export interface GenerateStoryOpts {
   apiKey: string;

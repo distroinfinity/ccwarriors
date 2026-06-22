@@ -122,6 +122,8 @@ export function InsightCards({
   onPinsChanged,
   sampleSessions,
   windowDays,
+  featuredKeys,
+  deckMonth,
 }: {
   cards: InsightCard[];
   login: string;
@@ -130,9 +132,23 @@ export function InsightCards({
   onPinsChanged?: () => void;
   sampleSessions?: number;
   windowDays?: number;
+  featuredKeys?: string[];
+  deckMonth?: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   if (!cards || cards.length === 0) return null;
+
+  // Default view: this month's featured subset. Fall back to all cards when the
+  // server did not send a featured set (older server).
+  const featured = featuredKeys && featuredKeys.length > 0
+    ? cards.filter((c) => featuredKeys.includes(c.key))
+    : cards;
+  const visible = showAll ? cards : featured;
+  const hiddenCount = cards.length - featured.length;
+  const monthLabel = deckMonth
+    ? new Date(`${deckMonth}-01T00:00:00Z`).toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
+    : null;
 
   const togglePin = async (key: string) => {
     if (busy) return;
@@ -158,18 +174,14 @@ export function InsightCards({
   return (
     <section className="deck">
       <div className="deck-header">
-        <span className="deck-label mono">YOUR BUILD PROFILE</span>
-        <a
-          className="deck-credit mono"
-          href="https://paxel.ycombinator.com"
-          target="_blank"
-          rel="noopener"
-        >
+        <span className="deck-label mono">THIS MONTH</span>
+        {monthLabel && <span className="deck-month mono">{monthLabel} · refreshes monthly</span>}
+        <a className="deck-credit mono" href="https://paxel.ycombinator.com" target="_blank" rel="noopener">
           extended from YC Paxel
         </a>
       </div>
       <div className="deck-grid">
-        {cards.map((card) => (
+        {visible.map((card) => (
           <DeckCard
             key={card.key}
             card={card}
@@ -179,6 +191,16 @@ export function InsightCards({
           />
         ))}
       </div>
+      {!showAll && hiddenCount > 0 && (
+        <button className="deck-seeall mono" onClick={() => setShowAll(true)}>
+          see all {cards.length} cards →
+        </button>
+      )}
+      {showAll && hiddenCount > 0 && (
+        <button className="deck-seeall mono" onClick={() => setShowAll(false)}>
+          show less
+        </button>
+      )}
       {(sampleSessions || windowDays) && (
         <p className="deck-provenance mono">
           {sampleSessions ? `from ${sampleSessions} sessions` : ""}

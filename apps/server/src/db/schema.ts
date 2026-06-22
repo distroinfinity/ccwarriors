@@ -305,7 +305,9 @@ export const githubStats = pgTable(
 // The derived narrative document. Raw transcripts are processed then PURGED —
 // only this derived doc persists (the documented promise).
 export type StoryDoc = {
-  narrative: string; // the headline paragraph
+  tagline?: string; // one sentence on who they are (optional: old rows predate it)
+  narrative: string; // the headline paragraph (now person-first)
+  arc?: string; // how they changed across the window (optional; may be "")
   whatYouBuilt: string;
   decisionPatterns: Array<{ name: string; count: number; evidence: string }>;
   strengths: Array<{ title: string; detail: string }>;

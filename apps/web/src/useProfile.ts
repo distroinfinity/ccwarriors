@@ -45,6 +45,13 @@ export interface ProfileInsights {
   };
   // Paxel-style insight deck. Defaults to [] when an older server omits it.
   cards: InsightCard[];
+  // "This month" featured subset of `cards` (keys). Absent on older servers.
+  featuredCardKeys?: string[];
+  // Month label for the featured deck, e.g. "2026-06". Absent on older servers.
+  deckMonth?: string;
+  // One-sentence identity line from the story, seeds the masthead. Null when no
+  // story exists yet; absent on older servers.
+  tagline?: string | null;
   growthEdge: string;
   // Craft Score (the headline). Null on aggregate-only insights (no deep rows)
   // or against an older server — the UI falls back to archetype + axes then.

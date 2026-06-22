@@ -6,7 +6,7 @@ import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
 import { createSessionToken } from "../src/lib/session.js";
 import { mergeInsights, percentilePool, MIN_SESSIONS } from "../src/lib/insights.js";
 import { makeDb, seedUser } from "./helpers/db.js";
-import { users, userDeepSessions, usageDays, type InsightsPayload, type SessionRecord } from "../src/db/schema.js";
+import { users, userDeepSessions, usageDays, userStories, type InsightsPayload, type SessionRecord, type StoryDoc } from "../src/db/schema.js";
 
 // The 10-session "forging" gate is gone: every stat we can compute renders
 // from session #1 (marked provisional). "forging" survives only for the
@@ -233,6 +233,40 @@ describe("depth block", () => {
     const body = (await res.json()) as { insights: { locked: boolean; depth?: unknown } };
     expect(body.insights.locked).toBe(true);
     expect(body.insights.depth).toBeUndefined();
+  });
+
+  it("surfaces tagline, deckMonth, and featuredCardKeys on unlocked insights", async () => {
+    const u = (await seedUser(db, { login: "storyteller", token: "tok_story2" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    const sessions: SessionRecord[] = [
+      deepRecord({ durationMinutes: 60, usedPlanMode: true, subagentSpawns: 2, maxParallel: 3 }),
+      deepRecord({ durationMinutes: 120, usedPlanMode: false, subagentSpawns: 0, maxParallel: 1 }),
+    ];
+    await db.insert(userDeepSessions).values({ userId: u.id, machineId: "m1", sessions, windowDays: 40 });
+    // Seed aggregate so insights unlock (mirrors the existing depth test setup).
+    store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40, planModeSessionsPct: 50, subagentSpawnsPerSession: 1, maxParallelAgents: 3, longestSessionMinutes: 120 }));
+    const storyDoc: StoryDoc = {
+      tagline: "Plans first, ships behind a test.",
+      narrative: "You steer with conviction.",
+      arc: "You moved from one-shot to plan-first.",
+      whatYouBuilt: "A leaderboard.",
+      decisionPatterns: [],
+      strengths: [],
+      growthAreas: [],
+      aiArchetypes: [],
+      crypticPrompt: null,
+      sessionsAnalyzed: 2,
+    };
+    await db.insert(userStories).values({ userId: u.id, doc: storyDoc, model: "test", generatedAt: new Date() });
+
+    const res = await app().request("/storyteller");
+    const body = (await res.json()) as { insights: { locked: boolean; tagline: string | null; deckMonth: string; featuredCardKeys: string[] } };
+    expect(body.insights.locked).toBe(false);
+    expect(body.insights.tagline).toBe("Plans first, ships behind a test.");
+    expect(body.insights.deckMonth).toMatch(/^\d{4}-\d{2}$/);
+    expect(Array.isArray(body.insights.featuredCardKeys)).toBe(true);
+    expect(body.insights.featuredCardKeys.length).toBeLessThanOrEqual(6);
+    expect(body.insights.featuredCardKeys).toContain("story");
   });
 });
 

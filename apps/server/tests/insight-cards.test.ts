@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildInsightCards, selectDeck, DECK_LIMIT, friendlyModel, type InsightCard } from "../src/lib/insight-cards.js";
+import { buildInsightCards, selectDeck, featuredDeck, FEATURED_LIMIT, DECK_LIMIT, friendlyModel, type InsightCard } from "../src/lib/insight-cards.js";
 import { deriveAggregate } from "../src/lib/deep.js";
 import type { SessionRecord, SessionGitOutcome, GithubStats } from "../src/db/schema.js";
 
@@ -852,5 +852,45 @@ describe("buildInsightCards — outcome_per_dollar card", () => {
     );
     const c = m.get("outcome_per_dollar")!;
     expect(c.headline).toBe("$0.0033 per surviving line");
+  });
+});
+
+describe("featuredDeck — monthly rotation", () => {
+  const mk = (key: string): InsightCard => ({ key, question: key, headline: key, body: key, shareText: key });
+  // 10 cards spanning ranks: story(1), archetype(1), shipped(1), model(2),
+  // night_owl(2), plan_mode(3), prompt_length(3), longest_run(3), marathoner(3), ships_on(3)
+  const deck = ["story", "archetype", "shipped", "model", "night_owl", "plan_mode", "prompt_length", "longest_run", "marathoner", "ships_on"].map(mk);
+
+  it("is deterministic for the same inputs", () => {
+    const a = featuredDeck(deck, "ada", "2026-06", []);
+    const b = featuredDeck(deck, "ada", "2026-06", []);
+    expect(a).toEqual(b);
+  });
+
+  it("returns at most FEATURED_LIMIT keys", () => {
+    expect(featuredDeck(deck, "ada", "2026-06", []).length).toBeLessThanOrEqual(FEATURED_LIMIT);
+  });
+
+  it("always includes the story card and pins", () => {
+    const f = featuredDeck(deck, "ada", "2026-06", ["ships_on"]);
+    expect(f).toContain("story");
+    expect(f).toContain("ships_on");
+  });
+
+  it("rotates across months", () => {
+    const months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
+    const sets = months.map((m) => JSON.stringify(featuredDeck(deck, "ada", m, [])));
+    expect(new Set(sets).size).toBeGreaterThan(1);
+  });
+
+  it("returns all keys for a thin deck (<= limit)", () => {
+    const thin = deck.slice(0, 4);
+    expect(featuredDeck(thin, "ada", "2026-06", []).sort()).toEqual(thin.map((c) => c.key).sort());
+  });
+
+  it("preserves deck order in the output", () => {
+    const f = featuredDeck(deck, "ada", "2026-06", []);
+    const order = deck.map((c) => c.key);
+    expect(f).toEqual([...f].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
   });
 });

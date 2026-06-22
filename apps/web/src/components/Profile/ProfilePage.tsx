@@ -4,12 +4,10 @@ import { ClawdLogo } from "../ClawdLogo";
 import { InstallBlock } from "../InstallBlock";
 import { ArchetypeCard } from "./ArchetypeCard";
 import { InsightCards } from "./InsightCards";
-import { EfficiencyPanel } from "./EfficiencyPanel";
-import { GithubPanel } from "./GithubPanel";
 import { RhythmPanel } from "./RhythmPanel";
-import { SessionStatsPanel } from "./SessionStatsPanel";
 import { OwnerControls } from "./OwnerControls";
-import { StackPanel } from "./StackPanel";
+import { ByTheNumbers } from "./ByTheNumbers";
+import { StoryCloser } from "./StoryCloser";
 
 function NotFound({ login }: { login: string }) {
   return (
@@ -40,18 +38,12 @@ export function ProfilePage({ login }: { login: string }) {
   // The insight deck only exists once insights are unlocked; the Habits stats
   // it absorbed are now individual cards inside it.
   const cards = !p.insights.locked ? p.insights.cards : [];
+  const hasStory = cards.some((c) => c.key === "story");
 
   return (
     <div className="profile">
-      <div className="profile-grid">
-        <ArchetypeCard profile={p} onConsentChanged={refetch} />
-        <div className="profile-side">
-          <SessionStatsPanel profile={p} />
-          <EfficiencyPanel profile={p} />
-          <GithubPanel profile={p} />
-          <StackPanel profile={p} />
-        </div>
-      </div>
+      <ArchetypeCard profile={p} onConsentChanged={refetch} />
+      <ByTheNumbers profile={p} />
       <InsightCards
         cards={cards}
         login={p.login}
@@ -60,8 +52,11 @@ export function ProfilePage({ login }: { login: string }) {
         onPinsChanged={refetch}
         sampleSessions={!p.insights.locked ? p.insights.sampleSessions : undefined}
         windowDays={!p.insights.locked ? p.insights.windowDays : undefined}
+        featuredKeys={!p.insights.locked ? p.insights.featuredCardKeys : undefined}
+        deckMonth={!p.insights.locked ? p.insights.deckMonth : undefined}
       />
       <RhythmPanel profile={p} />
+      <StoryCloser login={p.login} hasStory={hasStory} />
       <OwnerControls profile={p} onConsentChanged={refetch} />
     </div>
   );
