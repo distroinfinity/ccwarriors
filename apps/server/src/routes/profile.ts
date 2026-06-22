@@ -7,6 +7,7 @@ import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import type { InsightsStore } from "../lib/insights-store.js";
 import { readSessionToken } from "../lib/session.js";
 import { computeEfficiency, computeRhythm } from "../lib/efficiency.js";
+import { BOARD_DAYS } from "../services/ingest.js";
 import {
   AXES,
   archetypeOf,
@@ -20,10 +21,11 @@ import {
   PERCENTILE_MIN_POPULATION,
 } from "../lib/insights.js";
 import { computeCraftForUser, loadDeepExtras } from "../lib/craft-score-service.js";
-import { tierOf, type CraftTier, type Pillars } from "../lib/craft-score.js";
-import { applyPins, buildInsightCards, selectDeck, type InsightCard } from "../lib/insight-cards.js";
+import { tierOf, outcomeEconomics, type CraftTier, type Pillars, type OutcomeEconomics } from "../lib/craft-score.js";
+import { applyPins, buildInsightCards, featuredDeck, selectDeck, type InsightCard } from "../lib/insight-cards.js";
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
+import { buildStack, type StackProfile } from "../lib/stack.js";
 
 export interface ProfileDeps {
   db: DB;
@@ -35,6 +37,53 @@ export interface ProfileDeps {
   // Test seam: injected fetch for the background GitHub refresh.
   githubFetcher?: typeof fetch;
 }
+
+// Locked unless consented AND (public OR owner). "forging" is the owner-only
+// consented-but-nothing-uploaded state; visitors see "no_consent" either way.
+type ProfileInsightsLocked = { locked: true; reason: "no_consent" | "forging" };
+
+// Deep, consent-gated session signals — promoted to a first-class profile block.
+interface ProfileDepth {
+  sessions: number;
+  windowDays: number;
+  totalHours: number | null;
+  planModeSessionsPct: number;
+  subagentSessionsPct: number | null;
+  subagentSpawnsPerSession: number;
+  maxParallelAgents: number;
+  maxConcurrentSessions?: number;
+  avgSessionMinutes: number | null;
+  longestSessionMinutes: number;
+}
+
+interface ProfileInsightsUnlocked {
+  locked: false;
+  scoresArePercentiles: boolean;
+  population: number;
+  axes: Record<(typeof AXES)[number], number>;
+  archetype: string;
+  trait: string | null;
+  habits: ReturnType<typeof habitStats>;
+  growthEdge: string;
+  craftScore: number | null;
+  craftTier: CraftTier | null;
+  pillars: Pillars | null;
+  trustTier: 0 | 1 | null;
+  provisional: boolean;
+  sampleSessions: number;
+  windowDays: number;
+  githubVerified: boolean;
+  pinnedCards: string[];
+  cards: InsightCard[];
+  featuredCardKeys: string[];
+  deckMonth: string;
+  tagline: string | null;
+  depth: ProfileDepth;
+  economics: OutcomeEconomics | null;
+  stack: StackProfile | null;
+}
+
+type ProfileInsights = ProfileInsightsLocked | ProfileInsightsUnlocked;
 
 const LOGIN_RE = /^[a-zA-Z0-9-]{1,39}$/; // GitHub login charset
 
@@ -98,13 +147,34 @@ export function profileRoute(deps: ProfileDeps) {
     // Rhythm + efficiency from usage_days (all history retained in the table).
     const rows = user
       ? await deps.db
-          .select({ day: usageDays.day, cost: usageDays.cost, modelBreakdown: usageDays.modelBreakdown })
+          .select({
+            day: usageDays.day,
+            cost: usageDays.cost,
+            modelBreakdown: usageDays.modelBreakdown,
+            inputTokens: usageDays.inputTokens,
+            outputTokens: usageDays.outputTokens,
+            cacheCreationTokens: usageDays.cacheCreationTokens,
+            cacheReadTokens: usageDays.cacheReadTokens,
+          })
           .from(usageDays)
           .where(eq(usageDays.userId, user.id))
       : [];
     const dayRows = rows.map((r) => ({ day: r.day, cost: Number(r.cost), modelBreakdown: r.modelBreakdown }));
+    // Sum all tokens across every row — bigint columns come back as numbers (mode:"number").
+    const tokensAllTime: number | null =
+      rows.length > 0
+        ? rows.reduce(
+            (sum, r) =>
+              sum +
+              Number(r.inputTokens) +
+              Number(r.outputTokens) +
+              Number(r.cacheCreationTokens) +
+              Number(r.cacheReadTokens),
+            0,
+          )
+        : null;
     const today = new Date().toISOString().slice(0, 10);
-    const cutoff30 = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+    const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
     const rhythm = computeRhythm(dayRows, today);
     const efficiency = dayRows.length > 0 ? computeEfficiency(dayRows, cutoff30) : null;
 
@@ -120,27 +190,7 @@ export function profileRoute(deps: ProfileDeps) {
     // Insights: locked unless consented AND (public OR owner). There is no
     // session-count gate — every stat we can compute renders from session #1.
     const merged = user ? deps.insightsStore.merged(user.id) : null;
-    let insights:
-      | { locked: true; reason: "no_consent" | "forging" }
-      | {
-          locked: false;
-          scoresArePercentiles: boolean;
-          population: number;
-          axes: Record<(typeof AXES)[number], number>;
-          archetype: string;
-          trait: string | null;
-          habits: ReturnType<typeof habitStats>;
-          growthEdge: string;
-          craftScore: number | null;
-          craftTier: CraftTier | null;
-          pillars: Pillars | null;
-          trustTier: 0 | 1 | null;
-          provisional: boolean;
-          sampleSessions: number;
-          githubVerified: boolean;
-          pinnedCards: string[];
-          cards: InsightCard[];
-        };
+    let insights: ProfileInsights;
     if (!user?.insightsConsent) {
       insights = { locked: true, reason: "no_consent" };
     } else if (user.insightsVisibility === "private" && !isOwner) {
@@ -179,6 +229,15 @@ export function profileRoute(deps: ProfileDeps) {
         .select({ doc: userStories.doc })
         .from(userStories)
         .where(eq(userStories.userId, user.id));
+      const craftEconomics = craft
+        ? outcomeEconomics(craft.input.sessions, craft.input.windowCostUsd)
+        : null;
+      // Stack profile: verified from real agent edits. Consent-gated (deep data).
+      const stack = buildStack(
+        craft?.input.sessions ?? null,
+        efficiency?.modelMix ?? null,
+        github,
+      );
       const baseCards = craft
         ? buildInsightCards({
             sessions: craft.input.sessions,
@@ -188,6 +247,7 @@ export function profileRoute(deps: ProfileDeps) {
             pillars: craft.pillars,
             github,
             extras,
+            economics: craftEconomics,
             rhythm: {
               weekendShare: rhythm.weekendShare,
               currentStreak: rhythm.currentStreak,
@@ -207,6 +267,20 @@ export function profileRoute(deps: ProfileDeps) {
         : null;
       // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
       const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
+      // "This month" featuring: a curated 5-6, rotating monthly. The full deck stays
+      // in `cards` for the client's "see all". Pure given login, deck, month, pins.
+      const now = new Date();
+      const deckMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+      const featuredCardKeys = featuredDeck(cards, login, deckMonth, pins);
+      // Deep-session-derived signals (null when user has aggregate-only data).
+      const deepSessions = craft && craft.input.sessions.length > 0 ? craft.input.sessions : null;
+      const deepMinutes = deepSessions ? deepSessions.reduce((s, r) => s + r.durationMinutes, 0) : 0;
+      const totalHours = deepSessions ? Math.round((deepMinutes / 60) * 10) / 10 : null;
+      const avgSessionMinutes = deepSessions ? Math.round(deepMinutes / deepSessions.length) : null;
+      const subagentSessionsPct = deepSessions
+        ? Math.round((deepSessions.filter((r) => r.subagentSpawns > 0).length / deepSessions.length) * 100)
+        : null;
+
       insights = {
         locked: false,
         scoresArePercentiles: usePercentiles,
@@ -222,9 +296,27 @@ export function profileRoute(deps: ProfileDeps) {
         trustTier: craft?.trustTier ?? null,
         provisional: merged.sessions < MIN_SESSIONS || !usePercentiles,
         sampleSessions: merged.sessions,
+        windowDays: merged.windowDays,
         githubVerified: githubVerified(craft?.trustTier ?? null, github),
         pinnedCards: pins,
         cards,
+        featuredCardKeys,
+        deckMonth,
+        tagline: story?.doc.tagline ?? null,
+        depth: {
+          sessions: merged.sessions,
+          windowDays: merged.windowDays,
+          totalHours,
+          planModeSessionsPct: Math.round(merged.planModeSessionsPct),
+          subagentSessionsPct,
+          subagentSpawnsPerSession: Math.round(merged.subagentSpawnsPerSession * 10) / 10,
+          maxParallelAgents: merged.maxParallelAgents,
+          ...(extras?.maxConcurrentSessions !== undefined ? { maxConcurrentSessions: extras.maxConcurrentSessions } : {}),
+          avgSessionMinutes,
+          longestSessionMinutes: Math.round(merged.longestSessionMinutes),
+        },
+        economics: craftEconomics,
+        stack,
       };
     }
 
@@ -245,6 +337,7 @@ export function profileRoute(deps: ProfileDeps) {
       costAllTime: entry?.costAllTime ?? Number(user?.costAllTime ?? 0),
       rank30d: entry && !flagged ? deps.store.getRank("30d", entry.id) : null,
       rankAllTime: entry && !flagged ? deps.store.getRank("allTime", entry.id) : null,
+      tokensAllTime,
       underReview: flagged,
       memberSince: user?.createdAt?.toISOString() ?? null,
       lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,

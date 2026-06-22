@@ -8,7 +8,7 @@
 // commit-timing histograms before an upgraded-CLI sync) simply don't appear.
 import type { GithubStats, InsightsPayload, SessionRecord } from "../db/schema.js";
 import type { Efficiency } from "./efficiency.js";
-import { shipped, survivingLoc } from "./craft-score.js";
+import { shipped, survivingLoc, type OutcomeEconomics } from "./craft-score.js";
 
 export interface InsightCard {
   key: string; // stable id, e.g. "model", "night_owl"
@@ -35,6 +35,9 @@ export interface InsightCardInput {
     maxConcurrentSessions?: number;
     topPrompt?: { text: string; count: number; sessions: number } | null;
   } | null;
+  // Outcome economics (cost per surviving line, commits per $100). Optional:
+  // absent on older callers or when craft data is unavailable.
+  economics?: OutcomeEconomics | null;
 }
 
 const round = (n: number) => Math.round(n);
@@ -183,6 +186,10 @@ function shipsOnCard(input: InsightCardInput): InsightCard | null {
 }
 
 // ── 5. commits_at_night ───────────────────────────────────────────────────
+// Only a real night signal earns this card — "after dark" is the story. A
+// daytime committer has no commits-at-night story, so we emit nothing and let a
+// stronger card take the slot (matches the "no filler" doctrine above).
+const MIN_COMMITS_FOR_NIGHT = 5;
 function commitsAtNightCard(input: InsightCardInput): InsightCard | null {
   const hours = Array(24).fill(0) as number[];
   let any = false;
@@ -194,22 +201,15 @@ function commitsAtNightCard(input: InsightCardInput): InsightCard | null {
   }
   if (!any) return null;
   const total = sum(hours);
-  if (total < 1) return null;
+  if (total < MIN_COMMITS_FOR_NIGHT) return null; // too few commits to read a pattern
   const nightShare = sum([22, 23, 0, 1, 2].map((h) => hours[h] ?? 0)) / total;
+  if (nightShare <= 0.4) return null; // not night-concentrated — no story to tell
   const pct = round(nightShare * 100);
-  if (nightShare > 0.4) {
-    return card(
-      "commits_at_night",
-      "When do your commits land?",
-      "After dark",
-      `${pct}% of your commits land between 10 PM and 2 AM`,
-    );
-  }
   return card(
     "commits_at_night",
     "When do your commits land?",
-    "Steady through the day",
-    `Only ${pct}% of your commits land between 10 PM and 2 AM`,
+    "After dark",
+    `${pct}% of your commits land between 10 PM and 2 AM`,
   );
 }
 
@@ -666,6 +666,44 @@ function goToPromptCard(input: InsightCardInput): InsightCard | null {
   );
 }
 
+// ── Outcome economics ────────────────────────────────────────────────────────
+// Emits only when economics is present AND at least one ratio is non-null.
+
+function outcomePerDollarCard(input: InsightCardInput): InsightCard | null {
+  const e = input.economics;
+  if (!e) return null;
+  if (e.costPerSurvivingLoc === null && e.commitsPer100Usd === null) return null;
+
+  let headline: string;
+  let stat: string;
+  let secondary: string | null;
+  let body: string;
+  const costPart = `$${e.windowCostUsd % 1 === 0 ? e.windowCostUsd.toFixed(0) : e.windowCostUsd.toFixed(2)} burned in 30d`;
+  if (e.costPerSurvivingLoc !== null) {
+    // Format: $0.21 per surviving line, or $0.0034 when < $0.01.
+    const fmt = e.costPerSurvivingLoc < 0.01
+      ? `$${e.costPerSurvivingLoc}`
+      : `$${e.costPerSurvivingLoc.toFixed(2)}`;
+    headline = `${fmt} per surviving line`;
+    stat = fmt;
+    secondary = e.commitsPer100Usd !== null ? `${e.commitsPer100Usd} commits per $100` : null;
+    const locPart = `${e.survivingLoc.toLocaleString("en-US")} lines that survived 14 days`;
+    body = secondary
+      ? `${secondary} — ${locPart}, ${costPart}`
+      : `${locPart}, ${costPart}`;
+  } else {
+    // commits-only: no surviving-LOC figure to show; body describes commits + spend.
+    headline = `${e.commitsPer100Usd} commits per $100`;
+    stat = String(e.commitsPer100Usd);
+    secondary = null;
+    const commitsPart = `${e.shippedCommits} commit${e.shippedCommits === 1 ? "" : "s"}`;
+    const locNote = e.survivingLoc > 0 ? `, ${e.survivingLoc.toLocaleString("en-US")} lines that survived 14 days` : "";
+    body = `${commitsPart}${locNote}, ${costPart}`;
+  }
+
+  return card("outcome_per_dollar", "What does a dollar buy?", headline, body, stat);
+}
+
 // ── Usage/rhythm cards (cost ground truth + active-day cadence) ─────────────
 
 function cacheWarmCard(input: InsightCardInput): InsightCard | null {
@@ -719,59 +757,57 @@ function grindStreakCard(input: InsightCardInput): InsightCard | null {
   return card("grind_streak", "How relentless are you?", `${r.longestStreak} days straight`, body, `${r.longestStreak}d`);
 }
 
-const BUILDERS: Array<(i: InsightCardInput) => InsightCard | null> = [
-  archetypeCard,
-  goToPromptCard,
-  totalHoursCard,
-  modelCard,
-  burstProfileCard,
-  dialogueCard,
-  maxConcurrentCard,
-  nightOwlCard,
-  shipsOnCard,
-  commitsAtNightCard,
-  planModeCard,
-  agentsCard,
-  promptLengthCard,
-  avgPromptWordsCard,
-  courseCorrectionCard,
-  recoveryCard,
-  longestRunCard,
-  marathonerCard,
-  exploreFirstCard,
-  firstTryCard,
-  shippedCard,
-  fixesFeaturesCard,
-  aiCommitsCard,
-  localReposCard,
-  breadthLocalCard,
-  cleanHistoryCard,
-  youTestCard,
-  thankYousCard,
-  taskModelFitCard,
-  ghMergedPrsCard,
-  ghPrsWorkedCard,
-  ghStarsCard,
-  ghLanguagesCard,
-  ghStreakCard,
-  ghReviewsCard,
-  ghFootprintCard,
-  ghVeteranCard,
-  cacheWarmCard,
-  modelMixCard,
-  weekendWarriorCard,
-  grindStreakCard,
-];
+// Keyed registry: the key is the card's stable id (matches what each builder
+// passes to card()). Declaration order is the deck order — preserved by
+// Object.values. CARD_KEYS derives from this, so the two can never drift.
+const BUILDERS: Record<string, (i: InsightCardInput) => InsightCard | null> = {
+  archetype: archetypeCard,
+  go_to_prompt: goToPromptCard,
+  outcome_per_dollar: outcomePerDollarCard,
+  total_hours: totalHoursCard,
+  model: modelCard,
+  burst_profile: burstProfileCard,
+  dialogue: dialogueCard,
+  max_concurrent: maxConcurrentCard,
+  night_owl: nightOwlCard,
+  ships_on: shipsOnCard,
+  commits_at_night: commitsAtNightCard,
+  plan_mode: planModeCard,
+  agents: agentsCard,
+  prompt_length: promptLengthCard,
+  avg_prompt_words: avgPromptWordsCard,
+  course_correction: courseCorrectionCard,
+  recovery: recoveryCard,
+  longest_run: longestRunCard,
+  marathoner: marathonerCard,
+  explore_first: exploreFirstCard,
+  first_try: firstTryCard,
+  shipped: shippedCard,
+  fixes_features: fixesFeaturesCard,
+  ai_commits: aiCommitsCard,
+  local_repos: localReposCard,
+  breadth_local: breadthLocalCard,
+  clean_history: cleanHistoryCard,
+  you_test: youTestCard,
+  thank_yous: thankYousCard,
+  task_model_fit: taskModelFitCard,
+  gh_merged_prs: ghMergedPrsCard,
+  gh_prs_worked: ghPrsWorkedCard,
+  gh_stars: ghStarsCard,
+  gh_languages: ghLanguagesCard,
+  gh_streak: ghStreakCard,
+  gh_reviews: ghReviewsCard,
+  gh_footprint: ghFootprintCard,
+  gh_veteran: ghVeteranCard,
+  cache_warm: cacheWarmCard,
+  model_mix: modelMixCard,
+  weekend_warrior: weekendWarriorCard,
+  grind_streak: grindStreakCard,
+};
 
-/** Every key the deck can emit — the pins endpoint validates against this. */
-export const CARD_KEYS = new Set([
-  "archetype", "go_to_prompt", "total_hours", "model", "burst_profile", "dialogue", "max_concurrent",
-  "night_owl", "ships_on", "commits_at_night", "plan_mode", "agents", "prompt_length", "avg_prompt_words",
-  "course_correction", "recovery", "longest_run", "marathoner", "explore_first", "first_try", "shipped",
-  "fixes_features", "ai_commits", "local_repos", "breadth_local", "clean_history", "you_test", "thank_yous",
-  "task_model_fit", "gh_merged_prs", "gh_prs_worked", "gh_stars", "gh_languages", "gh_streak", "gh_reviews", "gh_footprint",
-  "gh_veteran", "cache_warm", "model_mix", "weekend_warrior", "grind_streak", "story",
-]);
+/** Every key the deck can emit — the pins endpoint validates against this.
+ *  "story" is built in the profile route, not by a BUILDER, so it's added here. */
+export const CARD_KEYS = new Set([...Object.keys(BUILDERS), "story"]);
 
 /** Reorder a deck so pinned keys lead (their relative pin order preserved). */
 export function applyPins(cards: InsightCard[], pins: string[] | null | undefined): InsightCard[] {
@@ -791,7 +827,7 @@ export const DECK_LIMIT = 14;
 // Lower rank = stronger card. 1 = headliner, 2 = strong, 3 = filler that only
 // appears on thin profiles where nothing better exists.
 const CARD_RANK: Record<string, number> = {
-  story: 1, archetype: 1, go_to_prompt: 1, total_hours: 1, max_concurrent: 1, shipped: 1,
+  story: 1, archetype: 1, go_to_prompt: 1, outcome_per_dollar: 1, total_hours: 1, max_concurrent: 1, shipped: 1,
   model: 2, burst_profile: 2, night_owl: 2, thank_yous: 2, recovery: 2, fixes_features: 2,
   first_try: 2, you_test: 2, agents: 2, task_model_fit: 2, gh_merged_prs: 2, gh_stars: 2, gh_streak: 2,
   dialogue: 3, plan_mode: 3, prompt_length: 3, avg_prompt_words: 3, course_correction: 3,
@@ -810,6 +846,8 @@ const DEDUPE_FAMILIES: string[][] = [
   ["night_owl", "commits_at_night"],
   ["gh_streak", "grind_streak"],
   ["breadth_local", "gh_languages"],
+  // outcome_per_dollar is richer (cost+LOC); shipped shows the same survivingLoc. Keep only one.
+  ["outcome_per_dollar", "shipped"],
 ];
 
 /**
@@ -846,7 +884,58 @@ export function selectDeck(cards: InsightCard[], pins: string[] | null | undefin
   return survivors.filter((c) => keep.has(c.key));
 }
 
+// ── Monthly featuring: the curated "this month" set ──────────────────────────
+// Deterministic given (cards, login, yyyymm, pins). The month is in the seed,
+// so mid-rank cards rotate month to month while the strongest persist. Safe to
+// cache within a month. No Date.now / Math.random in here.
+export const FEATURED_LIMIT = 6;
+
+// FNV-1a string hash to a uint32. Stable across processes.
+function hashStr(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** Pick the featured card keys for one month, in deck order. */
+export function featuredDeck(
+  cards: InsightCard[],
+  login: string,
+  yyyymm: string,
+  pins: string[] | null | undefined,
+): string[] {
+  if (cards.length <= FEATURED_LIMIT) return cards.map((c) => c.key);
+  const pinned = new Set(pins ?? []);
+  const seed = String(hashStr(`${login}:${yyyymm}`));
+  // The story card and owner pins are always featured, bypassing FEATURED_LIMIT
+  // the same way selectDeck lets pins bypass DECK_LIMIT (the owner outranks the
+  // curator). Pins are capped at 4 upstream (the pins endpoint and the deck UI),
+  // so forced is at most 5 (4 pins + story) and the result stays within the
+  // limit in practice; this code does not re-clamp it.
+  const forced = new Set(cards.filter((c) => c.key === "story" || pinned.has(c.key)).map((c) => c.key));
+  // Fill the rest by rank, breaking ties with a month-seeded hash so the
+  // selection reshuffles each month.
+  const rest = cards
+    .filter((c) => !forced.has(c.key))
+    .sort(
+      (a, b) =>
+        (CARD_RANK[a.key] ?? 3) - (CARD_RANK[b.key] ?? 3) ||
+        hashStr(a.key + seed) - hashStr(b.key + seed),
+    );
+  const chosen = new Set(forced);
+  for (const c of rest) {
+    if (chosen.size >= FEATURED_LIMIT) break;
+    chosen.add(c.key);
+  }
+  return cards.filter((c) => chosen.has(c.key)).map((c) => c.key);
+}
+
 /** Build the ordered deck of insight cards, emitting only cards with real data. */
 export function buildInsightCards(input: InsightCardInput): InsightCard[] {
-  return BUILDERS.map((b) => b(input)).filter((c): c is InsightCard => c !== null);
+  return Object.values(BUILDERS)
+    .map((b) => b(input))
+    .filter((c): c is InsightCard => c !== null);
 }

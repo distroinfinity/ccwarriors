@@ -5,7 +5,7 @@ import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { FilterChips } from "./FilterChips";
-import { BLOCKS, formatUsd, sparkBars, tierLabel } from "../util";
+import { BLOCKS, formatUsd, tierLabel } from "../util";
 import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { PixelGlyph } from "./PixelGlyph";
@@ -56,13 +56,19 @@ function EmptyBoard() {
   );
 }
 
-function Sparkline({ id }: { id: string }) {
-  const bars = sparkBars(id);
+// Renders real 30d activity bars from entry.spark (levels 0-8, one glyph each).
+// Fixed-width placeholder when absent so the row grid doesn't shift.
+function Sparkline({ spark }: { spark?: number[] }) {
+  if (!spark) {
+    // Preserve grid column width; no visible bars.
+    return <div className="spark" aria-hidden="true" />;
+  }
   return (
     <div className="spark">
-      {bars.map((b, i) =>
-        i === bars.length - 1 ? <b key={i}>{BLOCKS[b - 1]}</b> : <span key={i}>{BLOCKS[b - 1]}</span>,
-      )}
+      {spark.map((level, i) => {
+        const glyph = level === 0 ? " " : BLOCKS[level - 1];
+        return i === spark.length - 1 ? <b key={i}>{glyph}</b> : <span key={i}>{glyph}</span>;
+      })}
     </div>
   );
 }
@@ -110,8 +116,15 @@ function Row({
         </div>
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </a>
-      <div className="tierc">{tierLabel(entry.tier)}</div>
-      <Sparkline id={entry.id} />
+      <div className="tierc">
+        {tierLabel(entry.tier)}
+        {entry.craft && (
+          <span className="craft-chip mono" title={`Craft: ${entry.craft.tier}`}>
+            {entry.craft.score}
+          </span>
+        )}
+      </div>
+      <Sparkline spark={entry.spark} />
       <div className="amt mono">
         {/* Slow honest tween — glides toward each confirmed value, flashes green on growth. */}
         <TickerValue
@@ -170,7 +183,9 @@ export function Leaderboard({
   const [loadingMore, setLoadingMore] = useState(false);
   const [locatedLogin, setLocatedLogin] = useState<string | null>(null);
   // Track previous rank per id (across renders) to compute ▲ deltas.
+  // Scoped to board+tool so switching never produces spurious deltas.
   const prevRanks = useRef<Map<string, number>>(new Map());
+  const prevScope = useRef<string>(`${board}:${tool ?? ""}`);
   const boardRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef = useRef(false);
@@ -198,6 +213,14 @@ export function Leaderboard({
     return [...liveEntries, ...extra.filter((e) => !seen.has(e.id))];
   }, [liveEntries, extra]);
 
+  // Drop stale rank tracking inline (before computing deltas) when the
+  // board/tool scope changes — an effect would fire post-paint and let one
+  // frame of phantom ▲ deltas through.
+  const scope = `${board}:${tool ?? ""}`;
+  if (scope !== prevScope.current) {
+    prevRanks.current = new Map();
+    prevScope.current = scope;
+  }
   const ranked = all.map((e, i) => {
     const prev = prevRanks.current.get(e.id);
     const delta = prev !== undefined && prev > i ? prev - i : 0;
@@ -287,17 +310,26 @@ export function Leaderboard({
           <button className={board === "30d" ? "on" : ""} onClick={() => setBoard("30d")}>
             30 Days
           </button>
-          {/* All Time hidden for now: local agent logs prune after ~30 days, so
-              ccusage "all-time" ≈ last 30 days. Re-enable once server-side
-              accumulation has aged enough to be meaningful. */}
+          <button
+            className={board === "allTime" ? "on" : ""}
+            onClick={() => { if (tool) setTool(null); setBoard("allTime"); }}
+            title="Accumulated since enlistment (plus ~40-day backfill at first sync) — pre-enlistment history isn't recoverable from pruned local logs."
+          >
+            All Time
+          </button>
         </div>
-        <FilterChips tools={tools} active={tool} onSelect={setTool} />
+        {board === "30d" && <FilterChips tools={tools} active={tool} onSelect={setTool} />}
         <div className="live">
           <span className="dot" />
           {connected ? "live" : "reconnecting…"}
         </div>
       </div>
 
+      {board === "allTime" && (
+        <p className="board-end" style={{ padding: "6px 0 10px", letterSpacing: "normal" }}>
+          since enlistment · local logs prune ~30d, so totals accumulate from first sync
+        </p>
+      )}
       <div className="board" ref={boardRef}>
         {isConnecting ? (
           <BoardSkeleton />

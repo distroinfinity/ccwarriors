@@ -1,3 +1,5 @@
+import { tierOf } from "./craft-score.js";
+
 export type Board = "30d" | "allTime";
 
 export interface Entry {
@@ -18,6 +20,32 @@ export interface Entry {
   // Verified org memberships (slugs from the org registry). Drives org-scoped
   // boards and the org badge on the global board.
   orgs?: string[];
+  // Epoch ms of the user's last sync — used as a tie-breaker in sorted().
+  lastSyncedAt?: number;
+  // 8 buckets (levels 0-8) over the last 30 days, one per ~3.75d. Absent when
+  // the user has no spend in the window (legacy rows before spark rollout).
+  spark?: number[];
+  // Craft Score: present ONLY when insightsConsent===true AND
+  // insightsVisibility==="public" AND craftScore!=null. Absent for all others.
+  craft?: { score: number; tier: string };
+}
+
+/** Returns the craft payload to store on a leaderboard entry, or undefined if
+ *  the three-condition privacy gate is not satisfied:
+ *  insightsConsent===true AND insightsVisibility==="public" AND craftScore!=null.
+ *  This is the single authoritative implementation — all call sites MUST use it. */
+export function craftEntryFor(user: {
+  insightsConsent: boolean;
+  insightsVisibility: string;
+  craftScore: string | number | null | undefined;
+}): Entry["craft"] {
+  if (!user.insightsConsent) return undefined;
+  if (user.insightsVisibility !== "public") return undefined;
+  if (user.craftScore == null) return undefined;
+  const score = Math.round(Number(user.craftScore));
+  if (!Number.isFinite(score)) return undefined;
+  const { name } = tierOf(score);
+  return { score, tier: name };
 }
 
 export interface ToolSummary {
@@ -32,9 +60,18 @@ const metric = (e: Entry, b: Board, tool?: string): number => {
 
 export class LeaderboardStore {
   private entries = new Map<string, Entry>();
+  // Secondary index: lowercased login → id, so getByLogin (hit on every profile
+  // request) is O(1) instead of a full scan. Kept in sync by upsert.
+  private loginIndex = new Map<string, string>();
 
   upsert(e: Entry): void {
+    const prev = this.entries.get(e.id);
+    // On a GitHub rename the old login key would dangle — drop it.
+    if (prev && prev.githubLogin.toLowerCase() !== e.githubLogin.toLowerCase()) {
+      this.loginIndex.delete(prev.githubLogin.toLowerCase());
+    }
     this.entries.set(e.id, e);
+    this.loginIndex.set(e.githubLogin.toLowerCase(), e.id);
   }
 
   get(id: string): Entry | undefined {
@@ -44,10 +81,12 @@ export class LeaderboardStore {
   /** Case-insensitive login lookup (profile URLs arrive in user-typed case). */
   getByLogin(login: string): Entry | undefined {
     const lower = login.toLowerCase();
-    for (const e of this.entries.values()) {
-      if (e.githubLogin.toLowerCase() === lower) return e;
-    }
-    return undefined;
+    const id = this.loginIndex.get(lower);
+    if (!id) return undefined;
+    const e = this.entries.get(id);
+    // Defensive: only return on an exact (case-insensitive) login match, so a
+    // stale index key can never resolve to the wrong warrior.
+    return e && e.githubLogin.toLowerCase() === lower ? e : undefined;
   }
 
   setFlagged(id: string, flagged: boolean): void {
@@ -58,6 +97,20 @@ export class LeaderboardStore {
   setOrgs(id: string, orgs: string[]): void {
     const e = this.entries.get(id);
     if (e) this.entries.set(id, { ...e, orgs });
+  }
+
+  /** Set or strip craft on an existing entry. Pass undefined to strip (on consent revoke
+   *  or visibility → private). No-op when the entry is not in the store. */
+  setCraft(id: string, craft: Entry["craft"]): void {
+    const e = this.entries.get(id);
+    if (!e) return;
+    const updated = { ...e };
+    if (craft === undefined) {
+      delete updated.craft;
+    } else {
+      updated.craft = craft;
+    }
+    this.entries.set(id, updated);
   }
 
   private visible(org?: string): Entry[] {
@@ -93,11 +146,27 @@ export class LeaderboardStore {
       .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   }
 
+  /**
+   * Stable total-order sort:
+   *   1. board metric desc (primary rank signal)
+   *   2. costAllTime desc (breaks equal 30d spend; no-op on the allTime board)
+   *   3. lastSyncedAt asc (earlier sync wins — "got there first"; undefined sinks to last)
+   *   4. githubLogin asc (lexicographic guarantee — always unique)
+   */
   private sorted(board: Board, tool?: string, org?: string): Entry[] {
     const pool = tool
       ? this.visible(org).filter((e) => metric(e, board, tool) > 0)
       : this.visible(org);
-    return pool.sort((a, b) => metric(b, board, tool) - metric(a, board, tool));
+    return pool.sort((a, b) => {
+      const md = metric(b, board, tool) - metric(a, board, tool);
+      if (md !== 0) return md;
+      const ad = b.costAllTime - a.costAllTime;
+      if (ad !== 0) return ad;
+      const aAt = a.lastSyncedAt ?? Infinity;
+      const bAt = b.lastSyncedAt ?? Infinity;
+      if (aAt !== bAt) return aAt - bAt;
+      return a.githubLogin.localeCompare(b.githubLogin);
+    });
   }
 
   getTop(board: Board, limit: number, offset = 0, tool?: string, org?: string): Entry[] {

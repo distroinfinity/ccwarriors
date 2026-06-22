@@ -305,14 +305,17 @@ export const githubStats = pgTable(
 // The derived narrative document. Raw transcripts are processed then PURGED —
 // only this derived doc persists (the documented promise).
 export type StoryDoc = {
-  narrative: string; // the headline paragraph
+  tagline?: string; // one sentence on who they are (optional: old rows predate it)
+  narrative: string; // the headline paragraph (now person-first)
+  arc?: string; // how they changed across the window (optional; may be "")
   whatYouBuilt: string;
   decisionPatterns: Array<{ name: string; count: number; evidence: string }>;
   strengths: Array<{ title: string; detail: string }>;
   growthAreas: Array<{ title: string; detail: string }>;
   aiArchetypes: Array<{ name: string; blurb: string; evidence: number }>;
   crypticPrompt: string | null; // most cryptic prompt, LLM-picked (already redacted client-side)
-  sessionsAnalyzed: number;
+  sessionsAnalyzed: number; // server-stamped from sessionsUsed — never trusted from LLM
+  windowDays?: number; // server-stamped from source payload (jsonb — no migration needed)
 };
 
 export const userStories = pgTable(

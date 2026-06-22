@@ -318,6 +318,52 @@ export function pillarPercentiles(me: CraftInput, population: CraftInput[]): Pil
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Outcome economics — cost per surviving line and commits per $100.
+// The anti-burn metric: what a dollar buys in lasting outcomes.
+//
+// NOTE: honest window mismatch — sessions span the deep window (≤60d,
+// typically 40d); windowCostUsd is the 30d usage window. Same mismatch that
+// pillarYield already carries; we label it, we don't hide it.
+// ──────────────────────────────────────────────────────────────────────────
+export interface OutcomeEconomics {
+  survivingLoc: number;      // sum max(0, linesAdded - revertedLinesWithin14d) across sessions with git
+  shippedCommits: number;    // total commits across sessions with git
+  windowCostUsd: number;
+  costPerSurvivingLoc: number | null;  // windowCostUsd / survivingLoc; null below MIN_SURVIVING_LOC_FOR_ECONOMICS
+  commitsPer100Usd: number | null;     // commits / cost * 100; null below MIN_COST/MIN_COMMITS thresholds
+}
+
+// Significance floors — below these the ratio is noise, so we show nothing
+// rather than a misleading number. v1 placeholders to tune on real data, like
+// the calibration anchors above.
+const MIN_SURVIVING_LOC_FOR_ECONOMICS = 50;
+const MIN_COST_USD_FOR_ECONOMICS = 1;
+const MIN_COMMITS_FOR_ECONOMICS = 3;
+
+export function outcomeEconomics(sessions: SessionRecord[], windowCostUsd: number): OutcomeEconomics {
+  const totalSurvivingLoc = sum(sessions.map(survivingLoc));
+  const totalShippedCommits = sum(sessions.map((s) => s.git?.commitsInWindow ?? 0));
+
+  // Null below the LOC floor or at zero cost — too noisy / misleading.
+  let costPerSurvivingLoc: number | null = null;
+  if (totalSurvivingLoc >= MIN_SURVIVING_LOC_FOR_ECONOMICS && windowCostUsd > 0) {
+    const raw = windowCostUsd / totalSurvivingLoc;
+    // < $0.01: keep 4 significant decimals. ≥ $0.01: round to 2 decimals.
+    costPerSurvivingLoc = raw < 0.01
+      ? Math.round(raw * 10_000) / 10_000
+      : Math.round(raw * 100) / 100;
+  }
+
+  // Null below the cost floor (denominator noise) or the commit floor.
+  let commitsPer100Usd: number | null = null;
+  if (windowCostUsd >= MIN_COST_USD_FOR_ECONOMICS && totalShippedCommits >= MIN_COMMITS_FOR_ECONOMICS) {
+    commitsPer100Usd = Math.round((totalShippedCommits / windowCostUsd) * 100 * 10) / 10;
+  }
+
+  return { survivingLoc: totalSurvivingLoc, shippedCommits: totalShippedCommits, windowCostUsd, costPerSurvivingLoc, commitsPer100Usd };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Trust tier — how much we trust the git signal behind the score.
 //   1 = local-git credential: at least one session has a non-null git outcome
 //       with commitsInWindow>0 AND hasRemote (real repo, real remote).

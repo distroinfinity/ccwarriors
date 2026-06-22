@@ -45,6 +45,13 @@ export interface ProfileInsights {
   };
   // Paxel-style insight deck. Defaults to [] when an older server omits it.
   cards: InsightCard[];
+  // "This month" featured subset of `cards` (keys). Absent on older servers.
+  featuredCardKeys?: string[];
+  // Month label for the featured deck, e.g. "2026-06". Absent on older servers.
+  deckMonth?: string;
+  // One-sentence identity line from the story, seeds the masthead. Null when no
+  // story exists yet; absent on older servers.
+  tagline?: string | null;
   growthEdge: string;
   // Craft Score (the headline). Null on aggregate-only insights (no deep rows)
   // or against an older server — the UI falls back to archetype + axes then.
@@ -58,8 +65,41 @@ export interface ProfileInsights {
   pinnedCards?: string[];
   // Sessions behind these scores. Absent on older servers.
   sampleSessions?: number;
+  // Rolling window length for the sessions above. Absent on older servers.
+  windowDays?: number;
   // Local-git verified AND public GitHub commits in the same window.
   githubVerified?: boolean;
+  // Session depth panel: prominent first-class stats. All optional/nullable to
+  // tolerate servers that predate this field.
+  depth?: {
+    sessions: number;
+    windowDays: number;
+    totalHours: number | null;
+    planModeSessionsPct: number;
+    subagentSessionsPct: number | null;
+    subagentSpawnsPerSession: number;
+    maxParallelAgents: number;
+    maxConcurrentSessions?: number;
+    avgSessionMinutes: number | null;
+    longestSessionMinutes: number;
+  } | null;
+  // Outcome economics: cost per surviving line and commits per $100.
+  // Optional/nullable: absent on older servers or when no deep data.
+  economics?: {
+    survivingLoc: number;
+    shippedCommits: number;
+    windowCostUsd: number;
+    costPerSurvivingLoc: number | null;
+    commitsPer100Usd: number | null;
+  } | null;
+  // Verified "builds with" stack: languages from real agent edits, model mix,
+  // and GitHub top languages. Optional/nullable: absent on older servers or
+  // when no deep data is available.
+  stack?: {
+    languages: Array<{ name: string; share: number }>;
+    models: Array<{ family: string; share: number }>;
+    ghLanguages: string[];
+  } | null;
 }
 
 // Verified-by-GitHub public footprint. Public data — present (when fetched)
@@ -94,6 +134,7 @@ export interface Profile {
   cardScene: string;
   cost30d: number;
   costAllTime: number;
+  tokensAllTime?: number | null;
   rank30d: number | null;
   rankAllTime: number | null;
   underReview: boolean;

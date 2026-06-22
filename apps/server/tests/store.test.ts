@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LeaderboardStore, type Entry } from "../src/lib/leaderboard-store.js";
+import { LeaderboardStore, craftEntryFor, type Entry } from "../src/lib/leaderboard-store.js";
 
 const entry = (id: string, over: Partial<Entry> = {}): Entry => ({
   id,
@@ -80,5 +80,140 @@ describe("LeaderboardStore (multi-tool)", () => {
       { key: "codex", count: 2 },
       { key: "gemini", count: 1 },
     ]);
+  });
+
+  it("breaks ties by lastSyncedAt asc then login asc — order is stable regardless of upsert order", () => {
+    // Two entries with identical cost30d and costAllTime; "early" synced first.
+    const t1 = 1_000_000;
+    const t2 = 2_000_000;
+
+    // Upsert order A: early first
+    const storeA = new LeaderboardStore();
+    storeA.upsert(entry("early", { cost30d: 50, costAllTime: 100, lastSyncedAt: t1 }));
+    storeA.upsert(entry("late", { cost30d: 50, costAllTime: 100, lastSyncedAt: t2 }));
+
+    // Upsert order B: late first
+    const storeB = new LeaderboardStore();
+    storeB.upsert(entry("late", { cost30d: 50, costAllTime: 100, lastSyncedAt: t2 }));
+    storeB.upsert(entry("early", { cost30d: 50, costAllTime: 100, lastSyncedAt: t1 }));
+
+    const orderA = storeA.getTop("30d", 10).map((e) => e.id);
+    const orderB = storeB.getTop("30d", 10).map((e) => e.id);
+
+    // "got there first" wins — earlier sync is rank 1.
+    expect(orderA).toEqual(["early", "late"]);
+    // Identical regardless of upsert order.
+    expect(orderB).toEqual(orderA);
+  });
+
+  it("allTime board ranks by costAllTime desc", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10, costAllTime: 500 }));
+    store.upsert(entry("b", { cost30d: 200, costAllTime: 50 }));
+    store.upsert(entry("c", { cost30d: 5, costAllTime: 300 }));
+
+    expect(store.getTop("allTime", 10).map((e) => e.id)).toEqual(["a", "c", "b"]);
+    expect(store.getRank("allTime", "a")).toBe(1);
+    expect(store.getRank("allTime", "c")).toBe(2);
+    expect(store.getRank("allTime", "b")).toBe(3);
+  });
+
+  it("falls back to login asc when lastSyncedAt is identical", () => {
+    const t = 1_000_000;
+    const store = new LeaderboardStore();
+    store.upsert(entry("zebra", { cost30d: 50, costAllTime: 100, lastSyncedAt: t }));
+    store.upsert(entry("alpha", { cost30d: 50, costAllTime: 100, lastSyncedAt: t }));
+
+    expect(store.getTop("30d", 10).map((e) => e.id)).toEqual(["alpha", "zebra"]);
+  });
+
+  it("sinks entries without lastSyncedAt behind synced ones among ties", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("nosync", { cost30d: 50, costAllTime: 100 }));
+    store.upsert(entry("synced", { cost30d: 50, costAllTime: 100, lastSyncedAt: 1_000_000 }));
+
+    expect(store.getTop("30d", 10).map((e) => e.id)).toEqual(["synced", "nosync"]);
+  });
+});
+
+describe("getByLogin (indexed lookup)", () => {
+  it("finds an entry case-insensitively", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("u1", { githubLogin: "DistroInfinity" }));
+    expect(store.getByLogin("distroinfinity")?.id).toBe("u1");
+    expect(store.getByLogin("DISTROINFINITY")?.id).toBe("u1");
+    expect(store.getByLogin("nobody")).toBeUndefined();
+  });
+
+  it("follows a GitHub rename and drops the stale login key", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("u1", { githubLogin: "oldname" }));
+    store.upsert(entry("u1", { githubLogin: "newname" })); // same id, renamed
+    expect(store.getByLogin("newname")?.id).toBe("u1");
+    expect(store.getByLogin("oldname")).toBeUndefined(); // stale key no longer resolves
+  });
+
+  it("does not let one user's id be reached via another's login", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("u1", { githubLogin: "alice" }));
+    store.upsert(entry("u2", { githubLogin: "bob" }));
+    expect(store.getByLogin("alice")?.id).toBe("u1");
+    expect(store.getByLogin("bob")?.id).toBe("u2");
+  });
+});
+
+describe("setCraft", () => {
+  it("sets craft on an existing entry", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10 }));
+    store.setCraft("a", { score: 75, tier: "Artisan" });
+    expect(store.get("a")?.craft).toEqual({ score: 75, tier: "Artisan" });
+  });
+
+  it("strips craft when called with undefined", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10, craft: { score: 75, tier: "Artisan" } }));
+    store.setCraft("a", undefined);
+    expect(store.get("a")?.craft).toBeUndefined();
+    expect("craft" in store.get("a")!).toBe(false);
+  });
+
+  it("no-ops when the entry is absent", () => {
+    const store = new LeaderboardStore();
+    expect(() => store.setCraft("missing", { score: 50, tier: "Journeyman" })).not.toThrow();
+  });
+
+  it("does not affect entries for other users", () => {
+    const store = new LeaderboardStore();
+    store.upsert(entry("a", { cost30d: 10 }));
+    store.upsert(entry("b", { cost30d: 5, craft: { score: 60, tier: "Artisan" } }));
+    store.setCraft("a", { score: 80, tier: "Mastersmith" });
+    expect(store.get("b")?.craft).toEqual({ score: 60, tier: "Artisan" });
+  });
+});
+
+describe("craftEntryFor", () => {
+  it("returns craft when all three conditions hold", () => {
+    const result = craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "72.5" });
+    expect(result).toEqual({ score: 73, tier: "Artisan" });
+  });
+
+  it("returns undefined when consent is false", () => {
+    expect(craftEntryFor({ insightsConsent: false, insightsVisibility: "public", craftScore: "72" })).toBeUndefined();
+  });
+
+  it("returns undefined when visibility is private", () => {
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "private", craftScore: "72" })).toBeUndefined();
+  });
+
+  it("returns undefined when craftScore is null", () => {
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: null })).toBeUndefined();
+  });
+
+  it("maps score to correct tier", () => {
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "30" })?.tier).toBe("Apprentice");
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "50" })?.tier).toBe("Journeyman");
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "65" })?.tier).toBe("Artisan");
+    expect(craftEntryFor({ insightsConsent: true, insightsVisibility: "public", craftScore: "85" })?.tier).toBe("Mastersmith");
   });
 });

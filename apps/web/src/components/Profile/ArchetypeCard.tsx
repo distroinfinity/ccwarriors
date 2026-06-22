@@ -4,7 +4,7 @@ import { API_HTTP } from "../../api";
 import type { Profile, ProfileInsights, ProfilePillars, LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { PixelGlyph } from "../PixelGlyph";
-import { tierLabel } from "../../util";
+import { formatUsd } from "../../util";
 
 const AXIS_ORDER = ["summoning", "steering", "velocity", "autonomy", "planning"] as const;
 const AXIS_LABEL: Record<(typeof AXIS_ORDER)[number], string> = {
@@ -111,50 +111,106 @@ function EarlyReadBadge({ insights }: { insights: ProfileInsights }) {
   const n = insights.sampleSessions;
   if (!insights.provisional || typeof n !== "number" || n >= 10) return null;
   return (
-    <span className="trust-badge early mono">
+    <span
+      className="trust-badge early mono"
+      title="Fewer than 10 sessions — scores are real but not yet rank-stable; this profile is not in the percentile pool yet."
+    >
       EARLY READ · {n} SESSION{n === 1 ? "" : "S"}
     </span>
+  );
+}
+
+// Calibrated badge: enough sessions to be meaningful, but percentile ranking
+// hasn't activated yet (consented population below the minimum threshold).
+function CalibratedBadge({ insights }: { insights: ProfileInsights }) {
+  const n = insights.sampleSessions;
+  if (insights.scoresArePercentiles || typeof n !== "number" || n < 10) return null;
+  return (
+    <span
+      className="trust-badge early mono"
+      title="Scores use fixed calibration anchors — percentile ranking activates once the consented population reaches 30."
+    >
+      CALIBRATED
+    </span>
+  );
+}
+
+// Persistent provenance line: shows the session count and window behind scores.
+function ProvenanceLine({ insights }: { insights: ProfileInsights }) {
+  const n = insights.sampleSessions;
+  const w = insights.windowDays;
+  if (!n && !w) return null;
+  const parts: string[] = [];
+  if (n) parts.push(`${n} session${n === 1 ? "" : "s"}`);
+  if (w) parts.push(`last ${w} days`);
+  return (
+    <p className="craft-provenance mono">based on {parts.join(" over the ")}</p>
+  );
+}
+
+function StrengthSignature({ pillars }: { pillars: ProfilePillars }) {
+  const sorted = [...PILLAR_ORDER].sort((a, b) => pillars[b] - pillars[a]);
+  return (
+    <div className="mast-sig" aria-hidden="true">
+      {sorted.map((p, i) => (
+        <i key={p} className={`f${Math.min(i, 2)}`} style={{ height: `${Math.max(12, pillars[p])}%` }} />
+      ))}
+    </div>
   );
 }
 
 function CraftScoreHero({
   insights,
   archetype,
+  tagline,
 }: {
   insights: ProfileInsights & { craftScore: number; pillars: ProfilePillars };
   archetype: string;
+  tagline: string | null | undefined;
 }) {
+  const [open, setOpen] = useState(false);
   const tier1 = insights.trustTier === 1;
   const tier = insights.craftTier;
+  const top = ([...PILLAR_ORDER].sort((a, b) => insights.pillars[b] - insights.pillars[a])[0]) ?? PILLAR_ORDER[0];
+  const topLabel = PILLAR_LABEL[top].charAt(0) + PILLAR_LABEL[top].slice(1).toLowerCase();
+  // The verdict: the story tagline, else the archetype flavor.
+  const verdict = tagline && tagline.trim().length > 0
+    ? tagline
+    : `Plays as the ${archetype.replace(/^the\s+/i, "")}. ${insights.growthEdge}`;
   return (
-    <div className="craft">
-      <div className="craft-top">
-        <div className="craft-num-wrap">
-          <span className="craft-label mono">CRAFT SCORE</span>
-          <span className={`craft-score mono${tier ? ` tier-${tier.key}` : ""}`}>
-            {Math.round(insights.craftScore)}
-          </span>
-          {tier && <span className={`craft-tier px tier-${tier.key}`}>{tier.name.toUpperCase()}</span>}
-        </div>
-        <div className="craft-badges">
-          <span className={`trust-badge mono${tier1 ? " t1" : " t0"}`}>
-            {tier1 && <PixelGlyph name="check" size={9} />}
-            {tier1 ? "LOCAL-GIT VERIFIED" : "UNVERIFIED"}
-          </span>
-          {insights.githubVerified && (
-            <span className="trust-badge t1 mono">
-              <PixelGlyph name="check" size={9} />
-              GITHUB-LINKED
-            </span>
-          )}
-          <EarlyReadBadge insights={insights} />
-        </div>
+    <div className="mast">
+      <p className="mast-verdict">{verdict}</p>
+      <div className="mast-fig mono">
+        <span className={`mast-score px${tier ? ` tier-${tier.key}` : ""}`}>{Math.round(insights.craftScore)}</span>
+        <span className="mast-craft">CRAFT</span>
+        <span className="mast-sep">/</span>
+        {tier && <span className={`mast-tier px tier-${tier.key}`}>{tier.name.toUpperCase()}</span>}
+        <span className="mast-sep">/</span>
+        <span className="mast-top">top signal {topLabel} {Math.round(insights.pillars[top])}</span>
+        <span className="mast-sep">/</span>
+        <span className={`trust-badge mono${tier1 ? " t1" : " t0"}`}>
+          {tier1 && <PixelGlyph name="check" size={9} />}
+          {tier1 ? "VERIFIED" : "UNVERIFIED"}
+        </span>
+        {insights.githubVerified && (
+          <span className="trust-badge t1 mono"><PixelGlyph name="check" size={9} />GITHUB</span>
+        )}
       </div>
-      <div className="craft-flavor">
-        plays as <b>THE {archetype.toUpperCase().replace(/^THE\s+/, "")}</b>
+      <StrengthSignature pillars={insights.pillars} />
+      <div className="mast-break" data-noexport="true">
+        <button className="linklike mono" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? "hide breakdown" : "full score breakdown"}
+        </button>
+        {open && (
+          <div className="mast-break-body">
+            <EarlyReadBadge insights={insights} />
+            <CalibratedBadge insights={insights} />
+            <PillarBars pillars={insights.pillars} />
+            <ProvenanceLine insights={insights} />
+            <CraftExplainer />
+          </div>
+        )}
       </div>
-      <PillarBars pillars={insights.pillars} />
-      <CraftExplainer />
     </div>
   );
 }
@@ -384,25 +440,25 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
   return (
     <div className="arch-wrap">
       <div className="arch-card" ref={cardRef}>
-        <div className="arch-head">
-          <div className="arch-id">
-            <img className="arch-avatar" src={profile.avatarUrl} alt={profile.login} crossOrigin="anonymous" />
-            <div>
-              <div className="arch-login">{profile.login}</div>
-              <div className="arch-rank mono">
-                {profile.underReview ? "rank —" : profile.rank30d ? `rank #${profile.rank30d}` : "unranked"} &middot;{" "}
-                <span className="arch-tier">{tierLabel(profile.tier)}</span>
-              </div>
+        <div className="arch-head mast-head">
+          <div className="mast-id">
+            <span className="mast-kicker mono">FIELD REPORT · CCWARRIORS</span>
+            <div className="mast-namerow">
+              <img className="arch-avatar" src={profile.avatarUrl} alt={profile.login} crossOrigin="anonymous" />
+              <span className="mast-name px">{profile.login}</span>
+            </div>
+            <div className="arch-rank mono">
+              {profile.underReview ? "rank —" : profile.rank30d ? `rank #${profile.rank30d}` : "unranked"}
+              {profile.memberSince ? ` · since ${new Date(profile.memberSince).getUTCFullYear()}` : ""}
+              {!profile.underReview && profile.costAllTime > 0 ? ` · ${formatUsd(Math.round(profile.costAllTime))} all-time` : ""}
             </div>
           </div>
-          <div className="arch-brand">
-            <ClawdLogo />
-          </div>
+          <div className="arch-brand"><ClawdLogo /></div>
         </div>
 
         {insights ? (
           hasCraftScore(insights) ? (
-            <CraftScoreHero insights={insights} archetype={insights.archetype} />
+            <CraftScoreHero insights={insights} archetype={insights.archetype} tagline={profile.insights.locked ? null : (profile.insights as ProfileInsights).tagline} />
           ) : (
             <>
               <div className="arch-name">{insights.archetype.toUpperCase()}</div>
@@ -411,7 +467,9 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
                 {insights.growthEdge}
               </div>
               <EarlyReadBadge insights={insights} />
+              <CalibratedBadge insights={insights} />
               <AxisBars insights={insights} />
+              <ProvenanceLine insights={insights} />
             </>
           )
         ) : (

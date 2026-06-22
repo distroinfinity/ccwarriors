@@ -1,12 +1,15 @@
 import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
+import { eq, gte, sql } from "drizzle-orm";
 import { parseConfig } from "./config.js";
 import { createDbFromEnv } from "./db/index.js";
-import { users, orgMembers, userInsights } from "./db/schema.js";
-import { LeaderboardStore } from "./lib/leaderboard-store.js";
+import { users, orgMembers, userInsights, usageDays } from "./db/schema.js";
+import { LeaderboardStore, craftEntryFor } from "./lib/leaderboard-store.js";
 import { InsightsStore } from "./lib/insights-store.js";
 import { createApp } from "./app.js";
 import { generateStory } from "./lib/story.js";
+import { computeSpark } from "./lib/spark.js";
+import { BOARD_DAYS } from "./services/ingest.js";
 import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
@@ -71,6 +74,8 @@ async function main() {
         breakdown,
         flagged: !!u.flaggedAt,
         orgs: orgsByUser.get(u.id) ?? [],
+        lastSyncedAt: u.lastSyncedAt?.getTime(),
+        craft: craftEntryFor(u),
       });
     }
     // Warm insights (consented users only — revokes deleted their rows).
@@ -78,6 +83,37 @@ async function main() {
     for (const r of insightRows) insightsStore.upsert(r.userId, r.machineId, r.payload);
   } catch (err) {
     console.warn("store warm-up skipped:", (err as Error).message);
+  }
+
+  // Attach 30d sparks to all entries loaded above. Separate try: a spark
+  // failure must not prevent the server from starting.
+  try {
+    const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
+    const sparkRows = await db
+      .select({
+        userId: usageDays.userId,
+        day: usageDays.day,
+        cost: sql<number>`sum(${usageDays.cost})`,
+      })
+      .from(usageDays)
+      .where(gte(usageDays.day, cutoff30))
+      .groupBy(usageDays.userId, usageDays.day);
+    // Group by user.
+    const byUser = new Map<string, Array<{ day: string; cost: number }>>();
+    for (const r of sparkRows) {
+      const list = byUser.get(r.userId) ?? [];
+      list.push({ day: r.day, cost: Number(r.cost) });
+      byUser.set(r.userId, list);
+    }
+    const now = new Date();
+    for (const [userId, dayRows] of byUser) {
+      const entry = store.get(userId);
+      if (!entry) continue;
+      const spark = computeSpark(dayRows, now);
+      if (spark) store.upsert({ ...entry, spark });
+    }
+  } catch (err) {
+    console.warn("spark warm-up skipped:", (err as Error).message);
   }
 
   // Keep model pricing current (committed snapshot already loaded at import).
