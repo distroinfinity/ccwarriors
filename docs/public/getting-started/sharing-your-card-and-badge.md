@@ -21,7 +21,7 @@ Your profile is `ccwarriors.xyz/<login>` — short and clean. Older `ccwarriors.
 
 ## Social unfurls
 
-When you paste your profile link into X, Discord, Slack, Telegram, or WhatsApp, the preview renders your rank — and your archetype, if you've unlocked insights and kept them public. Share buttons on the site use the `/u/` form of the link; that's the one wired for previews, so prefer it when pasting manually too.
+When you paste the legacy `ccwarriors.xyz/u/<login>` profile link into X, Discord, Slack, Telegram, or WhatsApp, the preview renders your rank — and your archetype, if you've unlocked insights and kept them public. The short `ccwarriors.xyz/<login>` link works for humans, but the current crawler rewrite is only wired to `/u/<login>`, so use `/u/` when you want a rich preview.
 
 ## Story link
 

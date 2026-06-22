@@ -25,7 +25,7 @@ All routes are mounted in `createApp()` (`apps/server/src/app.ts`). Base URL in 
 | POST | `/ingest` | bearer | Usage sync. 200 (incl. when flagged — see ingest pipeline), 401 `unauthorized`, 429 `rate_limited` (<10s since last sync), 422 `implausible` (legacy sanity cap only) |
 | GET | `/leaderboard` | — | Params: `board=30d\|allTime` (default 30d), `limit` 1–100 (default 30), `offset` 0–100000, `tool` (unknown → empty board), `org` (unknown → 400). Org responses add `tools` + `byTool`. `Cache-Control: public, max-age=5` + ETag middleware → org polls collapse to 304s |
 | GET | `/sponsors` | — | Last paid donations; ETag'd |
-| POST | `/admin/flag`, `/admin/unflag` | `x-admin-token` header | Manual quarantine; mounted only when `ADMIN_TOKEN` is set (`routes/admin.ts:10`) |
+| POST | `/admin/flag`, `/admin/unflag` | `x-admin-token` header | Manual quarantine. Mounted with DB deps; returns 401 unless `ADMIN_TOKEN` is set and the header matches |
 | GET | `/badge/:login.svg` | — | Rank/tier/30d-burn SVG; `max-age=3600, stale-while-revalidate=86400`. Unknown or flagged login renders the generic "enlist →" badge |
 | GET | `/og/u/:login` | — | OG meta HTML for crawler UAs (Vercel rewrites bots here); 5m cache + SWR 1h |
 
@@ -35,8 +35,8 @@ All routes are mounted in `createApp()` (`apps/server/src/app.ts`). Base URL in 
 |---|---|---|---|
 | POST | `/insights` | bearer | Aggregate behavioral payload (counts only) |
 | POST | `/insights/deep` | bearer | Per-session records; 403 `mode_off` unless `insightsMode === "deep"`; recomputes Craft Score and derives the aggregate row |
-| POST | `/insights/transcripts` | bearer | Redacted story sources (machineId, windowDays 1–60, ≤300 sessions + 800k-char guard, ≤60 prompts ≤2000 chars each, tool-name counts) |
-| GET/POST | `/insights/consent` | session | GET returns `{consent, visibility}`; POST takes `{consent?, visibility?}` — the web "GO ALL-IN" unlock and the public/private toggle |
+| POST | `/insights/transcripts` | bearer | Redacted story sources; requires `insightsMode === "deep"` and `consentVersion >= 2`. Payload: machineId, windowDays 1–60, ≤300 sessions + 800k-char guard, ≤60 prompts ≤2000 chars each, tool-name counts |
+| GET/POST | `/insights/consent` | session | GET returns `{consent, visibility}`; POST takes `{consent?, visibility?, consentVersion?}` — the web "GO ALL-IN" unlock, v2 disclosure ack, and the public/private toggle |
 | GET/POST | `/insights/mode` | session/bearer | `{mode: "off"\|"deep"}`; mode is the source of truth, the legacy consent boolean is kept consistent |
 | POST | `/insights/pins` | session | `{pins: string[]}` ≤4 known card keys → `users.pinnedCards`; unknown key → 400 |
 | GET | `/profile/:login` | session optional | Full profile JSON. Owner responses `private, no-store`; public `public, max-age=30`. Locked insights return `no_consent` regardless of whether consent was never given or revoked |
@@ -48,8 +48,7 @@ All routes are mounted in `createApp()` (`apps/server/src/app.ts`). Base URL in 
 |---|---|---|
 | Auth | `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET` | GET `/cli/auth?port=&ref=` (CLI loopback flow), `/auth/web?org=&ref=`, `/cli/callback` (shared OAuth callback), `/me`, `/logout` |
 | Donations | `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` | GET `/donate/rate`; POST `/donate/order` (5/min/IP), `/donate/verify`, `/donate/webhook` (only with `RAZORPAY_WEBHOOK_SECRET`) |
-| Orgs | `DISCORD_CLIENT_ID` + `DISCORD_CLIENT_SECRET` | GET `/orgs/:slug/verify/start`, `/discord/callback` |
-| Admin | `ADMIN_TOKEN` | POST `/admin/flag`, `/admin/unflag` |
+| Orgs | `DISCORD_CLIENT_ID` + `DISCORD_CLIENT_SECRET` + GitHub session secret | GET `/orgs/:slug/verify/start`, `/discord/callback` |
 | Insights/profile | insights store wired (always in `index.ts`) | the table above |
 
 ## CORS and ETag details

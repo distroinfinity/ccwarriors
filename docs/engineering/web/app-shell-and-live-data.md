@@ -14,7 +14,7 @@ There is no router — module-level regexes over `window.location.pathname` reso
 - `/:login/story` → story page. The **static `/story` suffix** is deliberate: a parameterized second segment collided with the `vercel.json` rewrites (issue #62).
 - Org co-branding (`src/orgs.ts` registry, mirroring the server's `lib/orgs.ts`): `ns.ccwarriors.xyz` subdomain or `?org=ns` locally sets `data-org` on `<html>` before first paint so the accent doesn't flash.
 
-`vercel.json` provides the SPA fallback (`/(.*) → /index.html`) and the OG bot rewrite: `/u/:login` requests from crawler UAs go to `https://api.ccwarriors.xyz/og/u/:login`. Only the `/u/` form is rewritten — that's why share buttons emit `/u/` URLs even though short `/:login` links work for humans.
+`vercel.json` provides the SPA fallback (`/(.*) → /index.html`) and the OG bot rewrite: `/u/:login` requests from crawler UAs go to `https://api.ccwarriors.xyz/og/u/:login`. Only the `/u/` form is rewritten. Current profile/deck share buttons emit short `/:login?ref=x_share` links, which work for humans but do not hit the crawler rewrite; rich-preview shares must use `/u/:login` or the rewrite/share target needs to change.
 
 ## API base (`src/api.ts`)
 

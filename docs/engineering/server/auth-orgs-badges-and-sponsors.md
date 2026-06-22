@@ -23,12 +23,12 @@ Orgs live in a code registry, not the DB — `ns: { slug: "ns", name: "Network S
 1. `GET /orgs/:slug/verify/start` (needs a GitHub session) → Discord authorize with `identify guilds` scope; state is a signed JWT `{slug, githubId, nonce}` with a 10-minute expiry.
 2. `GET /discord/callback` → check the user's guild list contains the org's guild id (from the env var named by `guildEnv`) → insert `org_members` (unique on user+org) → redirect to the org board.
 
-No bot and no org-admin setup. Org boards are the same leaderboard filtered to members — `GET /leaderboard?org=ns` adds org-scoped `tools` + `byTool` so polling org pages get chip data the global WS would otherwise carry. The whole org surface mounts only when `DISCORD_CLIENT_ID`/`SECRET` are set.
+No bot and no org-admin setup. Org boards are the same leaderboard filtered to members — `GET /leaderboard?org=ns` adds org-scoped `tools` + `byTool` so polling org pages get chip data the global WS would otherwise carry. The org surface mounts only when `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, and the GitHub session secret are available; membership succeeds only when the org's `guildEnv` var (for example `NS_GUILD_ID`) resolves to a Discord guild id.
 
 ## Badges and OG unfurls
 
 - `GET /badge/:login.svg` (`routes/badge.ts`) renders a self-measuring SVG (`⚔ CCWarriors · login | #rank · tier · $spend 30d`). Unknown **or flagged** logins render the generic `⚔ CCWarriors | enlist →` instead of erroring — GitHub's camo proxy caches responses, and a quarantine must not break READMEs. `Cache-Control: public, max-age=3600, stale-while-revalidate=86400`.
-- `GET /og/u/:login` (`routes/og.ts`) exists because the SPA can't serve meta tags to crawlers. `vercel.json` rewrites `/u/:login` requests from bot user agents (Twitterbot, facebookexternalhit, Slackbot, LinkedInBot, Discordbot, WhatsApp, TelegramBot) to this endpoint; it returns OG/Twitter meta (archetype in the title only if insights are public) plus a meta-refresh redirect for any human. 5m cache + 1h stale-while-revalidate. Note the rewrite covers **only** the legacy `/u/:login` path — that's why share buttons emit `/u/` URLs.
+- `GET /og/u/:login` (`routes/og.ts`) exists because the SPA can't serve meta tags to crawlers. `vercel.json` rewrites `/u/:login` requests from bot user agents (Twitterbot, facebookexternalhit, Slackbot, LinkedInBot, Discordbot, WhatsApp, TelegramBot) to this endpoint; it returns OG/Twitter meta (archetype in the title only if insights are public) plus a meta-refresh redirect for any human. 5m cache + 1h stale-while-revalidate. Note the rewrite covers **only** the legacy `/u/:login` path. The current profile/deck X share buttons emit short `/<login>?ref=x_share` URLs, so rich unfurls require manually using `/u/<login>` or changing the product rewrite/share target.
 
 ## Donations (`routes/donate.ts`)
 
@@ -43,4 +43,4 @@ Razorpay checkout, INR-denominated, displayed in USD:
 
 ## Admin quarantine
 
-`POST /admin/flag` / `POST /admin/unflag` (`routes/admin.ts`) — `{githubLogin, reason?}` with the `x-admin-token` header. Mounted only when `ADMIN_TOKEN` is set; every call is compared against it. This is the human-review half of the [plausibility gates](ingest-pipeline.md).
+`POST /admin/flag` / `POST /admin/unflag` (`routes/admin.ts`) — `{githubLogin, reason?}` with the `x-admin-token` header. Mounted with DB deps, but every call compares the header against `ADMIN_TOKEN`; missing or wrong token returns 401. This is the human-review half of the [plausibility gates](ingest-pipeline.md).

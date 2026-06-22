@@ -43,7 +43,7 @@ Raw per-day token counts (`inputTokens`, `outputTokens`, `cacheCreationTokens`, 
 ## Insights and story tables
 
 - `user_insights.payload` is the aggregate `InsightsPayload` (histograms, rates — counts only, no text). Since the deep path landed, the server **derives** this row from `user_deep_sessions` on every deep upload, so one upload feeds both archetype/efficiency code and Craft Score.
-- `user_deep_sessions.sessions` is the `SessionRecord[]` (per-session counts, timing summaries, hashed git outcomes, and edited-file `extensions` for the builds-with stack) plus `extras` (`maxConcurrentSessions`, `topPrompt` — absent on pre-v2 clients). These records drive Craft Score, outcome economics, session depth, and the stack panel.
+- `user_deep_sessions.sessions` is the `SessionRecord[]` (per-session counts, timing summaries, hashed git outcomes, and edited-file `extensions` for the builds-with stack) plus optional `extras` (`maxConcurrentSessions`, `topPrompt`). The route schema accepts the extras, but the current CLI `postInsightsDeep()` sends only `windowDays` + `sessions`, so consumers must treat extras as usually absent. These records drive Craft Score, outcome economics, session depth, and the stack panel.
 - `story_sources` holds redacted transcript payloads **only until generation**: the story service deletes the row after writing `user_stories.doc` (`StoryDoc`: tagline, narrative, arc, whatYouBuilt, decisionPatterns, strengths, growthAreas, aiArchetypes, crypticPrompt, sessionsAnalyzed, windowDays). That purge is a documented user-facing promise — do not "optimize" it away.
 
 ## `github_stats`

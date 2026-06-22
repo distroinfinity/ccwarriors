@@ -22,7 +22,7 @@ Both builds are config-as-code: `railway.json` (build + start + predeploy migrat
 
 ## The DI seam (`apps/server/src/app.ts`)
 
-`createApp(deps)` takes everything injectable: `db`, `store`, `insightsStore`, `onIngest`, and the optional feature groups — `auth` (GitHub creds), `donate` (Razorpay + an injectable `usdInr` rate for tests), `discord`, `githubToken`, `storyGenerate`. **Routes mount only when their deps exist**: no `ADMIN_TOKEN` → no admin routes, no Razorpay keys → no `/donate/*`, no Discord creds → no org verification, no `ANTHROPIC_API_KEY` → transcripts stored dormant. Tests build a fully-wired app with fakes; production wiring is just `index.ts` reading env.
+`createApp(deps)` takes everything injectable: `db`, `store`, `insightsStore`, `onIngest`, and the optional feature groups — `auth` (GitHub creds), `donate` (Razorpay + an injectable `usdInr` rate for tests), `discord`, `githubToken`, `storyGenerate`. Most feature routes mount only when their deps exist: no Razorpay keys → no `/donate/*`, no Discord creds + GitHub session secret → no org verification, no `ANTHROPIC_API_KEY` → transcripts stored dormant. Admin is the exception: `/admin/*` mounts with DB deps and self-auths against raw `process.env.ADMIN_TOKEN`, returning 401 when the token is missing or wrong. Tests build a fully-wired app with fakes; production wiring is just `index.ts` reading env.
 
 ## A sync, end to end
 

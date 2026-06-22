@@ -19,7 +19,7 @@ Chips above the board filter to a single agent — Claude Code only, Codex only,
 
 ## Your card
 
-Every warrior gets a collectible card — tier, rank, burn, and a scene. It's the unit of bragging: copy the README badge from it, export it, or share your profile link and let the unfurl do the work ([sharing guide](../getting-started/sharing-your-card-and-badge.md)).
+Every warrior gets a collectible card — tier, rank, burn, and a scene. It's the unit of bragging: copy the README badge from it, export it, or share the `/u/<login>` profile link and let the unfurl do the work ([sharing guide](../getting-started/sharing-your-card-and-badge.md)).
 
 ## Can the numbers be trusted?
 

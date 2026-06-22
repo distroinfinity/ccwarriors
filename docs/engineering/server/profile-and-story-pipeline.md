@@ -20,7 +20,7 @@ description: What a profile aggregates, the hire-grade metrics, and the transcri
 The metrics-audit round (#79) promoted three outcome-coupled blocks to first class, all derived from the deep session records:
 
 - **Outcome economics** (`outcomeEconomics`, `lib/craft-score.ts`): `survivingLoc` = Σ `max(0, linesAdded − revertedLinesWithin14d)` over sessions with git; `costPerSurvivingLoc = windowCostUsd / survivingLoc` (null below `MIN_SURVIVING_LOC_FOR_ECONOMICS = 50` or zero cost); `commitsPer100Usd` (null below `MIN_COST_USD = 1` or `MIN_COMMITS = 3`). Honest window mismatch, labeled not hidden: sessions span the deep window (≤60d, typically 40d) while `windowCostUsd` is the 30-day usage figure.
-- **Session depth**: counts, plan-mode %, subagent spawns/peak parallel, max concurrent, active hours, avg/longest session.
+- **Session depth**: counts, plan-mode %, subagent spawns/peak parallel, active hours, avg/longest session, and max-concurrent sessions when that optional extra is present.
 - **Stack** (`buildStack`, `lib/stack.ts`): "builds with" languages from the file extensions the agents actually edited (`SessionRecord.extensions`), mapped via `EXT_LANGUAGE` — `md`/`json`/`yaml`/`toml` are deliberately unmapped so README/CI tweaks can't outrank real languages — plus the model mix and the user's top GitHub languages.
 
 ## Craft Score (`lib/craft-score.ts`)
@@ -36,7 +36,7 @@ Insights render **from session #1**. `MIN_SESSIONS = 10` and `PERCENTILE_MIN_POP
 An LLM-written, person-first narrative generated from redacted transcripts the CLI uploads under consent v2.
 
 1. CLI posts redacted sessions to `/insights/transcripts` → upserted into `story_sources` (one transient row per user). The route caps at 300 sessions with an 800k-char guard.
-2. Generation requires `ANTHROPIC_API_KEY` + `STORY_MODEL` (`STORY_MODEL = "claude-opus-4-8"`); without them transcripts sit dormant (`app.ts` wires `storyGenerate` only when configured).
+2. Generation requires `ANTHROPIC_API_KEY`; `STORY_MODEL` is optional and defaults to `claude-opus-4-8`. Without the key, transcripts sit dormant (`app.ts` wires `storyGenerate` only when configured).
 3. Throttle: at most one generation per user per `STORY_REFRESH_MS = 24h`, with in-flight dedup.
 4. Input is trimmed to `SERVER_INPUT_CHAR_CAP = 600_000` by **dropping whole oldest sessions**, never slicing mid-JSON. The model gets session timings, tool-call names, hashed git outcomes, and client-side-redacted prompts — never code, paths, commit messages, or SHAs.
 5. The `StoryDoc` schema is person-first: `tagline` (one-sentence identity line, also seeds the profile masthead verdict) and `arc` (how they changed over the window — empty string when no real trajectory; never invented) alongside narrative, decision patterns, strengths, growth areas, AI archetypes, and the cryptic prompt.

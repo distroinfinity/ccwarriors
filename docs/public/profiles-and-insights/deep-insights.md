@@ -15,8 +15,7 @@ The exact list, shown to you verbatim before you opt in:
 - **Timing summaries** — session length, active hours, gaps.
 - **Model names** — which models you ran.
 - **Hashed git outcomes** — commits, lines, and tests as salted hashes (the salt never leaves your machine, so no repo is identifiable).
-- **Your top prompts** — the short prompts you repeat most, secrets stripped on your machine first.
-- **Redacted transcripts** — to write your story page; analyzed once, then deleted.
+- **Redacted transcripts** — to write your story page: redacted prompts and tool-call names, analyzed once, then deleted. The current CLI does not send a separate "top prompt" field outside this story material.
 
 **Never** your code, file contents, file paths, or repo names. Secrets are stripped locally before anything leaves your machine.
 

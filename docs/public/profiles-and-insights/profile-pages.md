@@ -32,7 +32,7 @@ A four-group panel, each with a "more" expander for the deeper cut.
 
 **Outcomes** — the anti-burn metrics. Cost **per surviving line** of code, and your cache-efficiency grade; expand for commits per $100, what share of your context came from cache, and your model mix. Outcomes come from local-git hashes and server-priced spend over the last 30 days.
 
-**Sessions** — how you actually work. Session count over the window and the share run **in plan mode**; expand for total active hours, average and longest session, subagent spawns per session with your peak parallel count, and max concurrent sessions.
+**Sessions** — how you actually work. Session count over the window and the share run **in plan mode**; expand for total active hours, average and longest session, subagent spawns per session with your peak parallel count, and max concurrent sessions when that optional signal is available.
 
 **GitHub · verified** — your public footprint: stars and merged public PRs, with a link to your profile; expand for repos contributed to, longest streak, top languages, and account age.
 

@@ -45,7 +45,7 @@ description: Every number on the site, defined in a line or two.
 
 **Rhythm** — the daily-burn heatmap on your profile, with current and longest streaks.
 
-**Session depth** — the behavioral panel: session count, share run in plan mode, active hours, session lengths, subagent spawns, and max concurrent sessions (deep mode).
+**Session depth** — the behavioral panel: session count, share run in plan mode, active hours, session lengths, subagent spawns, and max concurrent sessions when that optional signal is available (deep mode).
 
 **Sparkline** — the little 8-bar trend next to a leaderboard row: your real 30-day spend shape, omitted when there's no spend in the window.
 

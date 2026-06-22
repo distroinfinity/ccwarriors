@@ -12,7 +12,7 @@ Everything here is opt-in and consent-versioned. Default mode sends token counts
 `CONSENT_VERSION = 2`. The config stores `ackConsentVersion` — the disclosure version the user actually saw and accepted:
 
 - **Deep mode, v1:** per-session counts, timing summaries, model names, salted-hash git outcomes.
-- **v2 adds text:** the top repeated short prompt and redacted transcripts (story generation). Pre-v2 deep users stay counts-only until they see the v2 disclosure; if the server reports a newer acknowledged version (the user clicked "GO ALL-IN" on the web), the CLI adopts it without re-prompting. The consent prompt is interactive-only — no TTY, no prompt, no text extraction.
+- **v2 adds text:** redacted transcripts for story generation. The extractor can compute a top repeated short prompt too, and the server schema can accept it, but the current `postInsightsDeep()` request body does not send that separate `topPrompt` field. Pre-v2 deep users stay counts-only until they see the v2 disclosure; if the server reports a newer acknowledged version (the user clicked "GO ALL-IN" on the web), the CLI adopts it without re-prompting. The consent prompt is interactive-only — no TTY, no prompt, no text extraction.
 
 `ccwarriors insights on` prints the full plain-text disclosure before asking. `insights off` calls the server to disable the mode and purge server-side deep data. `insights --dry-run` extracts and prints the exact payload locally without sending anything.
 

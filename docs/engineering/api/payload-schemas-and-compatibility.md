@@ -67,6 +67,7 @@ Two more additive `Entry` fields (`lib/leaderboard-store.ts`): `spark` is an 8-b
 ## Insights, transcripts, and story payloads
 
 - `POST /insights/transcripts` accepts up to **300** sessions (raised from 30 in the #79 metrics audit) with an 800k-char guard; the CLI ships ≤250 packed to a 500k-char budget. **Rollout ordering matters: deploy the server before the CLI** — a new CLI sending >30 sessions to an old server would 400; old CLI → new server is always safe. The CLI self-updates after the server is live.
+- `POST /insights/deep` accepts optional `maxConcurrentSessions` and `topPrompt` extras in the server schema, but the current CLI sender (`core.ts`) posts only `machineId`, `windowDays`, and `sessions`. Treat those extras as forward-compatible, not guaranteed present.
 - `GET /profile/:login` is additive-only: newer fields (`tokensAllTime`, and on `insights`: `depth`, `economics`, `stack`, `tagline`, `featuredCardKeys`, `deckMonth`, `sampleSessions`, `windowDays`, `githubVerified`) are all optional/nullable, and the web (`useProfile.ts`) tolerates their absence. `insights.locked.reason` is `no_consent | forging`.
 - `StoryDoc` gained `tagline` and `arc` (person-first); `sessionsAnalyzed`/`windowDays` are server-stamped. The web mirrors `StoryDoc` by hand (`StoryPage.tsx`) — keep it in sync with `db/schema.ts`.
 

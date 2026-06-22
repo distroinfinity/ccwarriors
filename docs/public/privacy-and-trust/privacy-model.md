@@ -27,8 +27,7 @@ Opting in ("GO ALL-IN") adds, after the full disclosure:
 
 - **Per-session counts and summaries** — prompts, interrupts, tool calls, parallel agents, session timing, model names. Uploaded at most every 6 hours.
 - **Hashed git outcomes** — commits, lines added/deleted, test files touched, where the repo and branch are identified only by salted hashes. The salt lives in your config and never uploads — nobody, including us, can reverse which repo is which.
-- **Your top prompts** — the short prompts you repeat most, secrets stripped on your machine first.
-- **Redacted transcripts** — to write your story page: your prompts (secrets, keys, and emails stripped before upload; redaction errs toward removing too much) and tool-call **names** — never tool inputs, file paths, or commands. Used once to generate the story, then **deleted**; only the finished story is kept.
+- **Redacted transcripts** — to write your story page: your prompts (secrets, keys, and emails stripped before upload; redaction errs toward removing too much) and tool-call **names** — never tool inputs, file paths, or commands. Used once to generate the story, then **deleted**; only the finished story is kept. The current CLI does not send a separate "top prompt" field outside this story material.
 
 Still never sent: code, file contents, file paths, branch names, repo names, commit messages, or SHAs.
 

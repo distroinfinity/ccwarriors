@@ -293,8 +293,8 @@ const DEEP_UPLOADS: Array<{ k: string; v: string }> = [
   { k: "Timing summaries", v: "session length, active hours, gaps" },
   { k: "Model names", v: "which models you ran" },
   { k: "Hashed git outcomes", v: "commits, lines, tests as salted hashes" },
-  { k: "Your top prompts", v: "the short prompts you repeat most, secrets stripped" },
-  { k: "Redacted transcripts", v: "power your story page — analyzed once, then deleted" },
+  { k: "Redacted story prompts", v: "prompts and tool-call names for your story, secrets stripped" },
+  { k: "Story source cleanup", v: "analyzed once, then deleted" },
 ];
 const DEEP_NEVER =
   "Never your code, file contents, file paths, or repo names. Secrets are stripped on your machine before anything leaves it.";

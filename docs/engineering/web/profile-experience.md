@@ -15,14 +15,14 @@ The editorial header. When the server sent a numeric `craftScore` + `pillars`, i
 
 Badge logic lives here: `EarlyReadBadge` (provisional and `sampleSessions < 10`), `CalibratedBadge` (`!scoresArePercentiles` and `sampleSessions >= 10`), VERIFIED/UNVERIFIED (`trustTier === 1`), and a GITHUB badge (`githubVerified`). Without a craft score it falls back to the legacy archetype + `AxisBars` hero.
 
-Locked states: `LockedPanel` shows the owner the binary consent choice (STAY PRIVATE / GO ALL-IN), where GO ALL-IN posts `{consent:true, consentVersion:2}` to `/insights/consent`. `reason: "forging"` (consented, no data yet) and an owner who has consented both render `PendingPanel`, which polls every 6s and swaps the card in live. `DISCLOSURE_LIST`/`DEEP_UPLOADS` is the canonical "what deep mode uploads" list — reused verbatim as both the ask and the receipt so the promise and proof can't drift. The card exports to PNG (`html-to-image`, `data-noexport` strips interactive chrome) and shares to X.
+Locked states: `LockedPanel` shows the owner the binary consent choice (STAY PRIVATE / GO ALL-IN), where GO ALL-IN posts `{consent:true, consentVersion:2}` to `/insights/consent`. `reason: "forging"` (consented, no data yet) and an owner who has consented both render `PendingPanel`, which polls every 6s and swaps the card in live. `DISCLOSURE_LIST`/`DEEP_UPLOADS` is the canonical "what deep mode uploads" list — reused verbatim as both the ask and the receipt so the promise and proof can't drift. The card exports to PNG (`html-to-image`, `data-noexport` strips interactive chrome) and shares to X with the short `/:login?ref=x_share` profile URL.
 
 ## ByTheNumbers (`ByTheNumbers.tsx`)
 
 Replaced the old four side panels (EfficiencyPanel, GithubPanel, HabitsPanel — all deleted). One `<section>` with four `Group`s, each with a headline stat set and a collapsible "more":
 
 - **Outcomes** — `economics.costPerSurvivingLoc`, `efficiency.grade`; more: `commitsPer100Usd`, cache-read %, model mix.
-- **Sessions** — `depth.sessions` + window, `planModeSessionsPct`; more: total hours, avg/longest session (longest clamped at 10080 min = 7d), subagent spawns + peak parallel, max concurrent.
+- **Sessions** — `depth.sessions` + window, `planModeSessionsPct`; more: total hours, avg/longest session (longest clamped at 10080 min = 7d), subagent spawns + peak parallel, and max concurrent only when the server has that optional extra.
 - **GitHub** (titled "GitHub · verified" when stats exist) — stars, merged PRs; a persistent profile-link anchor; more: repos contributed to, longest streak, languages, since-year.
 - **Builds with** — top language + primary model from `stack`; more: per-language share bars.
 
@@ -34,7 +34,7 @@ A `Group` renders if it has any headline stat or a persistent anchor; the whole 
 
 ## Cards and scenes
 
-`YourCard` / `EnlistCard` render the collectible card; scene art is `CardScene.tsx` (`SceneDefs`), scene keys from the server (`users.cardScene`, default `fujiNight`, `apps/server/src/lib/scenes.ts`). Share links use the `/u/:login` form so crawler unfurls hit the OG rewrite (see [App Shell](app-shell-and-live-data.md)).
+`YourCard` / `EnlistCard` render the collectible card; scene art is `CardScene.tsx` (`SceneDefs`), scene keys from the server (`users.cardScene`, default `fujiNight`, `apps/server/src/lib/scenes.ts`). The homepage card shares the site root with `?ref=x_share`; profile and deck cards share short `/:login?ref=x_share` links. Only legacy `/u/:login` links currently hit the crawler OG rewrite (see [App Shell](app-shell-and-live-data.md)).
 
 ## Sponsor UI (`src/components/Sponsor/`)
 

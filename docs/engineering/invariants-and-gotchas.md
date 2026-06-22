@@ -28,7 +28,7 @@ Each of these is load-bearing. Breaking one isn't a style regression — it corr
 - **Two state directories.** CLI bundle + installer assets live in `~/.ccwarriors`; auth/config/caches live in `~/.claude-warriors`. Support cases regularly involve a user deleting one and not the other.
 - **`CCWARRIORS_HOME` means two different directories.** `core.ts:18` resolves it for the ref file (`~/.ccwarriors`); `insights.ts:330` resolves it for the insights cache (`~/.claude-warriors`). Setting it redirects *both* families into one directory. Known wart — fix it deliberately or leave it alone, don't half-fix it.
 - **Org boards poll REST; the global board is WS.** "Apex board is live but the org board lags" is normal (≤10s) — and when debugging freshness, check the right transport.
-- **The OG rewrite covers only `/u/:login` for bot UAs.** Short `/:login` links work for humans but won't unfurl — share buttons must emit `/u/` URLs (`vercel.json`).
+- **The OG rewrite covers only `/u/:login` for bot UAs.** Short `/:login` links work for humans but won't unfurl. Current profile/deck share buttons emit the short form, so rich-preview sharing needs either `/u/` share URLs or a bare-profile bot rewrite (`vercel.json`).
 - **`/:login/story` uses a static suffix on purpose** — a parameterized second segment collided with the Vercel rewrites (issue #62). Mirror the pattern for future sub-pages.
 - **Classic GitHub OAuth apps take exactly one callback URL.** Local OAuth needs a second app pointing at `http://localhost:8787/cli/callback`.
 - **The Railway build must build the CLI too.** `railway.json` runs `pnpm --filter claude-warriors build` because the server serves `/cli.js` as the installer fallback (`get.ccwarriors.xyz`). Trim the build command and the fallback 503s.

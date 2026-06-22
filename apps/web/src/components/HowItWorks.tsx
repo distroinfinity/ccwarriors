@@ -68,7 +68,7 @@ export function HowItWorks() {
         <p>
           Profile insights are opt-in. Deep mode adds per-session counts, timing summaries,
           model names, and hashed local Git outcomes. If you unlock the story tier, it can also
-          send redacted repeated prompts and redacted transcripts to write your story page.
+          send redacted prompts and tool-call names to write your story page.
           No code, file paths, commit messages, or SHAs are sent.
         </p>
       </section>
