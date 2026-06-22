@@ -36,9 +36,9 @@ function UpgradeBanner({ onConsentChanged }: { onConsentChanged: () => void }) {
       <div className="consent-upgrade-text">
         <b>Deep mode grew: your story is waiting.</b>
         <p>
-          One more yes adds two things to what we extract: your most-repeated short prompts, and redacted
-          transcripts that write your story page (analyzed once, then deleted). Secrets are stripped on your
-          machine before anything leaves it. Your next sync picks this up automatically.
+          One more yes adds redacted prompts and tool-call names that write your story page. Secrets are
+          stripped on your machine first, and the story source is analyzed once, then deleted. Your next
+          sync picks this up automatically.
         </p>
       </div>
       <button className="btn x" onClick={unlock} disabled={busy}>

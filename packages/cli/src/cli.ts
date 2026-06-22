@@ -288,8 +288,8 @@ const DEEP_V2_DISCLOSURE = `
 ${bold("Deep mode now extracts more (everything is in the docs):")}
   • per-session counts, timing, model names      ${dim("(as before)")}
   • hashed git outcomes — commits, lines, tests  ${dim("(as before)")}
-  • your most-repeated short prompts              ${dim("(new — secrets stripped on this machine)")}
-  • redacted transcripts for your story page      ${dim("(new — analyzed once, then deleted)")}
+  • redacted prompts + tool-call names            ${dim("(new — story only, secrets stripped)")}
+  • story source cleanup                          ${dim("(new — analyzed once, then deleted)")}
 ${dim("Never your code, file contents, file paths, or repo names.")}
 `;
 
