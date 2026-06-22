@@ -35,7 +35,7 @@ All routes are mounted in `createApp()` (`apps/server/src/app.ts`). Base URL in 
 |---|---|---|---|
 | POST | `/insights` | bearer | Aggregate behavioral payload (counts only) |
 | POST | `/insights/deep` | bearer | Per-session records; 403 `mode_off` unless `insightsMode === "deep"`; recomputes Craft Score and derives the aggregate row |
-| POST | `/insights/transcripts` | bearer | Redacted story sources (machineId, windowDays 1–60, ≤60 prompts ≤2000 chars each, tool-name counts) |
+| POST | `/insights/transcripts` | bearer | Redacted story sources (machineId, windowDays 1–60, ≤300 sessions + 800k-char guard, ≤60 prompts ≤2000 chars each, tool-name counts) |
 | GET/POST | `/insights/consent` | session | GET returns `{consent, visibility}`; POST takes `{consent?, visibility?}` — the web "GO ALL-IN" unlock and the public/private toggle |
 | GET/POST | `/insights/mode` | session/bearer | `{mode: "off"\|"deep"}`; mode is the source of truth, the legacy consent boolean is kept consistent |
 | POST | `/insights/pins` | session | `{pins: string[]}` ≤4 known card keys → `users.pinnedCards`; unknown key → 400 |

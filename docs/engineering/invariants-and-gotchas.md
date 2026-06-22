@@ -20,6 +20,8 @@ Each of these is load-bearing. Breaking one isn't a style regression — it corr
 9. **`story_sources` rows are purged after generation.** Documented user promise (`lib/story-service.ts`). Retention "for debugging" is a privacy incident.
 10. **Demo data never reaches production.** `SEED_DEMO`/`SIMULATE` are local-only; the prod board fills with real syncs only.
 11. **Tool keys are forever.** They're ccusage subcommand names *and* `usage_days.tool` values; renaming one orphans history. Add, don't rename (`lib/tools.ts`).
+12. **Craft never leaks to the public stream.** A leaderboard entry gets `craft` only through `craftEntryFor()` — `insightsConsent === true AND insightsVisibility === "public" AND craftScore != null`. A private user's craft must never reach the WS/REST board; revoking either flag strips it via `setCraft(id, undefined)`.
+13. **`sessionsAnalyzed` is server-stamped.** The story's session count comes from the actual sessions used, never the LLM's self-report (`lib/story.ts`).
 
 ## Gotchas
 
@@ -36,3 +38,6 @@ Each of these is load-bearing. Breaking one isn't a style regression — it corr
 - **PGlite ≠ Postgres.** Close enough for dev, but migrations and concurrency behavior differ; anything touching transactions or indexes needs a real-Postgres check before shipping.
 - **`/legal` is built but hidden** behind `HIDE_LEGAL = true` in `App.tsx` until Razorpay international activation needs it (issue #8).
 - **`config.ts` doesn't parse every env var.** `GATE_*`, `ADMIN_TOKEN`, `POSTHOG_*`, `NS_GUILD_ID`, `CLI_UPDATE_ENABLED` are read at their call sites — grep before assuming a var is dead.
+- **Deploy the server before the CLI** when changing the transcripts payload. The server caps sessions at 300; a newer CLI sending more to an old server 400s, while old CLI → new server is always safe. The CLI self-updates once the server is live.
+- **Story sampling is char-budget, not a session cap.** `transcripts.ts` packs to a ~500k-char budget (85% recent + 15% stratified older), not "the 30 newest" — the old cap gave active users ~10% coverage. Don't reintroduce a flat recency cap.
+- **`stack.ts` deliberately omits `md`/`json`/`yaml`/`toml`.** Mapping them would let README and CI edits outrank real languages on the "builds with" panel. The unknown-extension path is "omit", not "guess" — keep it that way.

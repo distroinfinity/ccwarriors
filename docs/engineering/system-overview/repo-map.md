@@ -5,7 +5,7 @@ description: One line per file, plus the mirrored pairs that drift if you edit o
 
 # Repo Map
 
-pnpm workspace. Package names: `claude-warriors` (= `packages/cli`, binary `ccwarriors`), `server`, `web`. Root: `railway.json` + `vercel.json` (deploy config-as-code), `pnpm-workspace.yaml`, `scripts/` (zero-dep PNG generators: logo, OG banner, shoutout cards).
+pnpm workspace globs `apps/*`, `packages/*`, `tools/*`. Package names: `claude-warriors` (= `packages/cli`, binary `ccwarriors`), `server`, `web`, plus `tools/video` (a Remotion launch-video toolkit, not deployed). Root: `railway.json` + `vercel.json` (deploy config-as-code), `pnpm-workspace.yaml`, `scripts/` (zero-dep PNG generators: logo, OG banner, shoutout cards).
 
 ## apps/server/src
 
@@ -23,7 +23,8 @@ pnpm workspace. Package names: `claude-warriors` (= `packages/cli`, binary `ccwa
 | `lib/pricing.ts` + `lib/litellm-prices.json` | server-authoritative pricing, committed snapshot, 24h refresh |
 | `lib/plausibility.ts` | the gates (all `GATE_*`-tunable) |
 | `lib/tier.ts`, `lib/efficiency.ts`, `lib/insights.ts`, `lib/insight-cards.ts` | derived profile metrics |
-| `lib/craft-score.ts` + `craft-score-service.ts` | pillar math + eager recompute on deep upload |
+| `lib/craft-score.ts` + `craft-score-service.ts` | pillar math, outcome economics, eager recompute on deep upload |
+| `lib/stack.ts` | "builds with" languages from agent-edited file extensions |
 | `lib/story.ts` + `lib/story-service.ts` | LLM story generation, 24h throttle, source purge |
 | `lib/github-stats.ts` + `github-stats-service.ts` | public footprint fetch, 6h TTL, serve-stale |
 | `lib/orgs.ts` | org registry (slug → name, guild env var) |
@@ -57,7 +58,7 @@ pnpm workspace. Package names: `claude-warriors` (= `packages/cli`, binary `ccwa
 | `useLeaderboard.ts` / `useOrgBoard.ts` / `useMe.ts` / `useProfile.ts` | WS board, org polling, session, profile fetch |
 | `orgs.ts` | org registry — **mirror of server `lib/orgs.ts`** |
 | `sponsorTiers.ts` | donation tiers (single source of truth for amounts) |
-| `components/` | board UI (`Leaderboard`, `FilterChips`, `YourCard`, `CardScene`, `Marquee`, …), `Profile/` (panels + `OwnerControls` + `StoryPage`), `Sponsor/` (Razorpay/crypto/wall), `HowItWorks` |
+| `components/` | board UI (`Leaderboard`, `FilterChips`, `YourCard`, `CardScene`, `Marquee`, …), `Profile/` (`ArchetypeCard`, `ByTheNumbers`, `InsightCards`, `RhythmPanel`, `StoryCloser`, `StoryPage`, `OwnerControls`), `Sponsor/` (Razorpay/crypto/wall), `HowItWorks` |
 
 ## Mirrored by design — edit both or drift
 
@@ -65,4 +66,5 @@ pnpm workspace. Package names: `claude-warriors` (= `packages/cli`, binary `ccwa
 |---|---|
 | `apps/server/src/lib/tools.ts` ↔ `packages/cli/src/tools.ts` | tool keys = ccusage subcommand names = `usage_days.tool` values |
 | `apps/server/src/lib/orgs.ts` ↔ `apps/web/src/orgs.ts` | org slugs, names, accents |
+| `apps/server/src/db/schema.ts` `StoryDoc` ↔ `apps/web/src/components/Profile/StoryPage.tsx` | story doc shape (hand-kept — no shared types module) |
 | `HowItWorks.tsx` ↔ `docs/public/` | prose claims about the pipeline — nothing enforces these; they just go stale |

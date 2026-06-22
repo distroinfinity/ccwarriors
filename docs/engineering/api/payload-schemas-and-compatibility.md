@@ -60,7 +60,15 @@ Tool keys must match the registry (`lib/tools.ts`, mirrored in `packages/cli/src
 }
 ```
 
-`count` / `top30d` / `topAllTime` are **byte-compatible legacy keys** — deployed pages from before the multi-tool era read exactly these. `byTool` / `tools` / `totals` are additive; the client treats their absence as "old server" and hides the chips (`apps/web/src/useLeaderboard.ts`). `Entry`: `{ id, githubLogin, avatarUrl, xHandle?, tier, cardScene, cost30d, costAllTime, breakdown?, orgs? }`.
+`count` / `top30d` / `topAllTime` are **byte-compatible legacy keys** — deployed pages from before the multi-tool era read exactly these. `byTool` / `tools` / `totals` are additive; the client treats their absence as "old server" and hides the chips (`apps/web/src/useLeaderboard.ts`). `Entry`: `{ id, githubLogin, avatarUrl, xHandle?, tier, cardScene, cost30d, costAllTime, breakdown?, orgs?, spark?, craft? }`.
+
+Two more additive `Entry` fields (`lib/leaderboard-store.ts`): `spark` is an 8-bucket 30-day cost sparkline, omitted when the user has no in-window spend; `craft` is `{ score, tier }`, set **only** when `insightsConsent === true AND insightsVisibility === "public" AND craftScore != null` (centralized in `craftEntryFor()` — the single leak-checked gate). Both absent on older entries/servers; the client renders neither when missing.
+
+## Insights, transcripts, and story payloads
+
+- `POST /insights/transcripts` accepts up to **300** sessions (raised from 30 in the #79 metrics audit) with an 800k-char guard; the CLI ships ≤250 packed to a 500k-char budget. **Rollout ordering matters: deploy the server before the CLI** — a new CLI sending >30 sessions to an old server would 400; old CLI → new server is always safe. The CLI self-updates after the server is live.
+- `GET /profile/:login` is additive-only: newer fields (`tokensAllTime`, and on `insights`: `depth`, `economics`, `stack`, `tagline`, `featuredCardKeys`, `deckMonth`, `sampleSessions`, `windowDays`, `githubVerified`) are all optional/nullable, and the web (`useProfile.ts`) tolerates their absence. `insights.locked.reason` is `no_consent | forging`.
+- `StoryDoc` gained `tagline` and `arc` (person-first); `sessionsAnalyzed`/`windowDays` are server-stamped. The web mirrors `StoryDoc` by hand (`StoryPage.tsx`) — keep it in sync with `db/schema.ts`.
 
 ## Self-update contract
 

@@ -28,7 +28,9 @@ What stays local, always: cwd, branch names, file paths, file contents, tool inp
 
 ## Transcripts (`src/transcripts.ts`, v2 only)
 
-Up to 30 most-recent in-window sessions; per session: start day, duration, model, interrupt count, up to 60 user prompts (each redacted, truncated to 2000 chars), and tool-call **names** with counts — never inputs, paths, or commands. Uploads to `/insights/transcripts` alongside a successful deep upload, riding the same 6h window.
+Per session: start day, duration, model, interrupt count, up to 60 user prompts (each redacted, truncated to 2000 chars), and tool-call **names** with counts — never inputs, paths, or commands. Subagent sidechains (`isSidechain`) are skipped. Uploads to `/insights/transcripts` alongside a successful deep upload, riding the same 6h window.
+
+Selection is **char-budget packed, not a recency cap** (the old `MAX_STORY_SESSIONS = 30` over-indexed on the last few days — ~10% coverage for active users). The collector parses every in-window file (files >50MB skipped), filters trivial sessions (`MIN_SESSION_PROMPTS = 2`, `MIN_SESSION_MINUTES = 2`), then packs toward `STORY_CHAR_BUDGET = 500_000`: 85% recency-greedy over "active" projects, then a stratified older sample across four 10-day slices of the 40-day window (scored so dense projects with real edits beat one-off pokes at dead repos). Stale projects (`STALE_PROJECT_DAYS = 14` with ≤2 sessions) are deprioritized; sparse users (<5 eligible sessions) keep everything. Hard ceiling `MAX_STORY_SESSIONS = 250` client-side (the server allows 300). Project directory names are used for local scoring only and never leave the machine.
 
 Redaction (`src/redact.ts`) strips API keys (`sk-`, `ghp_`, `xox-`), AWS `AKIA` keys, JWTs, URL credentials, `secret=`-style assignments, long hex/base64 blobs, and email addresses. Fail-open in the safe direction: over-redaction is acceptable, under-redaction is not.
 

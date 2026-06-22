@@ -23,19 +23,20 @@ Sent: raw token counts per tool, per day, per model — literally:
 
 ## Level 1 — deep mode (`ccwarriors insights on`)
 
-Adds per-session **counts and summaries**: prompts per session, interrupts, tool calls, parallel agents, session timing, model names, and Git outcomes (commits, lines added/deleted, test files touched) where the repo and branch are identified only by salted hashes. The salt lives in your config and never uploads — nobody, including us, can reverse which repo is which. Uploads at most every 6 hours.
+Opting in ("GO ALL-IN") adds, after the full disclosure:
 
-Still never sent: code, paths, branch names, commit messages, SHAs, prompt text.
+- **Per-session counts and summaries** — prompts, interrupts, tool calls, parallel agents, session timing, model names. Uploaded at most every 6 hours.
+- **Hashed git outcomes** — commits, lines added/deleted, test files touched, where the repo and branch are identified only by salted hashes. The salt lives in your config and never uploads — nobody, including us, can reverse which repo is which.
+- **Your top prompts** — the short prompts you repeat most, secrets stripped on your machine first.
+- **Redacted transcripts** — to write your story page: your prompts (secrets, keys, and emails stripped before upload; redaction errs toward removing too much) and tool-call **names** — never tool inputs, file paths, or commands. Used once to generate the story, then **deleted**; only the finished story is kept.
+
+Still never sent: code, file contents, file paths, branch names, repo names, commit messages, or SHAs.
 
 `ccwarriors insights --dry-run` prints the exact payload locally without sending it. `ccwarriors insights off` turns it off **and deletes your deep data server-side**.
 
-## Level 2 — story unlock
-
-To write your story page, the CLI additionally sends your most-repeated short prompt and redacted transcripts: your prompts (secrets, keys, and emails stripped before upload; redaction errs on the side of removing too much) and tool-call **names** — never tool inputs, file paths, or commands. The server uses them once to generate the story, then **deletes the source material**. Only the finished story document is kept.
-
 ## What the server stores
 
-Your GitHub login and avatar; cost totals, per-tool split, and the daily token counts behind them; a GitHub OAuth token with `read:user` scope (public-profile reads for your GitHub stats panel). Deep mode adds the profile metrics; a story unlock adds the derived story doc. That's the whole row.
+Your GitHub login and avatar; cost totals, per-tool split, and the daily token counts behind them; a GitHub OAuth token with `read:user` scope (public-profile reads for your GitHub stats panel). Deep mode adds the profile metrics and, once generated, the derived story document (the transcripts behind it are deleted). That's the whole row.
 
 ## Telemetry
 

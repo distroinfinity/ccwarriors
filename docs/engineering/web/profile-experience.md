@@ -7,26 +7,39 @@ description: The profile and story component trees, cards, and sponsor UI.
 
 ## ProfilePage (`src/components/Profile/ProfilePage.tsx`)
 
-Composes panels off one `/profile/:login` response — each panel renders only when its data block exists (card doctrine: a missing block means "no data", never fabricated zeros):
+Renders off one `/profile/:login` response (`useProfile.ts` owns the `Profile` type) in a fixed order: `ArchetypeCard` → `ByTheNumbers` → `InsightCards` → `RhythmPanel` → `StoryCloser` → `OwnerControls`. The insight deck only exists once insights are unlocked; the page derives `hasStory` from whether the deck contains a `story` card.
 
-- `RhythmPanel` — daily-cost heatmap + streaks.
-- `EfficiencyPanel` — cache-read grade, model mix, tokens/day.
-- `GithubPanel` — the verified public footprint.
-- `HabitsPanel`, `InsightCards` (deck with owner-pinned cards first, `pinnedCards` ≤4), `ArchetypeCard` — craft score, pillars, tier; provisional badge below the percentile population floor.
-- `OwnerControls` — rendered only for the owner: the insights unlock ("GO ALL-IN" → `POST /insights/consent`), the public/private visibility toggle, a "what's stored" disclosure, and a two-step armed purge of deep data. Consent changes call `refetch` so the page updates without a reload.
+## ArchetypeCard (`ArchetypeCard.tsx`) — the masthead
 
-`StoryPage.tsx` (`/:login/story`) has three states: locked (no consent / not public), generating (poll with a stalled notice), and ready (renders the `StoryDoc` — narrative, what-you-built, decision patterns, strengths, growth areas, archetypes, cryptic prompt).
+The editorial header. When the server sent a numeric `craftScore` + `pillars`, it renders `CraftScoreHero`: a verdict line (the story `tagline`, else archetype + growth edge), the big `CRAFT` figure with forge tier, top-signal pillar, and trust badges, a strength-signature sparkbar, and a collapsible "full score breakdown" (pillar bars + provenance line + the `CraftExplainer`). Pillar metadata (`PILLAR_INFO`) carries weight and `kind` (`outcome` vs `behavioral`) and a plain-language tip per pillar.
+
+Badge logic lives here: `EarlyReadBadge` (provisional and `sampleSessions < 10`), `CalibratedBadge` (`!scoresArePercentiles` and `sampleSessions >= 10`), VERIFIED/UNVERIFIED (`trustTier === 1`), and a GITHUB badge (`githubVerified`). Without a craft score it falls back to the legacy archetype + `AxisBars` hero.
+
+Locked states: `LockedPanel` shows the owner the binary consent choice (STAY PRIVATE / GO ALL-IN), where GO ALL-IN posts `{consent:true, consentVersion:2}` to `/insights/consent`. `reason: "forging"` (consented, no data yet) and an owner who has consented both render `PendingPanel`, which polls every 6s and swaps the card in live. `DISCLOSURE_LIST`/`DEEP_UPLOADS` is the canonical "what deep mode uploads" list — reused verbatim as both the ask and the receipt so the promise and proof can't drift. The card exports to PNG (`html-to-image`, `data-noexport` strips interactive chrome) and shares to X.
+
+## ByTheNumbers (`ByTheNumbers.tsx`)
+
+Replaced the old four side panels (EfficiencyPanel, GithubPanel, HabitsPanel — all deleted). One `<section>` with four `Group`s, each with a headline stat set and a collapsible "more":
+
+- **Outcomes** — `economics.costPerSurvivingLoc`, `efficiency.grade`; more: `commitsPer100Usd`, cache-read %, model mix.
+- **Sessions** — `depth.sessions` + window, `planModeSessionsPct`; more: total hours, avg/longest session (longest clamped at 10080 min = 7d), subagent spawns + peak parallel, max concurrent.
+- **GitHub** (titled "GitHub · verified" when stats exist) — stars, merged PRs; a persistent profile-link anchor; more: repos contributed to, longest streak, languages, since-year.
+- **Builds with** — top language + primary model from `stack`; more: per-language share bars.
+
+A `Group` renders if it has any headline stat or a persistent anchor; the whole panel returns null if every group is empty. `fmtUsd` keeps sub-cent precision for per-surviving-line costs (where `formatUsd`'s 2 decimals would collapse to `$0.00`).
+
+## StoryPage / StoryCloser
+
+`StoryCloser.tsx` is the profile's invite into the story ("Who is `<login>` behind the tools?"), rendered only when a story card exists. `StoryPage.tsx` (`/:login/story`) fetches `/profile/:login/story` and renders the `StoryDoc`: masthead (`FIELD REPORT · N SESSIONS · LAST N DAYS · date`), tagline lede, "The developer behind the tools" (narrative), "How you think with AI" (decision patterns + AI-archetype stamps), Strengths / Growth edges, "The arc", "In your own words" (cryptic prompt), "Lately working on" (`whatYouBuilt`). Its `StoryDoc` interface is a hand-kept mirror of the server type — keep in sync when the server's changes.
 
 ## Cards and scenes
 
-`YourCard` / `EnlistCard` render the collectible warrior card; scene art comes from `CardScene.tsx` (`SceneDefs` SVG defs), scene keys from the server (`users.cardScene`, default `fujiNight`, registry in `apps/server/src/lib/scenes.ts`). The card carries the "Copy README badge" action — the snippet points at `/badge/:login.svg` and links to the profile with `?ref=badge`.
-
-Share links use the `/u/:login` form so crawler unfurls hit the OG rewrite (see [App Shell](app-shell-and-live-data.md)).
+`YourCard` / `EnlistCard` render the collectible card; scene art is `CardScene.tsx` (`SceneDefs`), scene keys from the server (`users.cardScene`, default `fujiNight`, `apps/server/src/lib/scenes.ts`). Share links use the `/u/:login` form so crawler unfurls hit the OG rewrite (see [App Shell](app-shell-and-live-data.md)).
 
 ## Sponsor UI (`src/components/Sponsor/`)
 
-`Sponsor.tsx` hosts three tabs: Razorpay (`AmountGrid` over `sponsorTiers.ts` — Wood $4, Stone $8, Iron $16, Gold $32, Diamond $64, Netherite $256, custom $1–1000, default Iron; `RazorpayButton` runs the order/checkout/verify flow), crypto (`CryptoPanel` — a chain hides when its `VITE_EVM_ADDRESS`/`VITE_SOL_ADDRESS` is unset, the tab hides when both are), and `SponsorsWall` (merges `GET /sponsors` with the static GitHub-Sponsors SVG).
+`Sponsor.tsx` hosts Razorpay (`AmountGrid` over `sponsorTiers.ts` — Wood $4 → Netherite $256, custom $1–1000, default Iron; `RazorpayButton` runs order/checkout/verify), crypto (`CryptoPanel` — a chain hides when its `VITE_EVM_ADDRESS`/`VITE_SOL_ADDRESS` is unset, the tab hides when both are), and `SponsorsWall`.
 
 ## Keep in sync by hand
 
-`HowItWorks.tsx` is prose about the pipeline (tool list, intervals, privacy claims). It has no data dependency on the server, so nothing breaks when it drifts — it just lies. When you change ingest behavior, the daemon's timing, or the tool registry, update it and the public docs together.
+`HowItWorks.tsx` and the `StoryDoc` interface in `StoryPage.tsx` have no compile-time link to the server — nothing breaks when they drift, they just go stale. Update them alongside the server when the pipeline, the tool registry, or the story shape changes.

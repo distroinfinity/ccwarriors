@@ -1,28 +1,42 @@
 ---
 title: Deep Insights and Stories
-description: The opt-in tier — two consent levels, what each sends, and how to leave.
+description: The opt-in tier — what it sends, what it unlocks, and how to leave.
 ---
 
 # Deep Insights and Stories
 
-Everything on this page is **off by default**. There are two consent levels, and the CLI prints exactly what each one sends — in plain text, in your terminal — before asking. The web's "GO ALL-IN" unlock goes through the same disclosure.
+Deep mode is **off by default**. Turning it on is one explicit choice — "GO ALL-IN" on your profile, or `ccwarriors insights on` in the terminal — and the CLI prints the full disclosure before anything is sent.
 
-## Level 1: deep insights (`ccwarriors insights on`)
+## What it sends
 
-Sends per-session **counts and summaries** from your local agent sessions: prompts, interrupts, tool calls, parallel agents, timing, model names, and Git outcomes (commits, lines, test files) where repos and branches are identified only by salted hashes that can't be reversed — the salt never leaves your machine. Uploads at most every 6 hours.
+The exact list, shown to you verbatim before you opt in:
 
-What it unlocks: working-style axes and archetype, habit stats, the insight-card deck, and your **Craft Score** — six pillars (Direction, Verification, Autonomy, Yield, Orchestration, Throughput; the verification and yield pillars weigh the most because they're hardest to game) with tiers **Apprentice → Journeyman → Artisan → Mastersmith**.
+- **Per-session counts** — prompts, tool calls, plan-mode turns.
+- **Timing summaries** — session length, active hours, gaps.
+- **Model names** — which models you ran.
+- **Hashed git outcomes** — commits, lines, and tests as salted hashes (the salt never leaves your machine, so no repo is identifiable).
+- **Your top prompts** — the short prompts you repeat most, secrets stripped on your machine first.
+- **Redacted transcripts** — to write your story page; analyzed once, then deleted.
 
-Not sure? `ccwarriors insights --dry-run` builds the exact payload and prints it locally without sending a byte.
+**Never** your code, file contents, file paths, or repo names. Secrets are stripped locally before anything leaves your machine.
 
-## Level 2: unlock your story
+## What it unlocks
 
-The story page is an LLM-written narrative of how you actually work — what you built, your decision patterns, strengths, growth edges — at `ccwarriors.xyz/<login>/story`.
+- **Craft Score** and the six pillars ([on the masthead](profile-pages.md#the-masthead)).
+- **Archetype and axes** — your working-style fingerprint.
+- **Outcome economics** — cost per surviving line, commits per $100.
+- **Session depth** — plan-mode share, subagent and concurrency stats, session lengths.
+- **Builds with** — your stack from real agent edits.
+- **The insight deck** and **your story page**.
 
-Writing it requires more than counts, so it's a separate consent: the CLI additionally sends your most-repeated short prompt and **redacted** transcripts (secrets, keys, and emails stripped before upload; tool calls reduced to names only — never inputs, paths, or commands). The server uses them once to generate the story, then **deletes the source material** — only the finished story document is kept. Stories regenerate at most once a day.
+## Your story
+
+The story page (`ccwarriors.xyz/<login>/story`) is an editorial narrative of how you work, written by an LLM from your redacted transcripts: a one-line identity tagline, the developer behind the tools, how you think with AI, your strengths and growth edges, how you've changed over the window, and a prompt in your own words. It's built from a broad sample of your recent and most substantive sessions — the header states exactly how many ("FIELD REPORT · N SESSIONS · LAST 40 DAYS") — and regenerates at most once a day. The transcripts behind it are deleted right after the narrative is generated; only the finished story is kept.
 
 ## Control and exit
 
-- **Public/private toggle** on your profile — hide insights without deleting anything. Visitors can't distinguish "private" from "never opted in".
-- **`ccwarriors insights off`** — disables deep mode and purges your deep data server-side.
-- The full data inventory per level: [What Leaves Your Machine](../privacy-and-trust/privacy-model.md).
+- **`ccwarriors insights --dry-run`** builds the exact payload and prints it locally without sending a byte.
+- **Public/private toggle** on your profile hides insights without deleting anything.
+- **`ccwarriors insights off`** disables deep mode and purges your deep data server-side.
+
+The full per-mode data inventory is in [What Leaves Your Machine](../privacy-and-trust/privacy-model.md).

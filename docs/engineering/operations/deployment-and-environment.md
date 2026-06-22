@@ -52,6 +52,10 @@ Note: `apps/server/src/config.ts` zod-parses only the core set; `GATE_*`, `ADMIN
 
 **CLI:** see the [env table](../cli/installer-auth-and-sync.md#environment-variables) — `CCWARRIORS_API`/`CCWARRIORS_WEB` are the ones you need for pointing a CLI at a local server.
 
+## Rollout ordering
+
+When a deploy changes the transcripts/insights payload, **ship the server first**. The server caps story sessions at 300; a newer CLI sending more to an old server returns 400, whereas an old CLI against a new server is always safe. The CLI fleet self-updates after the server is live, so server-first converges cleanly.
+
 ## Go-live checklist
 
 - [ ] GitHub OAuth app created; Client ID/Secret in Railway.

@@ -36,7 +36,7 @@ Total latency, session write → row moves on the global board: ~13s (12s deboun
 
 ## A profile view
 
-Human: SPA route `/:login` → `GET /profile/:login` → store lookup (case-insensitive) + `usage_days` rhythm/efficiency + `github_stats` + insights/craft (if consented) in one JSON.
+Human: SPA route `/:login` → `GET /profile/:login` → store lookup (case-insensitive) + `usage_days` rhythm/efficiency + `github_stats` + insights/craft/economics/stack/depth (if consented) in one JSON. Consented public warriors also carry a `craft` chip on the board itself, set through the leak-checked `craftEntryFor()` gate.
 
 Crawler: pastes share link `/u/:login` → Vercel UA rewrite → `GET /og/u/:login` → meta tags + human meta-refresh. This is the only server-rendered HTML in the system.
 

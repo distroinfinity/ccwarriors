@@ -5,7 +5,9 @@ description: Boards, tiers, tool filters, and your card.
 
 # The Leaderboard
 
-The board at [ccwarriors.xyz](https://ccwarriors.xyz) shows the top 100 warriors, live. Two views: **30-day burn** (the default — what you're spending now) and **all-time** (career total). Rows re-sort in real time as people sync; updates land about a second after any sync, no refresh needed.
+The board at [ccwarriors.xyz](https://ccwarriors.xyz) shows the top 100 warriors, live. Two views: **30-day burn** (the default — what you're spending now) and **all-time** (career total). Rows re-sort in real time as people sync; updates land about a second after any sync, no refresh needed. Ties break by all-time spend, then by who synced first — so the order is stable, not random.
+
+Each row carries a little 8-bar **sparkline** of your real 30-day spend shape, and — if you've opted into deep mode and made your insights public — a **Craft chip** showing your Craft Score right on the board. The hire-grade number, next to the burn number.
 
 ## Tiers
 
