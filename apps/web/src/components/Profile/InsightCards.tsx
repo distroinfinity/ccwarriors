@@ -116,6 +116,7 @@ function DeckCard({
 
 export function InsightCards({
   cards,
+  loading = false,
   login,
   isOwner = false,
   pinnedCards = [],
@@ -126,6 +127,7 @@ export function InsightCards({
   deckMonth,
 }: {
   cards: InsightCard[];
+  loading?: boolean;
   login: string;
   isOwner?: boolean;
   pinnedCards?: string[];
@@ -137,6 +139,20 @@ export function InsightCards({
 }) {
   const [busy, setBusy] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  if (loading) {
+    return (
+      <section className="deck">
+        <div className="deck-header">
+          <span className="deck-label mono">THIS MONTH</span>
+        </div>
+        <div className="deck-grid">
+          <div className="sk-block sk-deck" style={{ marginTop: 0 }} aria-busy="true" />
+          <div className="sk-block sk-deck" style={{ marginTop: 0 }} aria-busy="true" />
+          <div className="sk-block sk-deck" style={{ marginTop: 0 }} aria-busy="true" />
+        </div>
+      </section>
+    );
+  }
   if (!cards || cards.length === 0) return null;
 
   // Default view: this month's featured subset. Fall back to all cards when the

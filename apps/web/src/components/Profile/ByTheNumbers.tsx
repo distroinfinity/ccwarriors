@@ -53,7 +53,7 @@ function Group({ title, headline, persistent, more }: { title: string; headline:
   );
 }
 
-export function ByTheNumbers({ profile }: { profile: Profile }) {
+export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile; insightsLoading: boolean }) {
   const ins: ProfileInsights | null = profile.insights.locked ? null : profile.insights;
   const e = profile.efficiency;
   const g = profile.github;
@@ -150,6 +150,20 @@ export function ByTheNumbers({ profile }: { profile: Profile }) {
     { title: g ? "GitHub · verified" : "GitHub", headline: ghHead, persistent: ghPersistent, more: ghMore },
     { title: "Builds with", headline: stackHead, persistent: null, more: stackMore },
   ];
+  if (insightsLoading) {
+    return (
+      <section className="bynum">
+        <div className="seclabel">By the numbers</div>
+        <div className="bynum-grid">
+          {ghPersistent || ghHead.length > 0 ? (
+            <Group title={g ? "GitHub · verified" : "GitHub"} headline={ghHead} persistent={ghPersistent} more={ghMore} />
+          ) : null}
+          <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
+          <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
+        </div>
+      </section>
+    );
+  }
   if (groups.every((grp) => grp.headline.length === 0 && !grp.persistent)) return null;
 
   return (
