@@ -21,17 +21,6 @@ function NotFound({ login }: { login: string }) {
   );
 }
 
-// Structured skeleton shown only while the (fast) core call is in flight.
-function ProfileSkeleton() {
-  return (
-    <div className="profile" aria-busy="true">
-      <div className="sk-block sk-mast" />
-      <div className="sk-block sk-section" />
-      <div className="sk-block sk-deck" />
-    </div>
-  );
-}
-
 // Type-filler used while insights are loading or errored. Never shown as a real
 // consent state: ArchetypeCard intercepts the loading and error flags before
 // reading insights, and the other sections treat a locked value as
@@ -44,21 +33,24 @@ export function ProfilePage({ login }: { login: string }) {
   const core = useProfile(login, refreshKey);
   const insightsState = useProfileInsights(login, refreshKey);
 
-  const title = core.status === "ready" ? `${core.profile.login} · CCWarriors` : null;
+  const coreReady = core.status === "ready";
+  const title = coreReady ? `${core.profile.login} · CCWarriors` : null;
   useEffect(() => {
     if (title) document.title = title;
   }, [title]);
 
-  if (core.status === "loading") return <ProfileSkeleton />;
   if (core.status === "notfound") return <NotFound login={login} />;
 
   const insightsLoading = insightsState.status === "loading";
   const insightsError = insightsState.status === "error";
   const insights: ProfileInsights | LockedInsights =
     insightsState.status === "ready" ? insightsState.insights : PLACEHOLDER_INSIGHTS;
-  const p: Profile = { ...core.profile, insights };
+  // Null until core arrives. Each section renders its own in-place skeleton for a
+  // null profile, so the page is one continuous skeleton-to-content fill — the
+  // masthead identity simply pops in, no full-tree swap and no "cleared out" flash.
+  const p: Profile | null = coreReady ? { ...core.profile, insights } : null;
 
-  const cards = !p.insights.locked ? p.insights.cards : [];
+  const cards = p && !p.insights.locked ? p.insights.cards : [];
   const hasStory = cards.some((c) => c.key === "story");
 
   return (
@@ -67,19 +59,19 @@ export function ProfilePage({ login }: { login: string }) {
       <ByTheNumbers profile={p} insightsLoading={insightsLoading} />
       <InsightCards
         cards={cards}
-        loading={insightsLoading}
-        login={p.login}
-        isOwner={!!p.owner}
-        pinnedCards={!p.insights.locked ? (p.insights.pinnedCards ?? []) : []}
+        loading={!coreReady || insightsLoading}
+        login={login}
+        isOwner={!!p?.owner}
+        pinnedCards={p && !p.insights.locked ? (p.insights.pinnedCards ?? []) : []}
         onPinsChanged={refetch}
-        sampleSessions={!p.insights.locked ? p.insights.sampleSessions : undefined}
-        windowDays={!p.insights.locked ? p.insights.windowDays : undefined}
-        featuredKeys={!p.insights.locked ? p.insights.featuredCardKeys : undefined}
-        deckMonth={!p.insights.locked ? p.insights.deckMonth : undefined}
+        sampleSessions={p && !p.insights.locked ? p.insights.sampleSessions : undefined}
+        windowDays={p && !p.insights.locked ? p.insights.windowDays : undefined}
+        featuredKeys={p && !p.insights.locked ? p.insights.featuredCardKeys : undefined}
+        deckMonth={p && !p.insights.locked ? p.insights.deckMonth : undefined}
       />
       <RhythmPanel profile={p} />
-      <StoryCloser login={p.login} hasStory={hasStory} />
-      <OwnerControls profile={p} onConsentChanged={refetch} />
+      {coreReady && <StoryCloser login={login} hasStory={hasStory} />}
+      {coreReady && p && <OwnerControls profile={p} onConsentChanged={refetch} />}
     </div>
   );
 }

@@ -387,9 +387,37 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
   );
 }
 
-export function ArchetypeCard({ profile, insightsLoading, insightsError, onConsentChanged }: { profile: Profile; insightsLoading: boolean; insightsError: boolean; onConsentChanged: () => void }) {
+// Masthead skeleton shown while the core call is in flight. Mirrors the real
+// arch-card shell so that when core arrives the identity simply fills in place —
+// same component instance, no full-tree swap.
+function ArchetypeCardSkeleton() {
+  return (
+    <div className="arch-wrap">
+      <div className="arch-card">
+        <div className="arch-head mast-head">
+          <div className="mast-id">
+            <span className="mast-kicker mono">FIELD REPORT · CCWARRIORS</span>
+            <div className="mast-namerow">
+              <span className="sk-block" style={{ width: 46, height: 46, borderRadius: "50%" }} aria-busy="true" />
+              <span className="sk-block" style={{ width: 170, height: 26 }} aria-busy="true" />
+            </div>
+            <span className="sk-block" style={{ width: 220, height: 12, marginTop: 8, display: "block" }} aria-busy="true" />
+          </div>
+          <div className="arch-brand"><ClawdLogo /></div>
+        </div>
+        <div className="sk-block" style={{ height: 150, marginTop: 14 }} aria-busy="true" />
+        <div className="arch-foot mono">
+          <span className="sk-block" style={{ width: 150, height: 11, display: "inline-block" }} aria-busy="true" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ArchetypeCard({ profile, insightsLoading, insightsError, onConsentChanged }: { profile: Profile | null; insightsLoading: boolean; insightsError: boolean; onConsentChanged: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
+  if (!profile) return <ArchetypeCardSkeleton />;
   const unlocked = !profile.insights.locked;
   const insights = unlocked ? (profile.insights as ProfileInsights) : null;
 
