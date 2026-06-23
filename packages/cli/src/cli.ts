@@ -13,6 +13,13 @@ import { collectTranscripts } from "./transcripts.js";
 
 declare const __BUILD_ID__: string;
 
+// Canonical install commands — shown in `--help` and in the self-update
+// fallback nudge. Keep in sync with apps/web (the YourCard reinstall nudge)
+// and apps/web/public/install.sh, which can't import this constant.
+const INSTALL_SH = "curl -fsSL https://ccwarriors.xyz/install.sh | bash";
+const INSTALL_PS1 = "irm https://ccwarriors.xyz/install.ps1 | iex";
+const installCommand = (): string => (process.platform === "win32" ? INSTALL_PS1 : INSTALL_SH);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -23,8 +30,8 @@ ${bold("ccwarriors")} — sync your AI coding costs and climb the leaderboard
 ${dim("Counts every agent ccusage can read: Claude Code, Codex, Gemini, Copilot, OpenCode, Amp, and friends.")}
 
 ${bold("INSTALL")}
-  macOS/Linux:  curl -fsSL https://ccwarriors.xyz/install.sh | bash
-  Windows:      irm https://ccwarriors.xyz/install.ps1 | iex
+  macOS/Linux:  ${INSTALL_SH}
+  Windows:      ${INSTALL_PS1}
 
 ${bold("USAGE")}
   ccwarriors            Sync costs (default)
@@ -229,12 +236,8 @@ async function cmdSync(): Promise<void> {
     // A newer build is out but the auto-update couldn't apply it — without this
     // the user is silently stuck on an old build and never gets new features
     // (e.g. profiles/insights). Tell them how to update by hand.
-    const installCmd =
-      process.platform === "win32"
-        ? "irm https://ccwarriors.xyz/install.ps1 | iex"
-        : "curl -fsSL https://ccwarriors.xyz/install.sh | bash";
     console.log(yellow("   A new ccwarriors is available but auto-update couldn't apply it."));
-    console.log(yellow(`   Reinstall to get the latest (profiles, insights, all your tools): ${installCmd}`));
+    console.log(yellow(`   Reinstall to get the latest (profiles, insights, all your tools): ${installCommand()}`));
   }
 }
 

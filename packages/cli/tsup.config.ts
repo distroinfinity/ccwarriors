@@ -16,6 +16,11 @@ const COMMIT_BUILD_ID =
 // never advances past the served build), so the fleet's self-update silently
 // stalls. Fine for dev/CI; fatal in a real deploy. Refuse to stamp one when we
 // detect we're building on Railway/Vercel but no commit SHA resolved.
+//
+// This is an allow-by-default guard keyed on known deploy platforms: a NEW
+// platform that sets none of these markers slips through and stamps a
+// `local-<date>` id. Extend this list when adding a build/deploy host (and the
+// health check's build-id assertion is the backstop if one is ever missed).
 const inDeploy = !!(
   process.env["RAILWAY_ENVIRONMENT"] ||
   process.env["RAILWAY_SERVICE_ID"] ||

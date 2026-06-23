@@ -27,11 +27,7 @@ async function meFor(db: Awaited<ReturnType<typeof makeDb>>) {
     CFG.clientSecret,
   );
   const res = await app.request("/me", { headers: { cookie: `ccw_session=${token}` } });
-  return res.json() as Promise<{
-    outdatedClient?: boolean;
-    latestBuildId?: string;
-    clientBuildId?: string | null;
-  }>;
+  return res.json() as Promise<{ outdatedClient?: boolean }>;
 }
 
 describe("/me outdatedClient", () => {
@@ -58,13 +54,21 @@ describe("/me outdatedClient", () => {
       .where(eq(users.githubId, GH_ID));
     const me = await meFor(db);
     expect(me.outdatedClient).toBe(false);
-    expect(me.latestBuildId).toBe(currentBuildId());
   });
 
   it("flags a self-update-capable client stuck on an old build", async () => {
     await db
       .update(users)
       .set({ hasBreakdown: true, clientBuildId: "0000old", lastSyncedAt: new Date() })
+      .where(eq(users.githubId, GH_ID));
+    const me = await meFor(db);
+    expect(me.outdatedClient).toBe(true);
+  });
+
+  it("flags a breakdown client that reports no build id (predates clientBuildId / dev)", async () => {
+    await db
+      .update(users)
+      .set({ hasBreakdown: true, clientBuildId: null, lastSyncedAt: new Date() })
       .where(eq(users.githubId, GH_ID));
     const me = await meFor(db);
     expect(me.outdatedClient).toBe(true);

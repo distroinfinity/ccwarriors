@@ -18,7 +18,7 @@ import {
   type FlagSignal,
 } from "../lib/plausibility.js";
 import { captureEvent } from "../routes/telemetry.js";
-import { currentBuildId } from "../lib/build-id.js";
+import { currentBuildId, isBuildOutdated } from "../lib/build-id.js";
 
 export const MIN_SYNC_INTERVAL_MS = 10_000;
 export const SANITY_CAP = 1_000_000;
@@ -536,8 +536,11 @@ async function finalize(
   // case — current clients (the overwhelming majority) stay silent. Never
   // blocks the sync.
   const latestBuild = currentBuildId();
-  const buildOutdated =
-    !args.hasBreakdown || (!!args.clientBuildId && args.clientBuildId !== latestBuild);
+  const buildOutdated = isBuildOutdated({
+    hasBreakdown: args.hasBreakdown,
+    clientBuildId: args.clientBuildId,
+    latestBuildId: latestBuild,
+  });
   if (buildOutdated) {
     captureEvent("client_outdated", user.githubLogin, {
       buildId: args.clientBuildId ?? "legacy",

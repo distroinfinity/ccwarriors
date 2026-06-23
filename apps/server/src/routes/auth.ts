@@ -10,7 +10,7 @@ import { createSessionToken, readSessionToken, sessionCookie, sign, verify } fro
 import { orgBySlug } from "../lib/orgs.js";
 import { orgWebUrl } from "./orgs.js";
 import { sanitizeRef } from "./installer.js";
-import { currentBuildId } from "../lib/build-id.js";
+import { currentBuildId, isBuildOutdated } from "../lib/build-id.js";
 import { captureEvent } from "./telemetry.js";
 
 interface AuthCfg {
@@ -201,22 +201,20 @@ export function authRoute(db: DB, cfg: AuthCfg) {
             .from(orgMembers)
             .where(eq(orgMembers.userId, user.id))
         : [];
-      // "Out of date" covers two cohorts the auto-updater can't help: pre-self-
-      // update clients (never sent a multi-tool breakdown → hasBreakdown=false)
-      // and self-update-capable clients pinned to a build that isn't the latest
-      // (their self-update silently stalled). Both miss new features like
-      // profiles/insights, so the site nudges a reinstall. Build ids are commit
-      // SHAs, not orderable — "is the latest" is the only computable signal.
-      const latestBuildId = currentBuildId();
+      // Nudge a reinstall when a synced client can't reach new features
+      // (profiles/insights): pre-self-update clients, or ones stalled off the
+      // latest build. isBuildOutdated is the shared policy (see build-id.ts).
       const outdatedClient =
         !!user &&
         user.lastSyncedAt !== null &&
-        (!user.hasBreakdown || (!!user.clientBuildId && user.clientBuildId !== latestBuildId));
+        isBuildOutdated({
+          hasBreakdown: user.hasBreakdown,
+          clientBuildId: user.clientBuildId,
+          latestBuildId: currentBuildId(),
+        });
       return c.json({
         ...session,
         outdatedClient,
-        latestBuildId,
-        clientBuildId: user?.clientBuildId ?? null,
         underReview: !!user?.flaggedAt,
         orgs: memberships.map((m) => m.orgSlug),
       });
