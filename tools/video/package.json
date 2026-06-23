@@ -5,10 +5,22 @@
   "scripts": {
     "studio": "remotion studio",
     "render": "remotion render Launch out/launch-raw.mp4",
+    "render:profile": "remotion render ProfileLaunch out/profile-raw.mp4",
+    "render:signal": "remotion render Signal out/signal-raw.mp4 --scale=2",
+    "render:signal:vertical": "remotion render SignalVertical out/signal-vertical-raw.mp4",
     "still": "remotion still Launch",
+    "still:profile": "remotion still ProfileLaunch",
+    "still:signal": "remotion still Signal",
     "fetch-data": "node scripts/fetch-data.mjs",
+    "fetch-profile": "node scripts/fetch-profile.mjs",
+    "vo": "node scripts/vo.mjs",
+    "vo:enhance": "node scripts/vo-enhance.mjs",
     "runway": "node scripts/runway-gen.mjs",
-    "sfx": "node scripts/sfx.mjs"
+    "sfx": "node scripts/sfx.mjs",
+    "sfx:signal": "node scripts/sfx-signal.mjs",
+    "music": "node scripts/music.mjs",
+    "music:profile": "node scripts/music-profile.mjs",
+    "music:signal": "node scripts/music-signal.mjs"
   },
   "dependencies": {
     "@remotion/cli": "4.0.245",
