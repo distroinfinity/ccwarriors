@@ -53,6 +53,18 @@ function Group({ title, headline, persistent, more }: { title: string; headline:
   );
 }
 
+// One group placeholder: a label bar + a body block. Heights mirror the real
+// grid rows (top row Outcomes/Sessions ~106px, bottom row GitHub/Builds ~137px)
+// so the section total matches and the deck below never shifts.
+function GrpSkeleton({ tall = false }: { tall?: boolean }) {
+  return (
+    <div className="bynum-grp">
+      <div className="sk-block" style={{ width: 84, height: 11, marginBottom: 12 }} aria-busy="true" />
+      <div className="sk-block" style={{ height: tall ? 114 : 83 }} aria-busy="true" />
+    </div>
+  );
+}
+
 export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile | null; insightsLoading: boolean }) {
   // Core not in yet: skeleton the whole section in-place (no GitHub group either,
   // since that comes from the core call) so it fills progressively, not as a swap.
@@ -61,9 +73,10 @@ export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile | 
       <section className="bynum">
         <div className="seclabel">By the numbers</div>
         <div className="bynum-grid">
-          {[0, 1, 2, 3].map((i) => (
-            <div className="bynum-grp" key={i}><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
-          ))}
+          <GrpSkeleton />
+          <GrpSkeleton />
+          <GrpSkeleton tall />
+          <GrpSkeleton tall />
         </div>
       </section>
     );
@@ -169,13 +182,17 @@ export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile | 
       <section className="bynum">
         <div className="seclabel">By the numbers</div>
         <div className="bynum-grid">
+          {/* Real grid order: Outcomes, Sessions, GitHub, Builds with. Keep GitHub
+              (the one group already known from core) in its real slot so the rows
+              don't rebalance when insights land. */}
+          <GrpSkeleton />
+          <GrpSkeleton />
           {ghPersistent || ghHead.length > 0 ? (
             <Group title={g ? "GitHub · verified" : "GitHub"} headline={ghHead} persistent={ghPersistent} more={ghMore} />
-          ) : null}
-          {/* Placeholders for the three insight-derived groups: Outcomes, Sessions, Builds with. */}
-          <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
-          <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
-          <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
+          ) : (
+            <GrpSkeleton tall />
+          )}
+          <GrpSkeleton tall />
         </div>
       </section>
     );
