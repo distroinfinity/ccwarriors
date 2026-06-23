@@ -38,6 +38,11 @@ jobs:
           check "install.sh served"  sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/install.sh | head -1 | grep -q bash'
           check "install.ps1 served" curl -fsS -m 10 -o /dev/null https://api.ccwarriors.xyz/install.ps1
           check "cli.js served"      sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/cli.js | head -1 | grep -q node'
+          # Self-update health: /cli/version must advertise a real commit SHA
+          # (7 hex chars), not `local-<date>` or `unknown`. A non-SHA id means a
+          # deploy stamped a non-propagating build and the fleet's self-update
+          # has silently stalled — the exact failure that strands old clients.
+          check "cli build id is a commit" sh -c 'curl -fsS -m 10 https://api.ccwarriors.xyz/cli/version | grep -Eq "\"buildId\":\"[0-9a-f]{7}\""'
           # Installs AND executes the CLI — download-only checks miss runtime
           # breakage (e.g. the ESM cli.js crashing without its package.json marker).
           check "end-to-end install" env HOME="$RUNNER_TEMP/ccw-e2e" CCWARRIORS_NO_RUN=1 CCWARRIORS_TELEMETRY=0 \

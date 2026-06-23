@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { captureEvent } from "./telemetry.js";
+import { repoRoot, readBuildId } from "../lib/build-id.js";
 
 // Fallback installer endpoints. The primary host (ccwarriors.xyz, Vercel) can
 // be challenge-gated by Vercel's firewall, which 403s every curl/PowerShell
@@ -19,37 +20,11 @@ export function sanitizeRef(raw: string | undefined | null): string | null {
   return ref || null;
 }
 
-// Walk up from cwd until the workspace root (works from apps/server in dev,
-// tests, and the Railway container, all of which run inside the monorepo).
-function repoRoot(): string {
-  let dir = process.cwd();
-  for (let i = 0; i < 6; i++) {
-    if (existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
-    dir = path.dirname(dir);
-  }
-  return process.cwd();
-}
-
 const ASSETS = {
   "install.sh": { rel: path.join("apps", "web", "public", "install.sh"), type: "text/x-shellscript; charset=utf-8", rewrite: true },
   "install.ps1": { rel: path.join("apps", "web", "public", "install.ps1"), type: "text/plain; charset=utf-8", rewrite: true },
   "cli.js": { rel: path.join("packages", "cli", "dist", "cli.js"), type: "application/javascript; charset=utf-8", rewrite: false },
 } as const;
-
-// Build id embedded in the served cli.js bundle (tsup banner: `// ccw-build:<id>`).
-// Drives the CLI's self-update check; cached per mtime so we don't re-read on
-// every poll from the daemon fleet.
-let cachedBuild: { mtimeMs: number; buildId: string } | null = null;
-
-function readBuildId(file: string): string {
-  const stat = statSync(file);
-  if (cachedBuild && cachedBuild.mtimeMs === stat.mtimeMs) return cachedBuild.buildId;
-  const head = readFileSync(file, "utf8").slice(0, 500);
-  const m = head.match(/\/\/ ccw-build:([\w.-]+)/);
-  const buildId = m?.[1] ?? "unknown";
-  cachedBuild = { mtimeMs: stat.mtimeMs, buildId };
-  return buildId;
-}
 
 export function installerRoute() {
   const app = new Hono();

@@ -21,6 +21,10 @@ const bodySchema = z.object({
     "self_update_failed",
     "self_update_applied",
     "self_update_rollback",
+    // A newer build is advertised but the client couldn't move to it (server
+    // kill switch, /cli/version unreachable, non-200). Observability of fleet
+    // update stalls — deliberately NOT in `failureEvents`, so it never pages.
+    "self_update_skipped",
     // CLI degraded to the known-good ccusage after the latest native binary
     // crashed at load. Observability, not a failure — deliberately NOT added to
     // `failureEvents`, so it never enters the rolling window or pages.

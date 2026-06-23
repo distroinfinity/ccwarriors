@@ -155,15 +155,27 @@ export async function maybeSelfUpdate(): Promise<UpdateOutcome> {
   let remote: { buildId?: string; updateEnabled?: boolean };
   try {
     const res = await fetch(`${API_BASE}/cli/version`, { signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return "skipped";
+    if (!res.ok) {
+      // A non-200 from /cli/version stalls the whole fleet silently (e.g. the
+      // server can't find the bundle → 503). Beacon it so it's not invisible.
+      void postTelemetry("self_update_skipped", { reason: `http_${res.status}`, fromBuild: buildId() });
+      return "skipped";
+    }
     remote = (await res.json()) as typeof remote;
   } catch {
+    void postTelemetry("self_update_skipped", { reason: "network", fromBuild: buildId() });
     return "skipped";
   }
 
   const target = remote.buildId;
-  if (!target || target === "unknown" || remote.updateEnabled === false) return "skipped";
+  if (!target || target === "unknown") return "skipped";
   if (target === buildId()) return "current";
+  // A real newer build exists but the global kill switch is holding it back —
+  // worth knowing fleet-wide (e.g. the switch was left off after an incident).
+  if (remote.updateEnabled === false) {
+    void postTelemetry("self_update_skipped", { reason: "disabled", fromBuild: buildId(), toBuild: target });
+    return "skipped";
+  }
   if (attemptedBuild === target) return "skipped"; // one attempt per build per process
   attemptedBuild = target;
 

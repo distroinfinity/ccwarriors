@@ -102,7 +102,8 @@ export function YourCard({
 }: {
   entry: Entry;
   rank: number;
-  /** True when this user's CLI still syncs Claude-only data (pre-multi-tool). */
+  /** True when this user's CLI is out of date — a pre-self-update build, or one
+   * stuck off the latest — so it's missing features like profiles/insights. */
   outdatedClient?: boolean;
   /** True while plausibility flags keep this user off the boards. */
   underReview?: boolean;
@@ -231,7 +232,8 @@ export function YourCard({
       {!underReview && outdatedClient && (
         <div className="nudge" role="status">
           <span className="nudge-glyph"><PixelGlyph name="refresh" size={13} /></span>
-          Tracking Claude Code only. Re-run the install command to count all your AI tools.
+          Your ccwarriors is out of date — reinstall to unlock your profile, insights, and every AI tool you use:{" "}
+          <code>curl -fsSL https://ccwarriors.xyz/install.sh | bash</code>
         </div>
       )}
       <button className="btn x" onClick={shareOnX}>

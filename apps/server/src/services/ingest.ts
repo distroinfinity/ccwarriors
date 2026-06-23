@@ -18,6 +18,7 @@ import {
   type FlagSignal,
 } from "../lib/plausibility.js";
 import { captureEvent } from "../routes/telemetry.js";
+import { currentBuildId } from "../lib/build-id.js";
 
 export const MIN_SYNC_INTERVAL_MS = 10_000;
 export const SANITY_CAP = 1_000_000;
@@ -528,6 +529,22 @@ async function finalize(
     // neither lose craft on sync nor resurrect it for private/non-consented users.
     craft: craftEntryFor(user),
   });
+
+  // Fleet update health: when a client is on a build that isn't the latest (or
+  // is a pre-self-update legacy client), beacon it so the stranded cohort is
+  // measurable in PostHog instead of invisible. Only fires for the actionable
+  // case — current clients (the overwhelming majority) stay silent. Never
+  // blocks the sync.
+  const latestBuild = currentBuildId();
+  const buildOutdated =
+    !args.hasBreakdown || (!!args.clientBuildId && args.clientBuildId !== latestBuild);
+  if (buildOutdated) {
+    captureEvent("client_outdated", user.githubLogin, {
+      buildId: args.clientBuildId ?? "legacy",
+      latest: latestBuild,
+      hasBreakdown: args.hasBreakdown,
+    });
+  }
 
   return {
     ok: true,

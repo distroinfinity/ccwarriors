@@ -222,8 +222,19 @@ async function cmdSync(): Promise<void> {
 
   // After a good sync (and after the user has their output): pick up a newer
   // build if one shipped. Cron/manual runs use it on their next invocation.
-  if ((await maybeSelfUpdate()) === "updated") {
+  const updateOutcome = await maybeSelfUpdate();
+  if (updateOutcome === "updated") {
     console.log(dim("   (ccwarriors updated itself — new version active on the next run)"));
+  } else if (updateOutcome === "failed") {
+    // A newer build is out but the auto-update couldn't apply it — without this
+    // the user is silently stuck on an old build and never gets new features
+    // (e.g. profiles/insights). Tell them how to update by hand.
+    const installCmd =
+      process.platform === "win32"
+        ? "irm https://ccwarriors.xyz/install.ps1 | iex"
+        : "curl -fsSL https://ccwarriors.xyz/install.sh | bash";
+    console.log(yellow("   A new ccwarriors is available but auto-update couldn't apply it."));
+    console.log(yellow(`   Reinstall to get the latest (profiles, insights, all your tools): ${installCmd}`));
   }
 }
 
