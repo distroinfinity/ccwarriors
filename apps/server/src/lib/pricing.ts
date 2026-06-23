@@ -31,6 +31,22 @@ const DEFAULT_PRICE: ModelPrice = {
   cacheRead: 0.3e-6,
 };
 
+// Models we've hand-priced ahead of LiteLLM. Canonical case: a ChatGPT-Pro
+// preview model (gpt-5.3-codex-spark) that ships to the LiteLLM table with a
+// NULL per-token cost, so indexPrices() skips it and it falls to DEFAULT_PRICE
+// — firing unknown_model_priced on every ingest. Published rate is $1.75/$14
+// per 1M (identical to the gpt-5.3-codex sibling); OpenAI bills no separate
+// cache-creation, so cacheCreate = input. Applied as a FALLBACK in
+// indexPrices() (see there): fills a gap only, so a real upstream price wins.
+const PRICE_OVERRIDES: Record<string, ModelPrice> = {
+  "gpt-5.3-codex-spark": {
+    input: 1.75e-6,
+    output: 1.4e-5,
+    cacheCreate: 1.75e-6,
+    cacheRead: 1.75e-7,
+  },
+};
+
 type RawPrices = Record<
   string,
   {
@@ -65,7 +81,7 @@ const SNAPSHOT_PATH = path.join(
 let exact = new Map<string, ModelPrice>();
 let basename = new Map<string, ModelPrice>();
 
-function indexPrices(raw: RawPrices) {
+export function indexPrices(raw: RawPrices) {
   const ex = new Map<string, ModelPrice>();
   const base = new Map<string, ModelPrice>();
   for (const [key, v] of Object.entries(raw)) {
@@ -80,6 +96,16 @@ function indexPrices(raw: RawPrices) {
     };
     const lower = key.toLowerCase();
     ex.set(lower, price);
+    const short = lower.split("/").pop();
+    if (short && !base.has(short)) base.set(short, price);
+  }
+  // Hand-priced overrides fill ONLY gaps — a key upstream omits, or sends with a
+  // null/zero cost (the `if (!input && !output) continue` above drops those).
+  // So when LiteLLM later lands a real price, upstream already populated `ex`
+  // and the override is inert. Applied here, the override survives every refresh.
+  for (const [key, price] of Object.entries(PRICE_OVERRIDES)) {
+    const lower = key.toLowerCase();
+    if (!ex.has(lower)) ex.set(lower, price);
     const short = lower.split("/").pop();
     if (short && !base.has(short)) base.set(short, price);
   }
