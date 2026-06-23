@@ -6,8 +6,16 @@ import { BurnCounter } from "./scenes/BurnCounter";
 import { Board } from "./scenes/Board";
 import { Flurry } from "./scenes/Flurry";
 import { CTA } from "./scenes/CTA";
+import { ColdOpenP } from "./scenes/profile/ColdOpenP";
+import { Masthead } from "./scenes/profile/Masthead";
+import { CraftScore } from "./scenes/profile/CraftScore";
+import { DepthFlurry } from "./scenes/profile/DepthFlurry";
+import { CTAProfile } from "./scenes/profile/CTAProfile";
+import { GradeOverlay } from "./lib/GradeOverlay";
 import { Score } from "./lib/Score";
 import { Shell } from "./lib/Shell";
+import { Signal } from "./signal/Signal";
+import { DURATION as SIGNAL_DURATION } from "./signal/timing";
 
 // 120 BPM = 15 frames/beat, 60/bar. Every boundary is a bar line:
 // cold 0-4s (intro+build) · DROP1 counter 4-12s · board 12-32s (groove →
@@ -61,13 +69,86 @@ const Launch: React.FC = () => (
   </AbsoluteFill>
 );
 
+// ── Profile teaser ────────────────────────────────────────────────────────
+// 120 BPM, all cuts on bar lines. cold 0-4s · masthead 4-12s (DROP1) ·
+// craft 12-24s (DROP2 hero) · flurry 24-32s · CTA 32-40s.
+export const PT = { cold: 120, mast: 240, craft: 360, flurry: 240, cta: 240 };
+export const PAT = {
+  mast: PT.cold,
+  craft: PT.cold + PT.mast,
+  flurry: PT.cold + PT.mast + PT.craft,
+  cta: PT.cold + PT.mast + PT.craft + PT.flurry,
+};
+const PTOTAL = PAT.cta + PT.cta;
+
+const ProfileLaunch: React.FC = () => (
+  <AbsoluteFill style={{ background: "#0a0a0b" }}>
+    <Sequence durationInFrames={PT.cold}>
+      <Shell dur={PT.cold} inF={0} outF={0}>
+        <ColdOpenP />
+      </Shell>
+    </Sequence>
+    {/* masthead hard-cuts in on DROP1 */}
+    <Sequence from={PAT.mast} durationInFrames={PT.mast + OV}>
+      <Shell dur={PT.mast + OV} inF={0}>
+        <Masthead />
+      </Shell>
+    </Sequence>
+    {/* craft hero hard-cuts in on DROP2 */}
+    <Sequence from={PAT.craft} durationInFrames={PT.craft + OV}>
+      <Shell dur={PT.craft + OV} inF={0}>
+        <CraftScore />
+      </Shell>
+    </Sequence>
+    <Sequence from={PAT.flurry} durationInFrames={PT.flurry + OV}>
+      <Shell dur={PT.flurry + OV}>
+        <DepthFlurry />
+      </Shell>
+    </Sequence>
+    <Sequence from={PAT.cta} durationInFrames={PT.cta}>
+      <Shell dur={PT.cta} outF={0}>
+        <CTAProfile />
+      </Shell>
+    </Sequence>
+    <GradeOverlay />
+    <Score variant="profile" />
+  </AbsoluteFill>
+);
+
 export const Root: React.FC = () => (
-  <Composition
-    id="Launch"
-    component={Launch}
-    durationInFrames={TOTAL}
-    fps={30}
-    width={1920}
-    height={1080}
-  />
+  <>
+    <Composition
+      id="Launch"
+      component={Launch}
+      durationInFrames={TOTAL}
+      fps={30}
+      width={1920}
+      height={1080}
+    />
+    <Composition
+      id="ProfileLaunch"
+      component={ProfileLaunch}
+      durationInFrames={PTOTAL}
+      fps={30}
+      width={1920}
+      height={1080}
+    />
+    <Composition
+      id="Signal"
+      component={Signal}
+      durationInFrames={SIGNAL_DURATION}
+      fps={30}
+      width={1920}
+      height={1080}
+    />
+    {/* 9:16 reels cut — same beats + audio, layout adapts via useVertical() */}
+    <Composition
+      id="SignalVertical"
+      component={Signal}
+      durationInFrames={SIGNAL_DURATION}
+      fps={30}
+      width={1080}
+      height={1920}
+    />
+  </>
 );
