@@ -126,7 +126,8 @@ export interface LockedInsights {
   reason: "no_consent" | "forging";
 }
 
-export interface Profile {
+// What the fast /profile/:login call returns — identity + at-a-glance, no insights.
+export interface CoreProfile {
   login: string;
   avatarUrl: string;
   xHandle: string | null;
@@ -151,22 +152,23 @@ export interface Profile {
     tokensPerActiveDay: number | null;
   } | null;
   github?: GithubStats | null;
-  insights: ProfileInsights | LockedInsights;
   owner?: { consent: boolean; visibility: "public" | "private"; machineCount: number; mode: "off" | "deep"; consentVersion?: number };
 }
+
+// The contract every Profile child consumes: core fields + resolved insights.
+// ProfilePage composes this from the two hooks below.
+export type Profile = CoreProfile & { insights: ProfileInsights | LockedInsights };
 
 export type ProfileState =
   | { status: "loading" }
   | { status: "notfound" }
-  | { status: "ready"; profile: Profile };
+  | { status: "ready"; profile: CoreProfile };
 
 export function useProfile(login: string, refreshKey = 0): ProfileState {
   const [state, setState] = useState<ProfileState>({ status: "loading" });
   useEffect(() => {
     let cancelled = false;
-    // Stale-while-revalidate: only show the skeleton on a cold load or a login
-    // change. Consent toggles and pending polls refetch in the background so the
-    // card never flashes back to a skeleton.
+    // Stale-while-revalidate: skeleton only on cold load / login change.
     setState((prev) =>
       prev.status === "ready" && prev.profile.login.toLowerCase() === login.toLowerCase()
         ? prev
@@ -177,18 +179,61 @@ export function useProfile(login: string, refreshKey = 0): ProfileState {
         if (cancelled) return;
         if (r.status === 404) return setState({ status: "notfound" });
         if (!r.ok) throw new Error(String(r.status));
-        const profile = (await r.json()) as Profile;
-        // Tolerate older servers that predate the insight-card deck: ensure
-        // `cards` is always an array so consumers never guard for undefined.
-        if (!profile.insights.locked && !Array.isArray((profile.insights as ProfileInsights).cards)) {
-          (profile.insights as ProfileInsights).cards = [];
-        }
+        const profile = (await r.json()) as CoreProfile;
         setState({ status: "ready", profile });
       })
       .catch(() => {
-        // Intentional conflation: network/500 render the same enlist page as a
-        // true 404 — a profile URL with no data behind it has one story to tell.
         if (!cancelled) setState({ status: "notfound" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [login, refreshKey]);
+  return state;
+}
+
+export type InsightsState =
+  | { status: "loading" }
+  | { status: "ready"; login: string; insights: ProfileInsights | LockedInsights }
+  | { status: "error"; login: string };
+
+// Lazy companion to useProfile: fetches the deep insights block in parallel.
+// Keeps the previous payload across refreshKey bumps (no skeleton flash on
+// consent toggles); only a login change resets to a skeleton. A failed fetch
+// surfaces an explicit "error" state — kept distinct from a real locked
+// response so the UI can offer a retry instead of mistaking a transient server
+// error for "no_consent" (which would otherwise strand a consented owner in the
+// "Building your profile…" polling loop).
+export function useProfileInsights(login: string, refreshKey = 0): InsightsState {
+  const [state, setState] = useState<InsightsState>({ status: "loading" });
+  useEffect(() => {
+    let cancelled = false;
+    setState((prev) =>
+      prev.status === "ready" && prev.login.toLowerCase() === login.toLowerCase()
+        ? prev
+        : { status: "loading" },
+    );
+    // On failure keep stale-but-good data for the same login (a background
+    // refetch hiccup shouldn't blank the deck); only a cold failure shows error.
+    const fail = () =>
+      setState((prev) =>
+        prev.status === "ready" && prev.login.toLowerCase() === login.toLowerCase()
+          ? prev
+          : { status: "error", login },
+      );
+    fetch(`${API_HTTP}/profile/${encodeURIComponent(login)}/insights`, { credentials: "include" })
+      .then(async (r) => {
+        if (cancelled) return;
+        if (!r.ok) return fail();
+        const insights = (await r.json()) as ProfileInsights | LockedInsights;
+        // Tolerate older servers / partial payloads: cards is always an array.
+        if (!insights.locked && !Array.isArray((insights as ProfileInsights).cards)) {
+          (insights as ProfileInsights).cards = [];
+        }
+        setState({ status: "ready", login, insights });
+      })
+      .catch(() => {
+        if (!cancelled) fail();
       });
     return () => {
       cancelled = true;

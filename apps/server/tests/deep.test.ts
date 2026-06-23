@@ -196,26 +196,24 @@ describe("/insights/mode + /insights/deep", () => {
 
     // Profile reflects the derived archetype + Craft Score for the insights block.
     const pApp = profileRoute({ db, store: new LeaderboardStore(), insightsStore: store });
-    const pRes = await pApp.request("/deeper");
+    const pRes = await pApp.request("/deeper/insights");
     const profile = (await pRes.json()) as {
-      insights: {
-        locked: boolean;
-        archetype?: string;
-        craftScore?: number | null;
-        pillars?: Record<string, number> | null;
-        trustTier?: number | null;
-        provisional?: boolean;
-      };
+      locked: boolean;
+      archetype?: string;
+      craftScore?: number | null;
+      pillars?: Record<string, number> | null;
+      trustTier?: number | null;
+      provisional?: boolean;
     };
-    expect(profile.insights.locked).toBe(false);
-    expect(profile.insights.archetype).toBeTruthy();
-    expect(typeof profile.insights.craftScore).toBe("number");
-    expect(profile.insights.craftScore!).toBeGreaterThanOrEqual(0);
-    expect(profile.insights.craftScore!).toBeLessThanOrEqual(100);
-    expect(Object.keys(profile.insights.pillars!).sort()).toEqual(
+    expect(profile.locked).toBe(false);
+    expect(profile.archetype).toBeTruthy();
+    expect(typeof profile.craftScore).toBe("number");
+    expect(profile.craftScore!).toBeGreaterThanOrEqual(0);
+    expect(profile.craftScore!).toBeLessThanOrEqual(100);
+    expect(Object.keys(profile.pillars!).sort()).toEqual(
       ["autonomy", "direction", "orchestration", "throughput", "verification", "yield"],
     );
-    expect(profile.insights.provisional).toBe(true);
+    expect(profile.provisional).toBe(true);
 
     // Switch to off → aggregate + deep purged, archetype nulled, store evicted.
     res = await app.request("/mode", {

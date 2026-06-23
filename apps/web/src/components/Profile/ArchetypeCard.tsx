@@ -387,7 +387,7 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
   );
 }
 
-export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile; onConsentChanged: () => void }) {
+export function ArchetypeCard({ profile, insightsLoading, insightsError, onConsentChanged }: { profile: Profile; insightsLoading: boolean; insightsError: boolean; onConsentChanged: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const unlocked = !profile.insights.locked;
@@ -456,9 +456,16 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
           <div className="arch-brand"><ClawdLogo /></div>
         </div>
 
-        {insights ? (
+        {insightsLoading ? (
+          <div className="sk-block" style={{ height: 150, marginTop: 14 }} aria-busy="true" />
+        ) : insightsError ? (
+          <div className="arch-locked">
+            <p>Couldn’t load this profile’s insights — this is usually temporary.</p>
+            <button className="btn g" onClick={onConsentChanged}>Retry</button>
+          </div>
+        ) : insights ? (
           hasCraftScore(insights) ? (
-            <CraftScoreHero insights={insights} archetype={insights.archetype} tagline={profile.insights.locked ? null : (profile.insights as ProfileInsights).tagline} />
+            <CraftScoreHero insights={insights} archetype={insights.archetype} tagline={insights.tagline} />
           ) : (
             <>
               <div className="arch-name">{insights.archetype.toUpperCase()}</div>
@@ -481,7 +488,7 @@ export function ArchetypeCard({ profile, onConsentChanged }: { profile: Profile;
         </div>
       </div>
 
-      {insights && (
+      {!insightsLoading && insights && (
         <div className="arch-actions">
           <button className="btn x" onClick={shareOnX}>Share on X</button>
           <button className="btn g" onClick={downloadCard} disabled={exporting}>

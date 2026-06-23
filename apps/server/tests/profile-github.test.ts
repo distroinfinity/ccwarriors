@@ -60,9 +60,11 @@ describe("profile github block", () => {
 
     const app = profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, githubToken: null });
     const res = await app.request("/pubgh");
-    const body = (await res.json()) as { github: GithubStats | null; insights: { locked: boolean } };
-    expect(body.insights.locked).toBe(true); // no consent — behavioral stays locked
+    const body = (await res.json()) as { github: GithubStats | null };
     expect(body.github?.totalStars).toBe(300); // public footprint still renders
+    const insightsRes = await app.request("/pubgh/insights");
+    const insightsBody = (await insightsRes.json()) as { locked: boolean };
+    expect(insightsBody.locked).toBe(true); // no consent — behavioral stays locked
   });
 
   it("a hanging GitHub fetch never blocks the profile response", async () => {
@@ -102,12 +104,12 @@ describe("profile github block", () => {
     await db.insert(githubStats).values({ userId: u.id, status: "ok", data: ghStats(), fetchedAt: new Date() });
 
     const app = profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, githubToken: null });
-    const body = (await (await app.request("/verif")).json()) as {
-      insights: { locked: boolean; githubVerified?: boolean };
+    const insightsBody = (await (await app.request("/verif/insights")).json()) as {
+      locked: boolean; githubVerified?: boolean;
     };
-    expect(body.insights.locked).toBe(false);
+    expect(insightsBody.locked).toBe(false);
     // No deep sessions → trustTier null → not cross-verified. Field present, honest false.
-    expect(body.insights.githubVerified).toBe(false);
+    expect(insightsBody.githubVerified).toBe(false);
   });
 });
 

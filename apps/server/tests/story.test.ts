@@ -255,11 +255,11 @@ describe("GET /profile/:login/story", () => {
       longestSessionMinutes: 30,
     });
     const pApp = profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, githubToken: null });
-    const body = (await (await pApp.request("/teased")).json()) as {
-      insights: { locked: boolean; cards: Array<{ key: string }> };
+    const body = (await (await pApp.request("/teased/insights")).json()) as {
+      locked: boolean; cards: Array<{ key: string }>;
     };
-    expect(body.insights.locked).toBe(false);
-    expect(body.insights.cards.some((c) => c.key === "story")).toBe(true);
+    expect(body.locked).toBe(false);
+    expect(body.cards.some((c) => c.key === "story")).toBe(true);
   });
 });
 
