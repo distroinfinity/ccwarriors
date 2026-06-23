@@ -699,6 +699,10 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .profile-404 h2{ font-family:'Geist Mono'; font-size:22px; margin-bottom:8px; }
 .profile-404 p{ color:var(--muted); margin-bottom:18px; }
 .profile-skel{ min-height:420px; background:var(--segoff); animation:pulse 1.2s ease-in-out infinite; margin-top:26px; }
+.sk-block{ background:var(--segoff); border-radius:6px; animation:pulse 1.2s ease-in-out infinite; }
+.sk-mast{ height:128px; margin-top:26px; }
+.sk-section{ height:150px; margin-top:18px; }
+.sk-deck{ height:230px; margin-top:18px; }
 @keyframes pulse{ 0%,100%{ opacity:.55; } 50%{ opacity:.9; } }
 
 /* ── Story page (#50): editorial dossier ─────────────────────────────────── */
