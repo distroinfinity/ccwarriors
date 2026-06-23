@@ -150,6 +150,7 @@ export function InsightCards({
           <div className="sk-block sk-deck" style={{ marginTop: 0 }} aria-busy="true" />
           <div className="sk-block sk-deck" style={{ marginTop: 0 }} aria-busy="true" />
         </div>
+        <p className="deck-provenance mono"><span className="sk-block" style={{ width: 180, height: 11, display: "inline-block" }} aria-busy="true" /></p>
       </section>
     );
   }

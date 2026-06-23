@@ -387,9 +387,28 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
   );
 }
 
+// Skeleton for the insight region (archetype/craft) — reserves the real ~192px
+// the CraftScoreHero occupies, with .mast's 24px top margin, so the content
+// fills in place instead of growing the card.
+function MastRegionSkeleton() {
+  return <div className="sk-block" style={{ height: 192, marginTop: 24 }} aria-busy="true" />;
+}
+
+// Skeleton for the Share/Download action row — reserves its real 43px height so
+// the row doesn't pop in (which would shove every section below it down).
+function ActionsSkeleton() {
+  return (
+    <div className="arch-actions">
+      <span className="sk-block" style={{ flex: "1 1 0", height: 43 }} aria-busy="true" />
+      <span className="sk-block" style={{ flex: "1 1 0", height: 43 }} aria-busy="true" />
+    </div>
+  );
+}
+
 // Masthead skeleton shown while the core call is in flight. Mirrors the real
-// arch-card shell so that when core arrives the identity simply fills in place —
-// same component instance, no full-tree swap.
+// arch-card shell at real dimensions (avatar 54, name 48, rank 15, region 192,
+// action row 43) so that when core arrives the identity simply fills in place —
+// same component instance, no full-tree swap, no resize.
 function ArchetypeCardSkeleton() {
   return (
     <div className="arch-wrap">
@@ -398,18 +417,19 @@ function ArchetypeCardSkeleton() {
           <div className="mast-id">
             <span className="mast-kicker mono">FIELD REPORT · CCWARRIORS</span>
             <div className="mast-namerow">
-              <span className="sk-block" style={{ width: 46, height: 46, borderRadius: "50%" }} aria-busy="true" />
-              <span className="sk-block" style={{ width: 170, height: 26 }} aria-busy="true" />
+              <span className="sk-block" style={{ width: 54, height: 54, borderRadius: "50%", flex: "0 0 auto" }} aria-busy="true" />
+              <span className="sk-block" style={{ width: 300, maxWidth: "60%", height: 48 }} aria-busy="true" />
             </div>
-            <span className="sk-block" style={{ width: 220, height: 12, marginTop: 8, display: "block" }} aria-busy="true" />
+            <span className="sk-block" style={{ width: 360, maxWidth: "85%", height: 14, marginTop: 2, display: "block" }} aria-busy="true" />
           </div>
           <div className="arch-brand"><ClawdLogo /></div>
         </div>
-        <div className="sk-block" style={{ height: 150, marginTop: 14 }} aria-busy="true" />
+        <MastRegionSkeleton />
         <div className="arch-foot mono">
           <span className="sk-block" style={{ width: 150, height: 11, display: "inline-block" }} aria-busy="true" />
         </div>
       </div>
+      <ActionsSkeleton />
     </div>
   );
 }
@@ -485,7 +505,7 @@ export function ArchetypeCard({ profile, insightsLoading, insightsError, onConse
         </div>
 
         {insightsLoading ? (
-          <div className="sk-block" style={{ height: 150, marginTop: 14 }} aria-busy="true" />
+          <MastRegionSkeleton />
         ) : insightsError ? (
           <div className="arch-locked">
             <p>Couldn’t load this profile’s insights — this is usually temporary.</p>
@@ -516,6 +536,7 @@ export function ArchetypeCard({ profile, insightsLoading, insightsError, onConse
         </div>
       </div>
 
+      {insightsLoading && <ActionsSkeleton />}
       {!insightsLoading && insights && (
         <div className="arch-actions">
           <button className="btn x" onClick={shareOnX}>Share on X</button>

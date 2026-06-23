@@ -3,12 +3,14 @@ import type { Profile } from "../../useProfile";
 const WEEKS = 26; // ~6 months of columns
 
 export function RhythmPanel({ profile }: { profile: Profile | null }) {
-  // Core not in yet: skeleton in-place so the panel fills progressively.
+  // Core not in yet: skeleton in-place at real heights (heatmap 85 + stats 15)
+  // so the panel reserves its full height and nothing below shifts.
   if (!profile) {
     return (
       <div className="ppanel rhythm">
         <div className="seclabel">Rhythm</div>
-        <div className="sk-block" style={{ height: 70 }} aria-busy="true" />
+        <div className="sk-block" style={{ height: 85 }} aria-busy="true" />
+        <div className="sk-block" style={{ height: 15, width: 280, marginTop: 12 }} aria-busy="true" />
       </div>
     );
   }
