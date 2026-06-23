@@ -284,6 +284,10 @@ export function profileRoute(deps: ProfileDeps) {
       .where(sql`lower(${users.githubLogin}) = ${raw.toLowerCase()}`);
     if (!user) return c.json({ error: "not_found" }, 404);
     const isOwner = ownerOf(c, user.githubId);
+    // Re-runs the bounded scan + cached github read that the core /:login call
+    // also does — intentional: this endpoint self-gates and is fetched in
+    // parallel with core, so it can't share core's in-memory signals. The scan
+    // is windowed and the github read is a cached/indexed select.
     const signals = await loadProfileSignals(deps, user);
     const insights = await buildInsights(deps, user, isOwner, signals);
     c.header("Cache-Control", isOwner ? "private, no-store" : "public, max-age=30");
@@ -328,6 +332,9 @@ export function profileRoute(deps: ProfileDeps) {
         })
         .from(usageDays)
         .where(eq(usageDays.userId, user.id));
+      // The aggregate always returns one row (sum is null when the user has no
+      // rows → tokensAllTime null). tot?. is required: noUncheckedIndexedAccess
+      // types the destructured element as possibly-undefined.
       tokensAllTime = tot?.total != null ? Number(tot.total) : null;
     }
 
