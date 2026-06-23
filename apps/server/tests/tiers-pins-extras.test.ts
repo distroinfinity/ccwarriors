@@ -135,13 +135,13 @@ describe("pinned cards", () => {
     expect(pin.status).toBe(200);
 
     const pApp = profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, githubToken: null });
-    const body = (await (await pApp.request("/pinner")).json()) as {
-      insights: { locked: boolean; cards: Array<{ key: string }>; pinnedCards?: string[] };
+    const body = (await (await pApp.request("/pinner/insights")).json()) as {
+      locked: boolean; cards: Array<{ key: string }>; pinnedCards?: string[];
     };
-    expect(body.insights.locked).toBe(false);
-    expect(body.insights.cards[0]?.key).toBe("plan_mode");
-    expect(body.insights.cards[1]?.key).toBe("model");
-    expect(body.insights.pinnedCards).toEqual(["plan_mode", "model"]);
+    expect(body.locked).toBe(false);
+    expect(body.cards[0]?.key).toBe("plan_mode");
+    expect(body.cards[1]?.key).toBe("model");
+    expect(body.pinnedCards).toEqual(["plan_mode", "model"]);
   });
 
   it("rejects more than 4 pins and unknown keys", async () => {

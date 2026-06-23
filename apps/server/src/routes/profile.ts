@@ -273,6 +273,24 @@ export function profileRoute(deps: ProfileDeps) {
     });
   });
 
+  // Lazy insights read (#progressive-load): the expensive deep-session craft /
+  // pillars / cards block, fetched in parallel by the web after the core paints.
+  app.get("/:login/insights", async (c) => {
+    const raw = c.req.param("login");
+    if (!LOGIN_RE.test(raw)) return c.json({ error: "not_found" }, 404);
+    const [user] = await deps.db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.githubLogin}) = ${raw.toLowerCase()}`);
+    if (!user) return c.json({ error: "not_found" }, 404);
+    const isOwner = ownerOf(c, user.githubId);
+    const signals = await loadProfileSignals(deps, user);
+    const insights = await buildInsights(deps, user, isOwner, signals);
+    c.header("Cache-Control", isOwner ? "private, no-store" : "public, max-age=30");
+    if (!isOwner) c.header("Vary", "Cookie");
+    return c.json(insights);
+  });
+
   app.get("/:login", async (c) => {
     const raw = c.req.param("login");
     if (!LOGIN_RE.test(raw)) return c.json({ error: "not_found" }, 404);
@@ -313,10 +331,6 @@ export function profileRoute(deps: ProfileDeps) {
       tokensAllTime = tot?.total != null ? Number(tot.total) : null;
     }
 
-    const insights: ProfileInsights = user
-      ? await buildInsights(deps, user, isOwner, { rhythm, efficiency, github })
-      : { locked: true, reason: "no_consent" };
-
     const orgs = user
       ? (await deps.db.select({ orgSlug: orgMembers.orgSlug }).from(orgMembers).where(eq(orgMembers.userId, user.id))).map((r) => r.orgSlug)
       : entry?.orgs ?? [];
@@ -346,7 +360,6 @@ export function profileRoute(deps: ProfileDeps) {
       },
       efficiency,
       github,
-      insights,
       ...(isOwner
         ? {
             owner: {

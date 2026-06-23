@@ -55,36 +55,34 @@ describe("profile gate removal", () => {
     await consent("rookie");
     store.upsert(u.id, "m1", payload({ sessions: 1, windowDays: 40 }));
 
-    const res = await app().request("/rookie");
+    const res = await app().request("/rookie/insights");
     const body = (await res.json()) as {
-      insights: {
-        locked: boolean;
-        archetype?: string;
-        provisional?: boolean;
-        sampleSessions?: number;
-        windowDays?: number;
-        scoresArePercentiles?: boolean;
-        axes?: Record<string, number>;
-      };
+      locked: boolean;
+      archetype?: string;
+      provisional?: boolean;
+      sampleSessions?: number;
+      windowDays?: number;
+      scoresArePercentiles?: boolean;
+      axes?: Record<string, number>;
     };
-    expect(body.insights.locked).toBe(false);
-    expect(body.insights.archetype).toBeTruthy();
-    expect(body.insights.provisional).toBe(true);
-    expect(body.insights.sampleSessions).toBe(1);
-    expect(body.insights.windowDays).toBe(40);
+    expect(body.locked).toBe(false);
+    expect(body.archetype).toBeTruthy();
+    expect(body.provisional).toBe(true);
+    expect(body.sampleSessions).toBe(1);
+    expect(body.windowDays).toBe(40);
     // A 1-session user never gets rank-normalized scores.
-    expect(body.insights.scoresArePercentiles).toBe(false);
-    expect(Object.values(body.insights.axes!).every((v) => v >= 0 && v <= 100)).toBe(true);
+    expect(body.scoresArePercentiles).toBe(false);
+    expect(Object.values(body.axes!).every((v) => v >= 0 && v <= 100)).toBe(true);
   });
 
   it("locked insights do not include windowDays", async () => {
     await seedUser(db, { login: "anon", token: "tok_a" });
     // No consent, no store upsert.
 
-    const res = await app().request("/anon");
-    const body = (await res.json()) as { insights: { locked: boolean; windowDays?: number } };
-    expect(body.insights.locked).toBe(true);
-    expect(body.insights.windowDays).toBeUndefined();
+    const res = await app().request("/anon/insights");
+    const body = (await res.json()) as { locked: boolean; windowDays?: number };
+    expect(body.locked).toBe(true);
+    expect(body.windowDays).toBeUndefined();
   });
 
   it("consented-but-nothing-uploaded shows forging to the owner only", async () => {
@@ -93,22 +91,23 @@ describe("profile gate removal", () => {
     // No store.upsert — consent given, no payload has landed yet.
 
     // Visitor: must look exactly like never-consented.
-    const anon = await app().request("/fresh");
-    const anonBody = (await anon.json()) as { insights: { locked: boolean; reason?: string } };
-    expect(anonBody.insights.locked).toBe(true);
-    expect(anonBody.insights.reason).toBe("no_consent");
+    const anon = await app().request("/fresh/insights");
+    const anonBody = (await anon.json()) as { locked: boolean; reason?: string };
+    expect(anonBody.locked).toBe(true);
+    expect(anonBody.reason).toBe("no_consent");
 
     // Owner: sees the honest forging state, plus their consent version (v1
-    // default) so the web can offer the v2 story upgrade.
+    // default) so the web can offer the v2 story upgrade — consentVersion lives
+    // on the CORE response (owner block), not on insights.
     const cookie = `ccw_session=${createSessionToken({ login: "fresh", avatarUrl: "", githubId: u.githubId }, SECRET)}`;
-    const owner = await app().request("/fresh", { headers: { Cookie: cookie } });
-    const ownerBody = (await owner.json()) as {
-      insights: { locked: boolean; reason?: string };
-      owner?: { consentVersion?: number };
-    };
-    expect(ownerBody.insights.locked).toBe(true);
-    expect(ownerBody.insights.reason).toBe("forging");
-    expect(ownerBody.owner?.consentVersion).toBe(1);
+    const coreOwner = await app().request("/fresh", { headers: { Cookie: cookie } });
+    const coreOwnerBody = (await coreOwner.json()) as { owner?: { consentVersion?: number } };
+    expect(coreOwnerBody.owner?.consentVersion).toBe(1);
+
+    const insightsOwner = await app().request("/fresh/insights", { headers: { Cookie: cookie } });
+    const insightsOwnerBody = (await insightsOwner.json()) as { locked: boolean; reason?: string };
+    expect(insightsOwnerBody.locked).toBe(true);
+    expect(insightsOwnerBody.reason).toBe("forging");
   });
 
   it("never emits forging based on session count", async () => {
@@ -116,9 +115,9 @@ describe("profile gate removal", () => {
     await consent("nine");
     store.upsert(u.id, "m1", payload({ sessions: 9 })); // below the old gate
 
-    const res = await app().request("/nine");
-    const body = (await res.json()) as { insights: { locked: boolean } };
-    expect(body.insights.locked).toBe(false);
+    const res = await app().request("/nine/insights");
+    const body = (await res.json()) as { locked: boolean };
+    expect(body.locked).toBe(false);
   });
 });
 
@@ -170,25 +169,23 @@ describe("depth block", () => {
     // Seed aggregate so insights unlock (longestSessionMinutes matches the deep sessions max).
     store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40, planModeSessionsPct: 50, subagentSpawnsPerSession: 1, maxParallelAgents: 3, longestSessionMinutes: 120 }));
 
-    const res = await app().request("/deepuser");
+    const res = await app().request("/deepuser/insights");
     const body = (await res.json()) as {
-      insights: {
-        locked: boolean;
-        depth?: {
-          sessions: number;
-          windowDays: number;
-          totalHours: number | null;
-          planModeSessionsPct: number;
-          subagentSessionsPct: number | null;
-          subagentSpawnsPerSession: number;
-          maxParallelAgents: number;
-          avgSessionMinutes: number | null;
-          longestSessionMinutes: number;
-        };
+      locked: boolean;
+      depth?: {
+        sessions: number;
+        windowDays: number;
+        totalHours: number | null;
+        planModeSessionsPct: number;
+        subagentSessionsPct: number | null;
+        subagentSpawnsPerSession: number;
+        maxParallelAgents: number;
+        avgSessionMinutes: number | null;
+        longestSessionMinutes: number;
       };
     };
-    expect(body.insights.locked).toBe(false);
-    const d = body.insights.depth!;
+    expect(body.locked).toBe(false);
+    const d = body.depth!;
     expect(d).toBeDefined();
     // sessions and window from merged aggregate
     expect(d.sessions).toBe(2);
@@ -214,10 +211,10 @@ describe("depth block", () => {
     // Only aggregate, no deep rows.
     store.upsert(u.id, "m1", payload({ sessions: 5, windowDays: 30, planModeSessionsPct: 20 }));
 
-    const res = await app().request("/aggonly");
-    const body = (await res.json()) as { insights: { locked: boolean; depth?: { totalHours: unknown; avgSessionMinutes: unknown; subagentSessionsPct: unknown } } };
-    expect(body.insights.locked).toBe(false);
-    const d = body.insights.depth!;
+    const res = await app().request("/aggonly/insights");
+    const body = (await res.json()) as { locked: boolean; depth?: { totalHours: unknown; avgSessionMinutes: unknown; subagentSessionsPct: unknown } };
+    expect(body.locked).toBe(false);
+    const d = body.depth!;
     expect(d).toBeDefined();
     // Deep-derived fields are null when no deep rows.
     expect(d.totalHours).toBeNull();
@@ -229,10 +226,10 @@ describe("depth block", () => {
     await seedUser(db, { login: "noconsent", token: "tok_nc" });
     // No consent, no store upsert.
 
-    const res = await app().request("/noconsent");
-    const body = (await res.json()) as { insights: { locked: boolean; depth?: unknown } };
-    expect(body.insights.locked).toBe(true);
-    expect(body.insights.depth).toBeUndefined();
+    const res = await app().request("/noconsent/insights");
+    const body = (await res.json()) as { locked: boolean; depth?: unknown };
+    expect(body.locked).toBe(true);
+    expect(body.depth).toBeUndefined();
   });
 
   it("surfaces tagline, deckMonth, and featuredCardKeys on unlocked insights", async () => {
@@ -259,14 +256,14 @@ describe("depth block", () => {
     };
     await db.insert(userStories).values({ userId: u.id, doc: storyDoc, model: "test", generatedAt: new Date() });
 
-    const res = await app().request("/storyteller");
-    const body = (await res.json()) as { insights: { locked: boolean; tagline: string | null; deckMonth: string; featuredCardKeys: string[] } };
-    expect(body.insights.locked).toBe(false);
-    expect(body.insights.tagline).toBe("Plans first, ships behind a test.");
-    expect(body.insights.deckMonth).toMatch(/^\d{4}-\d{2}$/);
-    expect(Array.isArray(body.insights.featuredCardKeys)).toBe(true);
-    expect(body.insights.featuredCardKeys.length).toBeLessThanOrEqual(6);
-    expect(body.insights.featuredCardKeys).toContain("story");
+    const res = await app().request("/storyteller/insights");
+    const body = (await res.json()) as { locked: boolean; tagline: string | null; deckMonth: string; featuredCardKeys: string[] };
+    expect(body.locked).toBe(false);
+    expect(body.tagline).toBe("Plans first, ships behind a test.");
+    expect(body.deckMonth).toMatch(/^\d{4}-\d{2}$/);
+    expect(Array.isArray(body.featuredCardKeys)).toBe(true);
+    expect(body.featuredCardKeys.length).toBeLessThanOrEqual(6);
+    expect(body.featuredCardKeys).toContain("story");
   });
 });
 
@@ -325,21 +322,19 @@ describe("economics in profile response", () => {
     await db.insert(userDeepSessions).values({ userId: u.id, machineId: "m1", sessions, windowDays: 40 });
     store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40 }));
 
-    const res = await app().request("/econuser");
+    const res = await app().request("/econuser/insights");
     const body = (await res.json()) as {
-      insights: {
-        locked: boolean;
-        economics?: {
-          survivingLoc: number;
-          shippedCommits: number;
-          windowCostUsd: number;
-          costPerSurvivingLoc: number | null;
-          commitsPer100Usd: number | null;
-        } | null;
-      };
+      locked: boolean;
+      economics?: {
+        survivingLoc: number;
+        shippedCommits: number;
+        windowCostUsd: number;
+        costPerSurvivingLoc: number | null;
+        commitsPer100Usd: number | null;
+      } | null;
     };
-    expect(body.insights.locked).toBe(false);
-    const econ = body.insights.economics!;
+    expect(body.locked).toBe(false);
+    const econ = body.economics!;
     expect(econ).toBeDefined();
     // surviving = (200-20) + (100-0) = 180+100 = 280; commits = 8
     expect(econ.survivingLoc).toBe(280);
@@ -355,19 +350,19 @@ describe("economics in profile response", () => {
     await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
     store.upsert(u.id, "m1", payload({ sessions: 5, windowDays: 30 }));
 
-    const res = await app().request("/aggonlyecon");
-    const body = (await res.json()) as { insights: { locked: boolean; economics?: unknown } };
-    expect(body.insights.locked).toBe(false);
-    expect(body.insights.economics).toBeNull();
+    const res = await app().request("/aggonlyecon/insights");
+    const body = (await res.json()) as { locked: boolean; economics?: unknown };
+    expect(body.locked).toBe(false);
+    expect(body.economics).toBeNull();
   });
 
   it("economics is absent on locked (non-consented) responses", async () => {
     await seedUser(db, { login: "lockeduser", token: "tok_lu" });
 
-    const res = await app().request("/lockeduser");
-    const body = (await res.json()) as { insights: { locked: boolean; economics?: unknown } };
-    expect(body.insights.locked).toBe(true);
-    expect(body.insights.economics).toBeUndefined();
+    const res = await app().request("/lockeduser/insights");
+    const body = (await res.json()) as { locked: boolean; economics?: unknown };
+    expect(body.locked).toBe(true);
+    expect(body.economics).toBeUndefined();
   });
 });
 
@@ -408,19 +403,17 @@ describe("stack in profile response", () => {
     await db.insert(userDeepSessions).values({ userId: u.id, machineId: "m1", sessions, windowDays: 40 });
     store.upsert(u.id, "m1", payload({ sessions: 2, windowDays: 40 }));
 
-    const res = await app().request("/stackuser");
+    const res = await app().request("/stackuser/insights");
     const body = (await res.json()) as {
-      insights: {
-        locked: boolean;
-        stack?: {
-          languages: Array<{ name: string; share: number }>;
-          models: Array<{ family: string; share: number }>;
-          ghLanguages: string[];
-        } | null;
-      };
+      locked: boolean;
+      stack?: {
+        languages: Array<{ name: string; share: number }>;
+        models: Array<{ family: string; share: number }>;
+        ghLanguages: string[];
+      } | null;
     };
-    expect(body.insights.locked).toBe(false);
-    const s = body.insights.stack!;
+    expect(body.locked).toBe(false);
+    const s = body.stack!;
     expect(s).not.toBeNull();
     // ts: 250, py: 50, rs: 75 → total 375. TypeScript is top.
     expect(s.languages.at(0)?.name).toBe("TypeScript");
@@ -435,20 +428,20 @@ describe("stack in profile response", () => {
     await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
     store.upsert(u.id, "m1", payload({ sessions: 3, windowDays: 30 }));
 
-    const res = await app().request("/aggstack");
-    const body = (await res.json()) as { insights: { locked: boolean; stack?: unknown } };
-    expect(body.insights.locked).toBe(false);
+    const res = await app().request("/aggstack/insights");
+    const body = (await res.json()) as { locked: boolean; stack?: unknown };
+    expect(body.locked).toBe(false);
     // no deep sessions → craft is null → sessions null → stack null
-    expect(body.insights.stack).toBeNull();
+    expect(body.stack).toBeNull();
   });
 
   it("stack is absent on locked (non-consented) responses", async () => {
     await seedUser(db, { login: "lockstack", token: "tok_ls" });
 
-    const res = await app().request("/lockstack");
-    const body = (await res.json()) as { insights: { locked: boolean; stack?: unknown } };
-    expect(body.insights.locked).toBe(true);
-    expect(body.insights.stack).toBeUndefined();
+    const res = await app().request("/lockstack/insights");
+    const body = (await res.json()) as { locked: boolean; stack?: unknown };
+    expect(body.locked).toBe(true);
+    expect(body.stack).toBeUndefined();
   });
 });
 
@@ -505,5 +498,47 @@ describe("tokensAllTime in profile response", () => {
     const res = await app().request("/olduser");
     const body = (await res.json()) as { tokensAllTime: number | null };
     expect(body.tokensAllTime).toBe(1000);
+  });
+});
+
+describe("GET /:login/insights endpoint", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: InsightsStore;
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new InsightsStore();
+  });
+  function app() {
+    return profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, sessionSecret: SECRET });
+  }
+
+  it("returns the unlocked insights union at the top level", async () => {
+    const u = (await seedUser(db, { login: "deck", token: "tok_deck" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+    store.upsert(u.id, "m1", payload({ sessions: 3, windowDays: 40 }));
+
+    const res = await app().request("/deck/insights");
+    const body = (await res.json()) as { locked: boolean; archetype?: string; axes?: Record<string, number> };
+    expect(res.status).toBe(200);
+    expect(body.locked).toBe(false);
+    expect(body.archetype).toBeTruthy();
+    expect(Object.values(body.axes!).every((v) => v >= 0 && v <= 100)).toBe(true);
+  });
+
+  it("hides forging from visitors but shows it to the owner", async () => {
+    const u = (await seedUser(db, { login: "frg", token: "tok_frg", githubId: "gid-frg" }))!;
+    await db.update(users).set({ insightsConsent: true, insightsMode: "deep" }).where(eq(users.id, u.id));
+
+    const anon = await app().request("/frg/insights");
+    expect((await anon.json() as { reason?: string }).reason).toBe("no_consent");
+
+    const cookie = `ccw_session=${createSessionToken({ login: "frg", avatarUrl: "", githubId: u.githubId }, SECRET)}`;
+    const owner = await app().request("/frg/insights", { headers: { Cookie: cookie } });
+    expect((await owner.json() as { reason?: string }).reason).toBe("forging");
+  });
+
+  it("404s an unknown login", async () => {
+    const res = await app().request("/ghost/insights");
+    expect(res.status).toBe(404);
   });
 });
