@@ -53,7 +53,21 @@ function Group({ title, headline, persistent, more }: { title: string; headline:
   );
 }
 
-export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile; insightsLoading: boolean }) {
+export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile | null; insightsLoading: boolean }) {
+  // Core not in yet: skeleton the whole section in-place (no GitHub group either,
+  // since that comes from the core call) so it fills progressively, not as a swap.
+  if (!profile) {
+    return (
+      <section className="bynum">
+        <div className="seclabel">By the numbers</div>
+        <div className="bynum-grid">
+          {[0, 1, 2, 3].map((i) => (
+            <div className="bynum-grp" key={i}><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
+          ))}
+        </div>
+      </section>
+    );
+  }
   const ins: ProfileInsights | null = profile.insights.locked ? null : profile.insights;
   const e = profile.efficiency;
   const g = profile.github;

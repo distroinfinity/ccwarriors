@@ -2,7 +2,16 @@ import type { Profile } from "../../useProfile";
 
 const WEEKS = 26; // ~6 months of columns
 
-export function RhythmPanel({ profile }: { profile: Profile }) {
+export function RhythmPanel({ profile }: { profile: Profile | null }) {
+  // Core not in yet: skeleton in-place so the panel fills progressively.
+  if (!profile) {
+    return (
+      <div className="ppanel rhythm">
+        <div className="seclabel">Rhythm</div>
+        <div className="sk-block" style={{ height: 70 }} aria-busy="true" />
+      </div>
+    );
+  }
   const { days, currentStreak, longestStreak } = profile.rhythm;
   if (days.length === 0) return null;
   const byDay = new Map(days.map((d) => [d.day, d.cost]));
