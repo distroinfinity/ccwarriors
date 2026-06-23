@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { getCookie } from "hono/cookie";
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { DB } from "../db/index.js";
-import { users, usageDays, orgMembers, userStories } from "../db/schema.js";
+import { users, usageDays, orgMembers, userStories, type ModelTokens } from "../db/schema.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
 import type { InsightsStore } from "../lib/insights-store.js";
 import { readSessionToken } from "../lib/session.js";
@@ -87,6 +87,159 @@ type ProfileInsights = ProfileInsightsLocked | ProfileInsightsUnlocked;
 
 const LOGIN_RE = /^[a-zA-Z0-9-]{1,39}$/; // GitHub login charset
 
+// Shared prelude for both profile reads: the bounded usage_days scan plus the
+// rhythm/efficiency/github signals derived from it. Cheap — safe on the core
+// (fast-paint) path.
+async function loadProfileSignals(deps: ProfileDeps, user: typeof users.$inferSelect) {
+  const cutoff53 = new Date(Date.now() - 53 * 7 * 86_400_000).toISOString().slice(0, 10);
+  const rows = await deps.db
+    .select({ day: usageDays.day, cost: usageDays.cost, modelBreakdown: usageDays.modelBreakdown })
+    .from(usageDays)
+    .where(and(eq(usageDays.userId, user.id), gte(usageDays.day, cutoff53)));
+  const dayRows = rows.map((r) => ({ day: r.day, cost: Number(r.cost), modelBreakdown: r.modelBreakdown as ModelTokens[] | null }));
+  const today = new Date().toISOString().slice(0, 10);
+  const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const rhythm = computeRhythm(dayRows, today);
+  const efficiency = dayRows.length > 0 ? computeEfficiency(dayRows, cutoff30) : null;
+  const github = await getGithubStatsCached(
+    { db: deps.db, serverToken: deps.githubToken ?? null, fetcher: deps.githubFetcher },
+    user,
+  );
+  return { dayRows, rhythm, efficiency, github };
+}
+
+// The full consent-gated insights block (craft, pillars, cards, depth, stack).
+// Lifted verbatim from the inline handler — same gating, same shape.
+async function buildInsights(
+  deps: ProfileDeps,
+  user: typeof users.$inferSelect,
+  isOwner: boolean,
+  signals: { rhythm: ReturnType<typeof computeRhythm>; efficiency: ReturnType<typeof computeEfficiency> | null; github: Awaited<ReturnType<typeof getGithubStatsCached>> },
+): Promise<ProfileInsights> {
+  const { rhythm, efficiency, github } = signals;
+  const merged = deps.insightsStore.merged(user.id);
+  if (!user.insightsConsent) return { locked: true, reason: "no_consent" };
+  if (user.insightsVisibility === "private" && !isOwner) return { locked: true, reason: "no_consent" };
+  if (!merged || merged.sessions === 0) return { locked: true, reason: isOwner ? "forging" : "no_consent" };
+
+  // Percentiles need both a big-enough pool AND a non-degenerate sample
+  // for THIS user; everyone else gets calibrated scores (real data, just
+  // not rank-normalized). Tiny samples never join the pool.
+  const pop = percentilePool(deps.insightsStore.population());
+  const usePercentiles = pop.length >= PERCENTILE_MIN_POPULATION && merged.sessions >= MIN_SESSIONS;
+  const axes = usePercentiles ? percentileAxes(merged, pop) : calibratedAxes(merged);
+  const effHint = efficiency
+    ? { opusShare: efficiency.opusShare, estSavingsPerMonth: efficiency.estSavingsPerMonth ?? 0 }
+    : null;
+  // Craft Score: computed on demand from the user's deep sessions + usage
+  // signal. Null when the user has no deep rows (aggregate-only insights).
+  // provisional until the deep population crosses PERCENTILE_MIN_POPULATION
+  // (single-pool percentiles are a #51 refinement); pillars stay calibrated.
+  const craft = await computeCraftForUser(deps.db, user.id);
+  const extras = craft ? await loadDeepExtras(deps.db, user.id) : null;
+  const archetype = archetypeOf(axes);
+  // Paxel-style insight deck. Built from the deep sessions craft already
+  // loaded; cards self-guard and emit only when their real signal exists.
+  // Empty when there's no deep data (aggregate-only insights).
+  const pins = user.pinnedCards ?? [];
+  // Story teaser: when a derived story exists, the deck leads with a card
+  // linking to /:login/story.
+  const login = user.githubLogin;
+  const [story] = await deps.db
+    .select({ doc: userStories.doc })
+    .from(userStories)
+    .where(eq(userStories.userId, user.id));
+  const craftEconomics = craft
+    ? outcomeEconomics(craft.input.sessions, craft.input.windowCostUsd)
+    : null;
+  // Stack profile: verified from real agent edits. Consent-gated (deep data).
+  const stack = buildStack(
+    craft?.input.sessions ?? null,
+    efficiency?.modelMix ?? null,
+    github,
+  );
+  const baseCards = craft
+    ? buildInsightCards({
+        sessions: craft.input.sessions,
+        merged,
+        efficiency,
+        archetype,
+        pillars: craft.pillars,
+        github,
+        extras,
+        economics: craftEconomics,
+        rhythm: {
+          weekendShare: rhythm.weekendShare,
+          currentStreak: rhythm.currentStreak,
+          longestStreak: rhythm.longestStreak,
+          activeDays: rhythm.days.length, // days already holds active days only
+        },
+      })
+    : [];
+  const storyCard: InsightCard | null = story
+    ? {
+        key: "story",
+        question: "What's the full story?",
+        headline: "Read your story",
+        body: story.doc.narrative.slice(0, 140),
+        shareText: `${story.doc.narrative.slice(0, 140)} My story on @ccwarriorsxyz.`,
+      }
+    : null;
+  // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
+  const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
+  // "This month" featuring: a curated 5-6, rotating monthly. The full deck stays
+  // in `cards` for the client's "see all". Pure given login, deck, month, pins.
+  const now = new Date();
+  const deckMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  const featuredCardKeys = featuredDeck(cards, login, deckMonth, pins);
+  // Deep-session-derived signals (null when user has aggregate-only data).
+  const deepSessions = craft && craft.input.sessions.length > 0 ? craft.input.sessions : null;
+  const deepMinutes = deepSessions ? deepSessions.reduce((s, r) => s + r.durationMinutes, 0) : 0;
+  const totalHours = deepSessions ? Math.round((deepMinutes / 60) * 10) / 10 : null;
+  const avgSessionMinutes = deepSessions ? Math.round(deepMinutes / deepSessions.length) : null;
+  const subagentSessionsPct = deepSessions
+    ? Math.round((deepSessions.filter((r) => r.subagentSpawns > 0).length / deepSessions.length) * 100)
+    : null;
+
+  return {
+    locked: false,
+    scoresArePercentiles: usePercentiles,
+    population: pop.length,
+    axes,
+    archetype,
+    trait: traitOf(merged, { weekendShare: rhythm.weekendShare, currentStreak: rhythm.currentStreak }),
+    habits: habitStats(merged),
+    growthEdge: growthEdgeOf(axes, merged, effHint),
+    craftScore: craft?.craftScore ?? null,
+    craftTier: craft ? tierOf(craft.craftScore) : null,
+    pillars: craft?.pillars ?? null,
+    trustTier: craft?.trustTier ?? null,
+    provisional: merged.sessions < MIN_SESSIONS || !usePercentiles,
+    sampleSessions: merged.sessions,
+    windowDays: merged.windowDays,
+    githubVerified: githubVerified(craft?.trustTier ?? null, github),
+    pinnedCards: pins,
+    cards,
+    featuredCardKeys,
+    deckMonth,
+    tagline: story?.doc.tagline ?? null,
+    depth: {
+      sessions: merged.sessions,
+      windowDays: merged.windowDays,
+      totalHours,
+      planModeSessionsPct: Math.round(merged.planModeSessionsPct),
+      subagentSessionsPct,
+      subagentSpawnsPerSession: Math.round(merged.subagentSpawnsPerSession * 10) / 10,
+      maxParallelAgents: merged.maxParallelAgents,
+      ...(extras?.maxConcurrentSessions !== undefined ? { maxConcurrentSessions: extras.maxConcurrentSessions } : {}),
+      avgSessionMinutes,
+      longestSessionMinutes: Math.round(merged.longestSessionMinutes),
+    },
+    economics: craftEconomics,
+    stack,
+  };
+}
+
 export function profileRoute(deps: ProfileDeps) {
   const app = new Hono();
 
@@ -144,22 +297,11 @@ export function profileRoute(deps: ProfileDeps) {
       isOwner = !!session && !!user && session.githubId === user.githubId;
     }
 
-    // Rhythm + efficiency only need the last 53 weeks; bound the scan instead of
-    // pulling all history. tokensAllTime comes from a dedicated all-time SUM so
-    // it stays correct regardless of this window.
-    const cutoff53 = new Date(Date.now() - 53 * 7 * 86_400_000).toISOString().slice(0, 10);
-    const rows = user
-      ? await deps.db
-          .select({
-            day: usageDays.day,
-            cost: usageDays.cost,
-            modelBreakdown: usageDays.modelBreakdown,
-          })
-          .from(usageDays)
-          .where(and(eq(usageDays.userId, user.id), gte(usageDays.day, cutoff53)))
-      : [];
-    const dayRows = rows.map((r) => ({ day: r.day, cost: Number(r.cost), modelBreakdown: r.modelBreakdown }));
-    // All-time token total: one SUM over every row, NULL (no rows) → null.
+    const signals = user ? await loadProfileSignals(deps, user) : null;
+    const rhythm = signals?.rhythm ?? { days: [], currentStreak: 0, longestStreak: 0, weekendShare: 0 };
+    const efficiency = signals?.efficiency ?? null;
+    const github = signals?.github ?? null;
+
     let tokensAllTime: number | null = null;
     if (user) {
       const [tot] = await deps.db
@@ -170,152 +312,10 @@ export function profileRoute(deps: ProfileDeps) {
         .where(eq(usageDays.userId, user.id));
       tokensAllTime = tot?.total != null ? Number(tot.total) : null;
     }
-    const today = new Date().toISOString().slice(0, 10);
-    const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
-    const rhythm = computeRhythm(dayRows, today);
-    const efficiency = dayRows.length > 0 ? computeEfficiency(dayRows, cutoff30) : null;
 
-    // GitHub public footprint: one indexed SELECT, stale-OK; any refresh is
-    // fire-and-forget inside the service. Public data — no consent gate.
-    const github = user
-      ? await getGithubStatsCached(
-          { db: deps.db, serverToken: deps.githubToken ?? null, fetcher: deps.githubFetcher },
-          user,
-        )
-      : null;
-
-    // Insights: locked unless consented AND (public OR owner). There is no
-    // session-count gate — every stat we can compute renders from session #1.
-    const merged = user ? deps.insightsStore.merged(user.id) : null;
-    let insights: ProfileInsights;
-    if (!user?.insightsConsent) {
-      insights = { locked: true, reason: "no_consent" };
-    } else if (user.insightsVisibility === "private" && !isOwner) {
-      // Indistinguishable from never-consented: visitors must not learn that
-      // this warrior opted in and then chose to hide (privacy oracle).
-      insights = { locked: true, reason: "no_consent" };
-    } else if (!merged || merged.sessions === 0) {
-      // Consented, but no payload has landed yet. Only the owner sees the
-      // honest "forging" state — to visitors it must look never-consented,
-      // or the response becomes a consent oracle.
-      insights = { locked: true, reason: isOwner ? "forging" : "no_consent" };
-    } else {
-      // Percentiles need both a big-enough pool AND a non-degenerate sample
-      // for THIS user; everyone else gets calibrated scores (real data, just
-      // not rank-normalized). Tiny samples never join the pool.
-      const pop = percentilePool(deps.insightsStore.population());
-      const usePercentiles = pop.length >= PERCENTILE_MIN_POPULATION && merged.sessions >= MIN_SESSIONS;
-      const axes = usePercentiles ? percentileAxes(merged, pop) : calibratedAxes(merged);
-      const effHint = efficiency
-        ? { opusShare: efficiency.opusShare, estSavingsPerMonth: efficiency.estSavingsPerMonth ?? 0 }
-        : null;
-      // Craft Score: computed on demand from the user's deep sessions + usage
-      // signal. Null when the user has no deep rows (aggregate-only insights).
-      // provisional until the deep population crosses PERCENTILE_MIN_POPULATION
-      // (single-pool percentiles are a #51 refinement); pillars stay calibrated.
-      const craft = user ? await computeCraftForUser(deps.db, user.id) : null;
-      const extras = user && craft ? await loadDeepExtras(deps.db, user.id) : null;
-      const archetype = archetypeOf(axes);
-      // Paxel-style insight deck. Built from the deep sessions craft already
-      // loaded; cards self-guard and emit only when their real signal exists.
-      // Empty when there's no deep data (aggregate-only insights).
-      const pins = user.pinnedCards ?? [];
-      // Story teaser: when a derived story exists, the deck leads with a card
-      // linking to /:login/story.
-      const [story] = await deps.db
-        .select({ doc: userStories.doc })
-        .from(userStories)
-        .where(eq(userStories.userId, user.id));
-      const craftEconomics = craft
-        ? outcomeEconomics(craft.input.sessions, craft.input.windowCostUsd)
-        : null;
-      // Stack profile: verified from real agent edits. Consent-gated (deep data).
-      const stack = buildStack(
-        craft?.input.sessions ?? null,
-        efficiency?.modelMix ?? null,
-        github,
-      );
-      const baseCards = craft
-        ? buildInsightCards({
-            sessions: craft.input.sessions,
-            merged,
-            efficiency,
-            archetype,
-            pillars: craft.pillars,
-            github,
-            extras,
-            economics: craftEconomics,
-            rhythm: {
-              weekendShare: rhythm.weekendShare,
-              currentStreak: rhythm.currentStreak,
-              longestStreak: rhythm.longestStreak,
-              activeDays: rhythm.days.length, // days already holds active days only
-            },
-          })
-        : [];
-      const storyCard: InsightCard | null = story
-        ? {
-            key: "story",
-            question: "What's the full story?",
-            headline: "Read your story",
-            body: story.doc.narrative.slice(0, 140),
-            shareText: `${story.doc.narrative.slice(0, 140)} My story on @ccwarriorsxyz.`,
-          }
-        : null;
-      // Curate to a Wrapped-sized deck (pins bypass the cap), then order.
-      const cards = applyPins(selectDeck(storyCard ? [storyCard, ...baseCards] : baseCards, pins), pins);
-      // "This month" featuring: a curated 5-6, rotating monthly. The full deck stays
-      // in `cards` for the client's "see all". Pure given login, deck, month, pins.
-      const now = new Date();
-      const deckMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-      const featuredCardKeys = featuredDeck(cards, login, deckMonth, pins);
-      // Deep-session-derived signals (null when user has aggregate-only data).
-      const deepSessions = craft && craft.input.sessions.length > 0 ? craft.input.sessions : null;
-      const deepMinutes = deepSessions ? deepSessions.reduce((s, r) => s + r.durationMinutes, 0) : 0;
-      const totalHours = deepSessions ? Math.round((deepMinutes / 60) * 10) / 10 : null;
-      const avgSessionMinutes = deepSessions ? Math.round(deepMinutes / deepSessions.length) : null;
-      const subagentSessionsPct = deepSessions
-        ? Math.round((deepSessions.filter((r) => r.subagentSpawns > 0).length / deepSessions.length) * 100)
-        : null;
-
-      insights = {
-        locked: false,
-        scoresArePercentiles: usePercentiles,
-        population: pop.length,
-        axes,
-        archetype,
-        trait: traitOf(merged, { weekendShare: rhythm.weekendShare, currentStreak: rhythm.currentStreak }),
-        habits: habitStats(merged),
-        growthEdge: growthEdgeOf(axes, merged, effHint),
-        craftScore: craft?.craftScore ?? null,
-        craftTier: craft ? tierOf(craft.craftScore) : null,
-        pillars: craft?.pillars ?? null,
-        trustTier: craft?.trustTier ?? null,
-        provisional: merged.sessions < MIN_SESSIONS || !usePercentiles,
-        sampleSessions: merged.sessions,
-        windowDays: merged.windowDays,
-        githubVerified: githubVerified(craft?.trustTier ?? null, github),
-        pinnedCards: pins,
-        cards,
-        featuredCardKeys,
-        deckMonth,
-        tagline: story?.doc.tagline ?? null,
-        depth: {
-          sessions: merged.sessions,
-          windowDays: merged.windowDays,
-          totalHours,
-          planModeSessionsPct: Math.round(merged.planModeSessionsPct),
-          subagentSessionsPct,
-          subagentSpawnsPerSession: Math.round(merged.subagentSpawnsPerSession * 10) / 10,
-          maxParallelAgents: merged.maxParallelAgents,
-          ...(extras?.maxConcurrentSessions !== undefined ? { maxConcurrentSessions: extras.maxConcurrentSessions } : {}),
-          avgSessionMinutes,
-          longestSessionMinutes: Math.round(merged.longestSessionMinutes),
-        },
-        economics: craftEconomics,
-        stack,
-      };
-    }
+    const insights: ProfileInsights = user
+      ? await buildInsights(deps, user, isOwner, { rhythm, efficiency, github })
+      : { locked: true, reason: "no_consent" };
 
     const orgs = user
       ? (await deps.db.select({ orgSlug: orgMembers.orgSlug }).from(orgMembers).where(eq(orgMembers.userId, user.id))).map((r) => r.orgSlug)
