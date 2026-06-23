@@ -1,6 +1,6 @@
 import { Hono, type Context } from "hono";
 import { getCookie } from "hono/cookie";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { users, usageDays, orgMembers, userStories } from "../db/schema.js";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
@@ -144,35 +144,32 @@ export function profileRoute(deps: ProfileDeps) {
       isOwner = !!session && !!user && session.githubId === user.githubId;
     }
 
-    // Rhythm + efficiency from usage_days (all history retained in the table).
+    // Rhythm + efficiency only need the last 53 weeks; bound the scan instead of
+    // pulling all history. tokensAllTime comes from a dedicated all-time SUM so
+    // it stays correct regardless of this window.
+    const cutoff53 = new Date(Date.now() - 53 * 7 * 86_400_000).toISOString().slice(0, 10);
     const rows = user
       ? await deps.db
           .select({
             day: usageDays.day,
             cost: usageDays.cost,
             modelBreakdown: usageDays.modelBreakdown,
-            inputTokens: usageDays.inputTokens,
-            outputTokens: usageDays.outputTokens,
-            cacheCreationTokens: usageDays.cacheCreationTokens,
-            cacheReadTokens: usageDays.cacheReadTokens,
           })
           .from(usageDays)
-          .where(eq(usageDays.userId, user.id))
+          .where(and(eq(usageDays.userId, user.id), gte(usageDays.day, cutoff53)))
       : [];
     const dayRows = rows.map((r) => ({ day: r.day, cost: Number(r.cost), modelBreakdown: r.modelBreakdown }));
-    // Sum all tokens across every row — bigint columns come back as numbers (mode:"number").
-    const tokensAllTime: number | null =
-      rows.length > 0
-        ? rows.reduce(
-            (sum, r) =>
-              sum +
-              Number(r.inputTokens) +
-              Number(r.outputTokens) +
-              Number(r.cacheCreationTokens) +
-              Number(r.cacheReadTokens),
-            0,
-          )
-        : null;
+    // All-time token total: one SUM over every row, NULL (no rows) → null.
+    let tokensAllTime: number | null = null;
+    if (user) {
+      const [tot] = await deps.db
+        .select({
+          total: sql<string | null>`sum(${usageDays.inputTokens} + ${usageDays.outputTokens} + ${usageDays.cacheCreationTokens} + ${usageDays.cacheReadTokens})`,
+        })
+        .from(usageDays)
+        .where(eq(usageDays.userId, user.id));
+      tokensAllTime = tot?.total != null ? Number(tot.total) : null;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const cutoff30 = new Date(Date.now() - BOARD_DAYS * 86_400_000).toISOString().slice(0, 10);
     const rhythm = computeRhythm(dayRows, today);

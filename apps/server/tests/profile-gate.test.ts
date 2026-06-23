@@ -493,4 +493,17 @@ describe("tokensAllTime in profile response", () => {
     const body = (await res.json()) as { tokensAllTime: number | null };
     expect(body.tokensAllTime).toBeNull();
   });
+
+  it("counts rows older than the 53-week rhythm window in the all-time total", async () => {
+    const u = (await seedUser(db, { login: "olduser", token: "tok_old" }))!;
+    // 2 years ago — well outside the 53-week scan window used for rhythm.
+    await db.insert(usageDays).values({
+      userId: u.id, machineId: "m1", tool: "claude", day: "2024-01-01",
+      inputTokens: 1000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: "1.00",
+    });
+
+    const res = await app().request("/olduser");
+    const body = (await res.json()) as { tokensAllTime: number | null };
+    expect(body.tokensAllTime).toBe(1000);
+  });
 });
