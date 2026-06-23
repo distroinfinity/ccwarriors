@@ -387,7 +387,7 @@ function LockedPanel({ profile, onConsentChanged }: { profile: Profile; onConsen
   );
 }
 
-export function ArchetypeCard({ profile, insightsLoading, onConsentChanged }: { profile: Profile; insightsLoading: boolean; onConsentChanged: () => void }) {
+export function ArchetypeCard({ profile, insightsLoading, insightsError, onConsentChanged }: { profile: Profile; insightsLoading: boolean; insightsError: boolean; onConsentChanged: () => void }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const unlocked = !profile.insights.locked;
@@ -458,6 +458,11 @@ export function ArchetypeCard({ profile, insightsLoading, onConsentChanged }: { 
 
         {insightsLoading ? (
           <div className="sk-block" style={{ height: 150, marginTop: 14 }} aria-busy="true" />
+        ) : insightsError ? (
+          <div className="arch-locked">
+            <p>Couldn’t load this profile’s insights — this is usually temporary.</p>
+            <button className="btn g" onClick={onConsentChanged}>Retry</button>
+          </div>
         ) : insights ? (
           hasCraftScore(insights) ? (
             <CraftScoreHero insights={insights} archetype={insights.archetype} tagline={insights.tagline} />

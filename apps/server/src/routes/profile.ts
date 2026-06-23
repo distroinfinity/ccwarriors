@@ -105,7 +105,7 @@ async function loadProfileSignals(deps: ProfileDeps, user: typeof users.$inferSe
     { db: deps.db, serverToken: deps.githubToken ?? null, fetcher: deps.githubFetcher },
     user,
   );
-  return { dayRows, rhythm, efficiency, github };
+  return { rhythm, efficiency, github };
 }
 
 // The full consent-gated insights block (craft, pillars, cards, depth, stack).
@@ -361,7 +361,9 @@ export function profileRoute(deps: ProfileDeps) {
       lastSyncedAt: user?.lastSyncedAt?.toISOString() ?? null,
       orgs,
       rhythm: {
-        days: rhythm.days.filter((d) => d.day >= new Date(Date.now() - 53 * 7 * 86_400_000).toISOString().slice(0, 10)),
+        // loadProfileSignals already bounds the usage_days scan to 53 weeks, so
+        // rhythm.days is within-window — no response-side filter needed.
+        days: rhythm.days,
         currentStreak: rhythm.currentStreak,
         longestStreak: rhythm.longestStreak,
       },

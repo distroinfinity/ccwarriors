@@ -158,6 +158,8 @@ export function ByTheNumbers({ profile, insightsLoading }: { profile: Profile; i
           {ghPersistent || ghHead.length > 0 ? (
             <Group title={g ? "GitHub · verified" : "GitHub"} headline={ghHead} persistent={ghPersistent} more={ghMore} />
           ) : null}
+          {/* Placeholders for the three insight-derived groups: Outcomes, Sessions, Builds with. */}
+          <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
           <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
           <div className="bynum-grp"><div className="sk-block" style={{ height: 96 }} aria-busy="true" /></div>
         </div>

@@ -194,12 +194,16 @@ export function useProfile(login: string, refreshKey = 0): ProfileState {
 
 export type InsightsState =
   | { status: "loading" }
-  | { status: "ready"; login: string; insights: ProfileInsights | LockedInsights };
+  | { status: "ready"; login: string; insights: ProfileInsights | LockedInsights }
+  | { status: "error"; login: string };
 
 // Lazy companion to useProfile: fetches the deep insights block in parallel.
-// A failed/absent insights call degrades to a locked union so the page still
-// renders. Keeps the previous payload across refreshKey bumps (no skeleton
-// flash on consent toggles); only a login change resets to a skeleton.
+// Keeps the previous payload across refreshKey bumps (no skeleton flash on
+// consent toggles); only a login change resets to a skeleton. A failed fetch
+// surfaces an explicit "error" state — kept distinct from a real locked
+// response so the UI can offer a retry instead of mistaking a transient server
+// error for "no_consent" (which would otherwise strand a consented owner in the
+// "Building your profile…" polling loop).
 export function useProfileInsights(login: string, refreshKey = 0): InsightsState {
   const [state, setState] = useState<InsightsState>({ status: "loading" });
   useEffect(() => {
@@ -209,21 +213,28 @@ export function useProfileInsights(login: string, refreshKey = 0): InsightsState
         ? prev
         : { status: "loading" },
     );
-    const settle = (insights: ProfileInsights | LockedInsights) => {
-      if (!cancelled) setState({ status: "ready", login, insights });
-    };
+    // On failure keep stale-but-good data for the same login (a background
+    // refetch hiccup shouldn't blank the deck); only a cold failure shows error.
+    const fail = () =>
+      setState((prev) =>
+        prev.status === "ready" && prev.login.toLowerCase() === login.toLowerCase()
+          ? prev
+          : { status: "error", login },
+      );
     fetch(`${API_HTTP}/profile/${encodeURIComponent(login)}/insights`, { credentials: "include" })
       .then(async (r) => {
         if (cancelled) return;
-        if (!r.ok) return settle({ locked: true, reason: "no_consent" });
+        if (!r.ok) return fail();
         const insights = (await r.json()) as ProfileInsights | LockedInsights;
         // Tolerate older servers / partial payloads: cards is always an array.
         if (!insights.locked && !Array.isArray((insights as ProfileInsights).cards)) {
           (insights as ProfileInsights).cards = [];
         }
-        settle(insights);
+        setState({ status: "ready", login, insights });
       })
-      .catch(() => settle({ locked: true, reason: "no_consent" }));
+      .catch(() => {
+        if (!cancelled) fail();
+      });
     return () => {
       cancelled = true;
     };

@@ -542,3 +542,40 @@ describe("GET /:login/insights endpoint", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ── rhythm window ─────────────────────────────────────────────────────────────
+// The core response no longer filters rhythm.days; the 53-week bound is enforced
+// solely by loadProfileSignals' usage_days scan. This pins that invariant.
+
+describe("rhythm window in profile response", () => {
+  let db: Awaited<ReturnType<typeof makeDb>>;
+  let store: InsightsStore;
+  beforeEach(async () => {
+    db = await makeDb();
+    store = new InsightsStore();
+  });
+  function app() {
+    return profileRoute({ db, store: new LeaderboardStore(), insightsStore: store, sessionSecret: SECRET });
+  }
+
+  it("excludes usage_days older than the 53-week window from rhythm.days", async () => {
+    const u = (await seedUser(db, { login: "rhythmuser", token: "tok_rh" }))!;
+    const today = new Date().toISOString().slice(0, 10);
+    // Out-of-window: ~2.5 years ago, well beyond 53 weeks.
+    await db.insert(usageDays).values({
+      userId: u.id, machineId: "m1", tool: "claude", day: "2024-01-01",
+      inputTokens: 10, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: "5.00",
+    });
+    // In-window: today.
+    await db.insert(usageDays).values({
+      userId: u.id, machineId: "m1", tool: "claude", day: today,
+      inputTokens: 10, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cost: "3.00",
+    });
+
+    const res = await app().request("/rhythmuser");
+    const body = (await res.json()) as { rhythm: { days: Array<{ day: string; cost: number }> } };
+    const days = body.rhythm.days.map((d) => d.day);
+    expect(days).toContain(today);
+    expect(days).not.toContain("2024-01-01");
+  });
+});

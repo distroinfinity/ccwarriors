@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useProfile, useProfileInsights, type Profile, type ProfileInsights, type LockedInsights } from "../../useProfile";
 import { ClawdLogo } from "../ClawdLogo";
 import { InstallBlock } from "../InstallBlock";
@@ -32,7 +32,11 @@ function ProfileSkeleton() {
   );
 }
 
-const LOADING_INSIGHTS: LockedInsights = { locked: true, reason: "no_consent" };
+// Type-filler used while insights are loading or errored. Never shown as a real
+// consent state: ArchetypeCard intercepts the loading and error flags before
+// reading insights, and the other sections treat a locked value as
+// "no data → render nothing".
+const PLACEHOLDER_INSIGHTS: LockedInsights = { locked: true, reason: "no_consent" };
 
 export function ProfilePage({ login }: { login: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -40,23 +44,26 @@ export function ProfilePage({ login }: { login: string }) {
   const core = useProfile(login, refreshKey);
   const insightsState = useProfileInsights(login, refreshKey);
 
+  const title = core.status === "ready" ? `${core.profile.login} · CCWarriors` : null;
+  useEffect(() => {
+    if (title) document.title = title;
+  }, [title]);
+
   if (core.status === "loading") return <ProfileSkeleton />;
   if (core.status === "notfound") return <NotFound login={login} />;
 
   const insightsLoading = insightsState.status === "loading";
-  // Compose the contract children expect; the placeholder is never rendered
-  // because every insights-consuming section checks `insightsLoading` first.
+  const insightsError = insightsState.status === "error";
   const insights: ProfileInsights | LockedInsights =
-    insightsState.status === "ready" ? insightsState.insights : LOADING_INSIGHTS;
+    insightsState.status === "ready" ? insightsState.insights : PLACEHOLDER_INSIGHTS;
   const p: Profile = { ...core.profile, insights };
-  document.title = `${p.login} · CCWarriors`;
 
   const cards = !p.insights.locked ? p.insights.cards : [];
   const hasStory = cards.some((c) => c.key === "story");
 
   return (
     <div className="profile">
-      <ArchetypeCard profile={p} insightsLoading={insightsLoading} onConsentChanged={refetch} />
+      <ArchetypeCard profile={p} insightsLoading={insightsLoading} insightsError={insightsError} onConsentChanged={refetch} />
       <ByTheNumbers profile={p} insightsLoading={insightsLoading} />
       <InsightCards
         cards={cards}
