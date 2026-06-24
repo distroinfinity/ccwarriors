@@ -88,6 +88,19 @@ jobs:
           apex=$(curl -s -o /dev/null -w "%{http_code}" -m 10 https://ccwarriors.xyz/install.sh || echo ERR)
           echo "- ℹ️ apex \`ccwarriors.xyz/install.sh\` → HTTP $apex *(Vercel challenge cycles; not alerting)*" >> "$report"
 
+          # Silent-daemon alert (#91): active users whose sync went stale are
+          # likely dead daemons. Page when the 24h count crosses the threshold.
+          fleet=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/fleet || echo ERR)
+          if jq -e '.silent24h' >/dev/null 2>&1 <<<"$fleet"; then
+            s24=$(jq -r '.silent24h' <<<"$fleet")
+            if [ "$s24" -ge 8 ]; then
+              echo "- ❌ **$s24 active daemons silent >24h** — possible self-update/relaunch regression (\`/telemetry/fleet\`)" >> "$report"
+              failed=1
+            else
+              echo "- ✅ silent active daemons (>24h): $s24" >> "$report"
+            fi
+          fi
+
           echo "---" >> "$report"
           echo "[Run log](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})" >> "$report"
           cat "$report"
