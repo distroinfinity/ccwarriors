@@ -71,6 +71,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       return;
     }
     // Not under launchd: re-exec the freshly-swapped bundle in place.
+    log("relaunching via re-exec (foreground daemon, or kickstart unavailable)");
     const { spawn } = await import("node:child_process");
     spawn(process.execPath, [process.argv[1] ?? "", "daemon", String(heartbeatMin)], {
       detached: true,

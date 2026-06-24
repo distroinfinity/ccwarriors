@@ -92,10 +92,10 @@ export function autosyncOn(minutes: number): void {
     for (const args of steps) {
       try {
         execFileSync("launchctl", args, { stdio: "ignore" });
-      } catch {
+      } catch (err) {
         // bootout (not loaded) and bootstrap (already loaded) may fail benignly;
         // a kickstart failure is real — surface it.
-        if (args[0] === "kickstart") throw new Error("autosync: launchctl kickstart failed");
+        if (args[0] === "kickstart") throw new Error("autosync: launchctl kickstart failed", { cause: err });
       }
     }
   } else if (process.platform === "linux") {

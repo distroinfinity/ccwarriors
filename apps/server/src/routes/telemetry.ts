@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import type { LeaderboardStore } from "../lib/leaderboard-store.js";
-import { countSilentActive } from "../lib/fleet-health.js";
+import { countSilentActive, isActive } from "../lib/fleet-health.js";
 
 // Anonymous product telemetry (install funnel + CLI failures). Events are
 // logged to stdout (Railway logs) and forwarded to PostHog when
@@ -145,7 +145,7 @@ export function telemetryRoute(store?: LeaderboardStore) {
       const H = 3.6e6;
       return c.json({
         total: entries.length,
-        active: entries.filter((e) => (e.spark ?? []).reduce((a, b) => a + b, 0) > 0).length,
+        active: entries.filter(isActive).length,
         silent2h: countSilentActive(entries, now, 2 * H),
         silent12h: countSilentActive(entries, now, 12 * H),
         silent24h: countSilentActive(entries, now, 24 * H),
