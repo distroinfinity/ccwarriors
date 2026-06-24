@@ -4,7 +4,7 @@ import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
 import { loadConfig, saveConfig, clearConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION, type Config } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
-import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
+import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus, ensureDaemonAlive } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
 import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsightsDeep, postTranscripts, setInsightsConsent, getInsightsMode } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
@@ -231,11 +231,8 @@ async function cmdSync(): Promise<void> {
   // build if one shipped. Cron/manual runs use it on their next invocation.
   const updateOutcome = await maybeSelfUpdate();
   if (updateOutcome === "updated") {
-    console.log(dim("   (ccwarriors updated itself — new version active on the next run)"));
+    console.log(dim("   ccwarriors updated to the latest build — active on the next run"));
   } else if (updateOutcome === "failed") {
-    // A newer build is out but the auto-update couldn't apply it — without this
-    // the user is silently stuck on an old build and never gets new features
-    // (e.g. profiles/insights). Tell them how to update by hand.
     console.log(yellow("   A new ccwarriors is available but auto-update couldn't apply it."));
     console.log(yellow(`   Reinstall to get the latest (profiles, insights, all your tools): ${installCommand()}`));
   }
@@ -510,6 +507,11 @@ async function main(): Promise<void> {
   if (cmd === "sync" || cmd === undefined) {
     await selfUpdateBootCheck();
     await cmdSync();
+    // A manual run is the moment to revive a daemon that died on a past
+    // self-update (#91). Silent unless we actually re-armed it.
+    if (ensureDaemonAlive() === "rearmed") {
+      console.log(dim("   (autosync daemon was down — restarted it)"));
+    }
     return;
   }
 
