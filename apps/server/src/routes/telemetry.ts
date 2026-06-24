@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
+import type { LeaderboardStore } from "../lib/leaderboard-store.js";
+import { countSilentActive } from "../lib/fleet-health.js";
 
 // Anonymous product telemetry (install funnel + CLI failures). Events are
 // logged to stdout (Railway logs) and forwarded to PostHog when
@@ -87,7 +89,7 @@ export function captureEvent(event: string, distinctId: string, props: Record<st
   }).catch(() => {});
 }
 
-export function telemetryRoute() {
+export function telemetryRoute(store?: LeaderboardStore) {
   const app = new Hono();
   app.post("/", zValidator("json", bodySchema), (c) => {
     const { event, distinctId, props } = c.req.valid("json");
@@ -98,6 +100,7 @@ export function telemetryRoute() {
       "tool_collection_failed",
       "self_update_failed",
       "self_update_rollback",
+      "self_update_relaunch_failed",
       "autosync_off_failed",
     ];
     if (failureEvents.includes(event)) {
@@ -121,6 +124,7 @@ export function telemetryRoute() {
       "tool_collection_failed",
       "self_update_failed",
       "self_update_rollback",
+      "self_update_relaunch_failed",
       "autosync_off_failed",
     ]);
     const installLastHour = lastHour.filter((f) => !nonPaging.has(f.event));
@@ -134,5 +138,19 @@ export function telemetryRoute() {
       recent: failures.slice(-10).map((f) => ({ event: f.event, step: f.step, os: f.os, at: new Date(f.at).toISOString() })),
     });
   });
+  if (store) {
+    app.get("/fleet", (c) => {
+      const now = Date.now();
+      const entries = store.getTop("30d", 100_000);
+      const H = 3.6e6;
+      return c.json({
+        total: entries.length,
+        active: entries.filter((e) => (e.spark ?? []).reduce((a, b) => a + b, 0) > 0).length,
+        silent2h: countSilentActive(entries, now, 2 * H),
+        silent12h: countSilentActive(entries, now, 12 * H),
+        silent24h: countSilentActive(entries, now, 24 * H),
+      });
+    });
+  }
   return app;
 }
