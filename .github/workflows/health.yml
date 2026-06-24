@@ -93,6 +93,11 @@ jobs:
           fleet=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/fleet || echo ERR)
           if jq -e '.silent24h' >/dev/null 2>&1 <<<"$fleet"; then
             s24=$(jq -r '.silent24h | floor' <<<"$fleet")
+            # Threshold 8: more than a handful of *active* daemons going dark for
+            # a full day is well beyond coincidental idleness on a ~50-100 user
+            # fleet — it signals a relaunch/self-update regression, not a few
+            # closed laptops. Revisit as a fraction of `.active` (e.g. >15%) once
+            # the fleet outgrows a fixed count.
             if [ "$s24" -ge 8 ]; then
               echo "- ❌ **$s24 active daemons silent >24h** — possible self-update/relaunch regression (\`/telemetry/fleet\`)" >> "$report"
               failed=1

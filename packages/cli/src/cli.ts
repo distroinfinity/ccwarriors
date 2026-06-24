@@ -508,9 +508,12 @@ async function main(): Promise<void> {
     await selfUpdateBootCheck();
     await cmdSync();
     // A manual run is the moment to revive a daemon that died on a past
-    // self-update (#91). Silent unless we actually re-armed it.
-    if (ensureDaemonAlive() === "rearmed") {
+    // self-update (#91). Silent unless we acted: re-armed it, or tried and failed.
+    const heal = ensureDaemonAlive();
+    if (heal === "rearmed") {
       console.log(dim("   (autosync daemon was down — restarted it)"));
+    } else if (heal === "failed") {
+      console.log(yellow("   autosync daemon is down and couldn't be restarted — run `ccwarriors autosync on`"));
     }
     return;
   }

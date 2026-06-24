@@ -77,6 +77,11 @@ export function autosyncOn(minutes: number): void {
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>${pathEnv}</string>
   </dict>
+  <!-- RunAtLoad: explicit start at login/boot. Kept deliberately even though
+       bootstrap+kickstart also start the job (a harmless one-time double-start
+       on \`autosync on\`): KeepAlive's start is the very path that proved
+       unreliable on recent macOS (#91), so we don't lean on it for the initial
+       start. KeepAlive remains for crash recovery (non-zero exit). -->
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${logPath()}</string>
@@ -89,13 +94,20 @@ export function autosyncOn(minutes: number): void {
     // Modern bootstrap + kickstart. Legacy `load` + RunAtLoad/KeepAlive is
     // unreliable on recent macOS (job never starts/relaunches — issue #91).
     const steps = darwinAutosyncSteps(uid, plistPath(), LABEL);
+    let bootstrapFailed = false;
     for (const args of steps) {
       try {
         execFileSync("launchctl", args, { stdio: "ignore" });
       } catch (err) {
-        // bootout (not loaded) and bootstrap (already loaded) may fail benignly;
-        // a kickstart failure is real — surface it.
-        if (args[0] === "kickstart") throw new Error("autosync: launchctl kickstart failed", { cause: err });
+        // bootout (not loaded) and bootstrap (already loaded) can fail benignly.
+        // A kickstart failure is fatal — and if bootstrap also failed, that's the
+        // likely root cause (kickstart can't start a job that was never
+        // registered), so name it rather than blaming kickstart alone.
+        if (args[0] === "bootstrap") bootstrapFailed = true;
+        else if (args[0] === "kickstart") {
+          const hint = bootstrapFailed ? " (bootstrap failed first — check the plist)" : "";
+          throw new Error(`autosync: launchctl kickstart failed${hint}`, { cause: err });
+        }
       }
     }
   } else if (process.platform === "linux") {
@@ -178,33 +190,74 @@ export function autosyncStatus(): string {
   return statusLine({ enabled: true, minutes, jobAlive, platform: process.platform });
 }
 
+export type DaemonHealOutcome = "ok" | "rearmed" | "off" | "unsupported" | "failed";
+
 /** Re-arm a dead daemon. Safe to call on any interactive run; only acts when
- *  autosync is enabled (marker present) but launchd has no live job. */
-export function ensureDaemonAlive(): "ok" | "rearmed" | "off" | "unsupported" {
-  if (!autosyncEnabled()) return "off";
-  if (process.platform !== "darwin") return "unsupported"; // cron self-recovers
-  const jobAlive = launchdJobAlive();
+ *  autosync is enabled (marker present) but launchd has no live job. Returns
+ *  "failed" (distinct from "off") when the daemon is dead but the restart
+ *  itself errored — so the caller can warn instead of staying silent.
+ *  Deps are injectable for tests; production passes none. */
+export function ensureDaemonAlive(deps: {
+  platform?: NodeJS.Platform;
+  enabled?: boolean;
+  jobAlive?: boolean;
+  plistExists?: boolean;
+  rearm?: (uid: number) => void;
+} = {}): DaemonHealOutcome {
+  const platform = deps.platform ?? process.platform;
+  const enabled = deps.enabled ?? autosyncEnabled();
+  if (!enabled) return "off";
+  if (platform !== "darwin") return "unsupported"; // cron self-recovers
+  const jobAlive = deps.jobAlive ?? launchdJobAlive();
   if (jobAlive) return "ok";
-  if (!shouldRearm({ enabled: true, platform: "darwin", jobAlive, plistExists: existsSync(plistPath()) })) return "off";
+  const plistExists = deps.plistExists ?? existsSync(plistPath());
+  if (!shouldRearm({ enabled, platform, jobAlive, plistExists })) return "off"; // no plist to re-arm from
+  const uid = process.getuid?.() ?? 501;
+  const rearm =
+    deps.rearm ??
+    ((u: number) => {
+      try { execFileSync("launchctl", bootstrapArgs(u, plistPath()), { stdio: "ignore" }); } catch { /* maybe already bootstrapped */ }
+      execFileSync("launchctl", kickstartArgs(u, LABEL), { stdio: "ignore" });
+    });
   try {
-    const uid = process.getuid?.() ?? 501;
-    try { execFileSync("launchctl", bootstrapArgs(uid, plistPath()), { stdio: "ignore" }); } catch { /* maybe already bootstrapped */ }
-    execFileSync("launchctl", kickstartArgs(uid, LABEL), { stdio: "ignore" });
+    rearm(uid);
     return "rearmed";
-  } catch { /* best-effort; status already tells the truth */ }
-  return "off";
+  } catch {
+    return "failed"; // dead and we couldn't restart it — caller should surface this
+  }
 }
 
-/** Called by the daemon right after a self-update swap. Kickstart the tracked
- *  job so launchd relaunches onto the NEW bundle. Returns true if issued. */
-export function relaunchAfterUpdate(): boolean {
-  if (process.platform !== "darwin") return false; // cron picks up next run
-  if (!autosyncEnabled() || !existsSync(plistPath())) return false; // foreground daemon
+export type RelaunchOutcome = "relaunched" | "foreground" | "kickstart_failed";
+
+/** Called by the daemon right after a self-update swap to relaunch onto the NEW
+ *  bundle. Returns:
+ *   - "relaunched"       under launchd; kickstart issued — launchd restarts us
+ *   - "foreground"       not under launchd (or non-darwin) — caller re-execs
+ *   - "kickstart_failed" under launchd but kickstart errored — caller must NOT
+ *                        re-exec (a detached copy would race launchd's own
+ *                        KeepAlive restart) and should beacon the failure.
+ *  Deps are injectable for tests; production passes none. */
+export function relaunchAfterUpdate(deps: {
+  platform?: NodeJS.Platform;
+  enabled?: boolean;
+  plistExists?: boolean;
+  kickstart?: (uid: number) => void;
+} = {}): RelaunchOutcome {
+  const platform = deps.platform ?? process.platform;
+  if (platform !== "darwin") return "foreground"; // cron/non-launchd → re-exec
+  const enabled = deps.enabled ?? autosyncEnabled();
+  const plistExists = deps.plistExists ?? existsSync(plistPath());
+  if (!enabled || !plistExists) return "foreground"; // foreground daemon, not launchd
+  const uid = process.getuid?.() ?? 501;
+  const kickstart =
+    deps.kickstart ??
+    ((u: number) => {
+      execFileSync("launchctl", kickstartArgs(u, LABEL), { stdio: "ignore" });
+    });
   try {
-    const uid = process.getuid?.() ?? 501;
-    execFileSync("launchctl", kickstartArgs(uid, LABEL), { stdio: "ignore" });
-    return true;
+    kickstart(uid);
+    return "relaunched";
   } catch {
-    return false;
+    return "kickstart_failed";
   }
 }

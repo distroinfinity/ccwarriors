@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bootstrapArgs, kickstartArgs, bootoutArgs, statusLine, LABEL, darwinAutosyncSteps, shouldRearm } from "../src/autosync.js";
+import { bootstrapArgs, kickstartArgs, bootoutArgs, statusLine, LABEL, darwinAutosyncSteps, shouldRearm, relaunchAfterUpdate, ensureDaemonAlive } from "../src/autosync.js";
 
 describe("launchctl argv builders", () => {
   it("bootstrap targets the gui domain with the plist path", () => {
@@ -67,5 +67,48 @@ describe("shouldRearm", () => {
   });
   it("does not rearm when the plist is missing", () => {
     expect(shouldRearm({ ...base, plistExists: false })).toBe(false);
+  });
+});
+
+describe("relaunchAfterUpdate", () => {
+  it("non-darwin → foreground (re-exec)", () => {
+    expect(relaunchAfterUpdate({ platform: "linux" })).toBe("foreground");
+  });
+  it("darwin but autosync disabled → foreground", () => {
+    expect(relaunchAfterUpdate({ platform: "darwin", enabled: false, plistExists: true })).toBe("foreground");
+  });
+  it("darwin, enabled, no plist → foreground", () => {
+    expect(relaunchAfterUpdate({ platform: "darwin", enabled: true, plistExists: false })).toBe("foreground");
+  });
+  it("under launchd + kickstart succeeds → relaunched", () => {
+    expect(relaunchAfterUpdate({ platform: "darwin", enabled: true, plistExists: true, kickstart: () => {} })).toBe("relaunched");
+  });
+  it("under launchd + kickstart throws → kickstart_failed (caller must not re-exec)", () => {
+    expect(
+      relaunchAfterUpdate({ platform: "darwin", enabled: true, plistExists: true, kickstart: () => { throw new Error("boom"); } }),
+    ).toBe("kickstart_failed");
+  });
+});
+
+describe("ensureDaemonAlive", () => {
+  it("off when autosync disabled", () => {
+    expect(ensureDaemonAlive({ enabled: false })).toBe("off");
+  });
+  it("unsupported off-darwin (cron self-recovers)", () => {
+    expect(ensureDaemonAlive({ enabled: true, platform: "linux" })).toBe("unsupported");
+  });
+  it("ok when the job is already alive", () => {
+    expect(ensureDaemonAlive({ enabled: true, platform: "darwin", jobAlive: true })).toBe("ok");
+  });
+  it("off when dead but no plist to re-arm from", () => {
+    expect(ensureDaemonAlive({ enabled: true, platform: "darwin", jobAlive: false, plistExists: false })).toBe("off");
+  });
+  it("rearmed when dead + plist + restart succeeds", () => {
+    expect(ensureDaemonAlive({ enabled: true, platform: "darwin", jobAlive: false, plistExists: true, rearm: () => {} })).toBe("rearmed");
+  });
+  it("failed (not off) when the restart itself errors", () => {
+    expect(
+      ensureDaemonAlive({ enabled: true, platform: "darwin", jobAlive: false, plistExists: true, rearm: () => { throw new Error("x"); } }),
+    ).toBe("failed");
   });
 });
