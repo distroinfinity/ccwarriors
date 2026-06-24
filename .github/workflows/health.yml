@@ -92,7 +92,7 @@ jobs:
           # likely dead daemons. Page when the 24h count crosses the threshold.
           fleet=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/fleet || echo ERR)
           if jq -e '.silent24h' >/dev/null 2>&1 <<<"$fleet"; then
-            s24=$(jq -r '.silent24h' <<<"$fleet")
+            s24=$(jq -r '.silent24h | floor' <<<"$fleet")
             if [ "$s24" -ge 8 ]; then
               echo "- ❌ **$s24 active daemons silent >24h** — possible self-update/relaunch regression (\`/telemetry/fleet\`)" >> "$report"
               failed=1
