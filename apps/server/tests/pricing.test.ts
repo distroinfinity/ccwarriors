@@ -44,7 +44,7 @@ describe("pricing engine (committed LiteLLM snapshot)", () => {
 });
 
 describe("gpt-5.3-codex-spark price override", () => {
-  const SPARK = { input: 1.75e-6, output: 1.4e-5, cacheCreate: 1.75e-6, cacheRead: 1.75e-7 };
+  const CODEX_SPARK_PRICE = { input: 1.75e-6, output: 14e-6, cacheCreate: 1.75e-6, cacheRead: 1.75e-7 };
 
   // Several tests rebuild the table via indexPrices(); restore the committed
   // snapshot afterward so other tests in the suite see the real table.
@@ -54,8 +54,8 @@ describe("gpt-5.3-codex-spark price override", () => {
 
   it("prices the model via the override (bare + provider-prefixed name)", () => {
     const bare = lookupModelPrice("gpt-5.3-codex-spark");
-    expect(bare).toEqual(SPARK);
-    expect(lookupModelPrice("chatgpt/gpt-5.3-codex-spark")).toEqual(SPARK);
+    expect(bare).toEqual(CODEX_SPARK_PRICE);
+    expect(lookupModelPrice("chatgpt/gpt-5.3-codex-spark")).toEqual(CODEX_SPARK_PRICE);
   });
 
   it("does not report the model as unknown and prices it at $1.75/$14 per 1M", () => {
@@ -74,10 +74,10 @@ describe("gpt-5.3-codex-spark price override", () => {
 
   it("keeps the override after a refresh payload that lacks the model", () => {
     indexPrices({ "gpt-4o": { input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 } });
-    expect(lookupModelPrice("gpt-5.3-codex-spark")).toEqual(SPARK);
+    expect(lookupModelPrice("gpt-5.3-codex-spark")).toEqual(CODEX_SPARK_PRICE);
   });
 
-  it("yields to a real upstream price when LiteLLM provides one", () => {
+  it("yields to a real upstream price under the bare key", () => {
     indexPrices({
       "gpt-5.3-codex-spark": { input_cost_per_token: 9e-9, output_cost_per_token: 8e-9 },
     });
@@ -87,5 +87,18 @@ describe("gpt-5.3-codex-spark price override", () => {
       cacheCreate: 9e-9, // cache_*_cost absent → indexPrices falls back to input
       cacheRead: 9e-9,
     });
+  });
+
+  // Regression: LiteLLM currently carries the model only as the provider-prefixed
+  // `chatgpt/gpt-5.3-codex-spark`. When it lands a real price under that form, the
+  // override must yield for the BARE name the CLI actually emits — not just the
+  // prefixed one. (A prior `!ex.has(bareKey)` guard missed this and clobbered it.)
+  it("yields to a real upstream price under the provider-prefixed key", () => {
+    indexPrices({
+      "chatgpt/gpt-5.3-codex-spark": { input_cost_per_token: 9e-9, output_cost_per_token: 8e-9 },
+    });
+    const upstream = { input: 9e-9, output: 8e-9, cacheCreate: 9e-9, cacheRead: 9e-9 };
+    expect(lookupModelPrice("gpt-5.3-codex-spark")).toEqual(upstream);
+    expect(lookupModelPrice("chatgpt/gpt-5.3-codex-spark")).toEqual(upstream);
   });
 });

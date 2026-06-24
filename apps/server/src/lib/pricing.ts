@@ -41,7 +41,7 @@ const DEFAULT_PRICE: ModelPrice = {
 const PRICE_OVERRIDES: Record<string, ModelPrice> = {
   "gpt-5.3-codex-spark": {
     input: 1.75e-6,
-    output: 1.4e-5,
+    output: 14e-6,
     cacheCreate: 1.75e-6,
     cacheRead: 1.75e-7,
   },
@@ -99,15 +99,20 @@ export function indexPrices(raw: RawPrices) {
     const short = lower.split("/").pop();
     if (short && !base.has(short)) base.set(short, price);
   }
-  // Hand-priced overrides fill ONLY gaps — a key upstream omits, or sends with a
-  // null/zero cost (the `if (!input && !output) continue` above drops those).
-  // So when LiteLLM later lands a real price, upstream already populated `ex`
-  // and the override is inert. Applied here, the override survives every refresh.
+  // Hand-priced overrides fill ONLY a genuine gap: a model upstream prices under
+  // NO key (absent, or sent with the null/zero cost the loop above dropped). The
+  // basename index is populated for every priced model regardless of provider
+  // prefix, so `base.has(short)` is the canonical "upstream already prices this"
+  // test — gating the whole override on it self-heals the moment LiteLLM gives
+  // any `…/gpt-5.3-codex-spark` a real price, even under the prefixed key form it
+  // currently uses. Re-run on every refresh, so the override survives without
+  // ever shadowing a real upstream price.
   for (const [key, price] of Object.entries(PRICE_OVERRIDES)) {
     const lower = key.toLowerCase();
-    if (!ex.has(lower)) ex.set(lower, price);
-    const short = lower.split("/").pop();
-    if (short && !base.has(short)) base.set(short, price);
+    const short = lower.split("/").pop() ?? lower;
+    if (base.has(short)) continue;
+    ex.set(lower, price);
+    base.set(short, price);
   }
   exact = ex;
   basename = base;
