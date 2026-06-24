@@ -79,6 +79,29 @@ jobs:
             fi
           fi
 
+          # Stale autosync daemons (issue #91): a self-update that installs the
+          # new bundle but never relaunches it leaves a daemon silently dead —
+          # invisible client-side (it emits no beacon), so the server exposes the
+          # cohort. Alert only on a sustained spike (>=5 daemons AND >=40% silent
+          # >12h, suggesting a release-wide relaunch failure); normal idle laptops
+          # never page. The raw numbers are always reported.
+          dmn=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/stale-daemons || echo ERR)
+          if ! jq -e '.daemonUsers' >/dev/null 2>&1 <<<"$dmn"; then
+            echo "- ❌ **stale-daemon telemetry unreachable** (\`/telemetry/stale-daemons\`)" >> "$report"
+            failed=1
+          else
+            du=$(jq -r '.daemonUsers' <<<"$dmn")
+            s12=$(jq -r '.silent12h' <<<"$dmn")
+            ratio=$(( du > 0 ? s12 * 100 / du : 0 ))
+            worst=$(jq -r '[.stale[:3][] | "\(.githubLogin)(\(.silentHours)h/\(.lastBuild // "?"))"] | join(", ")' <<<"$dmn")
+            if [ "$s12" -ge 5 ] && [ "$ratio" -ge 40 ]; then
+              echo "- ❌ **$s12/$du daemon users silent >12h ($ratio%)** — possible self-update relaunch failure (#91): $worst" >> "$report"
+              failed=1
+            else
+              echo "- ✅ stale daemons: $s12/$du silent >12h ($ratio%)" >> "$report"
+            fi
+          fi
+
           # Informational only — the Vercel apex challenge cycles on its own.
           apex=$(curl -s -o /dev/null -w "%{http_code}" -m 10 https://ccwarriors.xyz/install.sh || echo ERR)
           echo "- ℹ️ apex \`ccwarriors.xyz/install.sh\` → HTTP $apex *(Vercel challenge cycles; not alerting)*" >> "$report"
