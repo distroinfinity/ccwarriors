@@ -7,7 +7,11 @@ description: The profile and story component trees, cards, and sponsor UI.
 
 ## ProfilePage (`src/components/Profile/ProfilePage.tsx`)
 
-Renders off one `/profile/:login` response (`useProfile.ts` owns the `Profile` type) in a fixed order: `ArchetypeCard` → `ByTheNumbers` → `InsightCards` → `RhythmPanel` → `StoryCloser` → `OwnerControls`. The insight deck only exists once insights are unlocked; the page derives `hasStory` from whether the deck contains a `story` card.
+Renders in a fixed order: `ArchetypeCard` → `ByTheNumbers` → `InsightCards` → `RhythmPanel` → `StoryCloser` → `OwnerControls`. The insight deck only exists once insights are unlocked; the page derives `hasStory` from whether the deck contains a `story` card.
+
+**Progressive loading (`useProfile.ts` owns the types).** The page fires two fetches in parallel: `useProfile` → `/profile/:login` (the cheap `CoreProfile`: identity, rank, cost, rhythm, efficiency, github, owner) and `useProfileInsights` → `/profile/:login/insights` (the expensive deep block: craft/pillars/cards/depth/economics/stack). Both hooks are stale-while-revalidate keyed on `login` (a `refreshKey` bump on consent toggles refetches without a skeleton flash); the insights hook self-gates and surfaces an explicit `error` state (kept distinct from a real `no_consent` so the masthead shows a Retry, not an endless pending poll). `ProfilePage` composes `Profile = CoreProfile & { insights }` and passes a **nullable** profile plus `insightsLoading`/`insightsError` to the sections.
+
+**One continuous skeleton.** There is no full-page skeleton swap. Each section renders its own in-place skeleton when its data is absent — `ArchetypeCard` shows a masthead/identity skeleton until core lands and an archetype-region skeleton until insights land; `ByTheNumbers`/`RhythmPanel` skeleton until core; `InsightCards` until insights. The skeletons are sized to the real rendered dimensions (avatar 54, masthead region ~192, the reserved Share/Download action row 43, by-the-numbers group rows 106/137, deck cards 160, rhythm heatmap+stats) so the stencil holds its shape and only the data populates — no layout shift. The masthead identity, GitHub group, and rhythm paint from core; archetype/craft, the deep By-the-Numbers groups, and the card deck stream in behind their skeletons.
 
 ## ArchetypeCard (`ArchetypeCard.tsx`) — the masthead
 

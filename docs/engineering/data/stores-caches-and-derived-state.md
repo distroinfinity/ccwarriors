@@ -31,7 +31,7 @@ A trimmed LiteLLM price table is **committed** at `lib/litellm-prices.json`, so 
 | `/leaderboard`, `/sponsors` | ETag middleware (`app.ts:91-92`) + `Cache-Control: max-age=5` / 30s | org polls collapse to 304s; CORS headers explicitly retained on 304 |
 | `/badge/:login.svg` | HTTP | `max-age=3600, stale-while-revalidate=86400` — GitHub camo re-fetches hourly |
 | `/og/u/:login` | HTTP | 5m + SWR 1h |
-| `/profile/:login` | HTTP | owner `private, no-store`; public `max-age=30` (story: 300) |
+| `/profile/:login` (+ `/insights`) | HTTP | owner `private, no-store`; public `max-age=30` (story: 300) |
 | GitHub stats | DB row | 6h fresh TTL, 30m error retry, serve-stale-forever |
 | WS broadcast | in-memory | 1s debounce, top-100 per board |
 | CLI insights cache | `~/.claude-warriors/insights-cache.json` | per-file size+mtime keys, format version 4 |

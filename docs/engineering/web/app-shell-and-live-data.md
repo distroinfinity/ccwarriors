@@ -35,6 +35,6 @@ REST polling, deliberately not WS: the broadcast is global-only (orgs ride along
 ## Session and profile hooks
 
 - `useMe` — `GET /me` with credentials; null login = signed out. Drives the header auth state and owner detection.
-- `useProfile` — one-shot `GET /profile/:login` with credentials, with a background refetch after consent toggles (stale-while-revalidate, no skeleton flash).
+- `useProfile` / `useProfileInsights` — parallel `GET /profile/:login` (cheap core) and `GET /profile/:login/insights` (expensive deep block) with credentials, with a background refetch after consent toggles (stale-while-revalidate, no skeleton flash). The insights hook surfaces an explicit `error` state distinct from a real `no_consent`.
 
 Telemetry: a fire-and-forget `POST /telemetry` (`web_visit` with the `?ref` channel) on load; failures are swallowed — analytics must never break the page.

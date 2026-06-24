@@ -39,7 +39,8 @@ All routes are mounted in `createApp()` (`apps/server/src/app.ts`). Base URL in 
 | GET/POST | `/insights/consent` | session | GET returns `{consent, visibility}`; POST takes `{consent?, visibility?, consentVersion?}` — the web "GO ALL-IN" unlock, v2 disclosure ack, and the public/private toggle |
 | GET/POST | `/insights/mode` | session/bearer | `{mode: "off"\|"deep"}`; mode is the source of truth, the legacy consent boolean is kept consistent |
 | POST | `/insights/pins` | session | `{pins: string[]}` ≤4 known card keys → `users.pinnedCards`; unknown key → 400 |
-| GET | `/profile/:login` | session optional | Full profile JSON. Owner responses `private, no-store`; public `public, max-age=30`. Locked insights return `no_consent` regardless of whether consent was never given or revoked |
+| GET | `/profile/:login` | session optional | Core profile JSON — identity, tier, rank, cost, `tokensAllTime`, orgs, rhythm, efficiency, github, owner block. Stored/light data only (no deep-session compute) for fast TTFB; `usage_days` scan is bounded to 53 weeks. Owner responses `private, no-store`; public `public, max-age=30` |
+| GET | `/profile/:login/insights` | session optional | Deep insights union (craft score, pillars, percentiles, archetype, the card deck, depth/economics/stack) — the expensive O(sessions) block, fetched in parallel by the web after the core paints. Self-gates with the same consent/visibility rules: locked `no_consent` for non-consented or (private and not owner), owner-only `forging`. Owner `private, no-store`; public `public, max-age=30` |
 | GET | `/profile/:login/story` | session optional | Story doc; owner `private, no-store`, public `public, max-age=300` |
 
 ## Conditionally mounted

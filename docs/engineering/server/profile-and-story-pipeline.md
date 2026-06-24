@@ -5,7 +5,7 @@ description: What a profile aggregates, the hire-grade metrics, and the transcri
 
 # Profile and Story Pipeline
 
-`GET /profile/:login` (`routes/profile.ts`) assembles everything a profile page shows in one response. Owner requests (session cookie matches) get `private, no-store` and extra owner state; public requests get `public, max-age=30`.
+The profile page is served by two parallel reads in `routes/profile.ts`. `GET /profile/:login` returns the cheap **core** (identity, board state, rhythm, efficiency, github, owner) for fast TTFB — no deep-session compute on this path, and the `usage_days` scan is bounded to 53 weeks (`tokensAllTime` is a separate all-time `SUM`). `GET /profile/:login/insights` returns the expensive **insights** block, computed on demand and fetched in parallel by the web after the core paints. Both share the `loadProfileSignals`/`buildInsights` helpers. Owner requests (session cookie matches) get `private, no-store` and extra owner state; public requests get `public, max-age=30`.
 
 ## Profile assembly
 
@@ -13,7 +13,7 @@ description: What a profile aggregates, the hire-grade metrics, and the transcri
 - **Rhythm** from `usage_days`: daily costs (up to 53 weeks) plus current/longest streaks.
 - **Efficiency** (`lib/efficiency.ts`) from the 30-day window: cache-read ratio (`cacheRead / (input + cacheCreation + cacheRead)`), cost-weighted model mix by family (regex: opus/sonnet/haiku/openai/gemini/other), opus share, tokens per active day. The **grade is cache-based only** — A+ ≥95%, A ≥90%, B ≥80%, C ≥65%, else D. Production data showed the median user is ~90% Opus and ~96% cache-read, so model-mix grading and the old "move to Sonnet" nudge were removed (`estSavingsPerMonth` is always null; `opusShare`/`modelMix` are informational).
 - **GitHub stats** (`lib/github-stats.ts` + `github-stats-service.ts`): public footprint fetched with the user's own `read:user` OAuth token, falling back to the server `GITHUB_TOKEN` PAT. 6h fresh TTL, 30m error retry, serve-stale-forever (`github-stats-service.ts:11`).
-- **Insights** (locked or unlocked): axes, archetype, trait, habits, growth edge, insight cards (with `featuredCardKeys` + `deckMonth` for the monthly deck), Craft Score + pillars + tier, trust tier, `tagline`, and the three hire-grade blocks below. A locked block's `reason` is `no_consent` (never given or revoked — deliberately indistinguishable) or `forging` (consented, no data landed yet).
+- **Insights** (served by `GET /profile/:login/insights`, locked or unlocked): axes, archetype, trait, habits, growth edge, insight cards (with `featuredCardKeys` + `deckMonth` for the monthly deck), Craft Score + pillars + tier, trust tier, `tagline`, and the three hire-grade blocks below. A locked block's `reason` is `no_consent` (never given or revoked — deliberately indistinguishable) or `forging` (consented, no data landed yet). This endpoint re-runs `loadProfileSignals` (so it doesn't depend on the core call) and is the genuinely expensive path — moved off `/profile/:login` so the core paints fast.
 
 ### Hire-grade metric blocks
 
