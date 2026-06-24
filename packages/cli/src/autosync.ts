@@ -119,7 +119,7 @@ export function autosyncOn(minutes: number): void {
 }
 
 /** Is the launchd job still loaded? (macOS only) */
-function launchdJobAlive(): boolean {
+export function launchdJobAlive(): boolean {
   try {
     execFileSync("launchctl", ["print", `gui/${process.getuid?.() ?? 501}/${LABEL}`], { stdio: "ignore" });
     return true;
@@ -164,14 +164,47 @@ export function autosyncOff(): void {
   rmSync(markerPath(), { force: true });
 }
 
+/** Pure self-heal decision: re-arm only when autosync is on, on macOS, with a
+ *  plist present, but launchd has no live job. */
+export function shouldRearm(opts: { enabled: boolean; platform: NodeJS.Platform; jobAlive: boolean; plistExists: boolean }): boolean {
+  return opts.enabled && opts.platform === "darwin" && !opts.jobAlive && opts.plistExists;
+}
+
 export function autosyncStatus(): string {
   if (!autosyncEnabled()) return "off";
+  let minutes = 5;
+  try { minutes = (JSON.parse(readFileSync(markerPath(), "utf8")) as { minutes: number }).minutes; } catch { /* default */ }
+  const jobAlive = process.platform === "darwin" ? launchdJobAlive() : true;
+  return statusLine({ enabled: true, minutes, jobAlive, platform: process.platform });
+}
+
+/** Re-arm a dead daemon. Safe to call on any interactive run; only acts when
+ *  autosync is enabled (marker present) but launchd has no live job. */
+export function ensureDaemonAlive(): "ok" | "rearmed" | "off" | "unsupported" {
+  if (!autosyncEnabled()) return "off";
+  if (process.platform !== "darwin") return "unsupported"; // cron self-recovers
+  const jobAlive = launchdJobAlive();
+  if (jobAlive) return "ok";
+  if (!shouldRearm({ enabled: true, platform: "darwin", jobAlive, plistExists: existsSync(plistPath()) })) return "off";
   try {
-    const { minutes } = JSON.parse(readFileSync(markerPath(), "utf8")) as { minutes: number };
-    return process.platform === "darwin"
-      ? `on — background daemon streaming (heartbeat every ${minutes}m)`
-      : `on — cron sync every ${minutes} min`;
+    const uid = process.getuid?.() ?? 501;
+    try { execFileSync("launchctl", bootstrapArgs(uid, plistPath()), { stdio: "ignore" }); } catch { /* maybe already bootstrapped */ }
+    execFileSync("launchctl", kickstartArgs(uid, LABEL), { stdio: "ignore" });
+    return "rearmed";
+  } catch { /* best-effort; status already tells the truth */ }
+  return "off";
+}
+
+/** Called by the daemon right after a self-update swap. Kickstart the tracked
+ *  job so launchd relaunches onto the NEW bundle. Returns true if issued. */
+export function relaunchAfterUpdate(): boolean {
+  if (process.platform !== "darwin") return false; // cron picks up next run
+  if (!autosyncEnabled() || !existsSync(plistPath())) return false; // foreground daemon
+  try {
+    const uid = process.getuid?.() ?? 501;
+    execFileSync("launchctl", kickstartArgs(uid, LABEL), { stdio: "ignore" });
+    return true;
   } catch {
-    return "on";
+    return false;
   }
 }

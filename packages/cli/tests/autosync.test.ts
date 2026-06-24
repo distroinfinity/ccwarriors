@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bootstrapArgs, kickstartArgs, bootoutArgs, statusLine, LABEL, darwinAutosyncSteps } from "../src/autosync.js";
+import { bootstrapArgs, kickstartArgs, bootoutArgs, statusLine, LABEL, darwinAutosyncSteps, shouldRearm } from "../src/autosync.js";
 
 describe("launchctl argv builders", () => {
   it("bootstrap targets the gui domain with the plist path", () => {
@@ -48,5 +48,24 @@ describe("darwinAutosyncSteps", () => {
     const steps = darwinAutosyncSteps(501, "/u/x.plist", LABEL);
     expect(steps[1]).toEqual(["bootstrap", "gui/501", "/u/x.plist"]);
     expect(steps[2]).toEqual(["kickstart", "-k", `gui/501/${LABEL}`]);
+  });
+});
+
+describe("shouldRearm", () => {
+  const base = { enabled: true, platform: "darwin" as NodeJS.Platform, jobAlive: false, plistExists: true };
+  it("rearms when enabled, darwin, job dead, plist present", () => {
+    expect(shouldRearm(base)).toBe(true);
+  });
+  it("does not rearm when the job is alive", () => {
+    expect(shouldRearm({ ...base, jobAlive: true })).toBe(false);
+  });
+  it("does not rearm when disabled", () => {
+    expect(shouldRearm({ ...base, enabled: false })).toBe(false);
+  });
+  it("does not rearm off-darwin (cron self-recovers)", () => {
+    expect(shouldRearm({ ...base, platform: "linux" })).toBe(false);
+  });
+  it("does not rearm when the plist is missing", () => {
+    expect(shouldRearm({ ...base, plistExists: false })).toBe(false);
   });
 });
