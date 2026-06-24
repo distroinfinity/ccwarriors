@@ -8,6 +8,7 @@ import { readUsage, formatEstimates } from "./ccusage.js";
 import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./core.js";
 import { collectTranscripts } from "./transcripts.js";
 import { maybeSelfUpdate, markUpdateSuccess, markBuildAlive } from "./selfupdate.js";
+import { relaunchAfterUpdate } from "./autosync.js";
 import { nextBackoffMs, shouldSync } from "./backoff.js";
 import { resolveAuthAction } from "./authstate.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
@@ -59,11 +60,23 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   }
 
   async function checkForUpdate(): Promise<void> {
-    if ((await maybeSelfUpdate()) === "updated") {
-      // launchd (KeepAlive) restarts us on the freshly-swapped bundle.
-      log("self-update installed — restarting on the new build");
-      process.exit(0);
+    if ((await maybeSelfUpdate()) !== "updated") return;
+    // Bundle swapped. Relaunch onto the new build. Under launchd we kickstart
+    // the tracked job (KeepAlive alone silently no-ops on recent macOS — #91);
+    // kickstart SIGKILLs us, so the exit below is just a fallback. Foreground
+    // daemons (not launchd) re-exec the new bundle directly.
+    log("self-update installed — relaunching on the new build");
+    if (relaunchAfterUpdate()) {
+      process.exit(0); // launchd is restarting us; this line usually won't run
+      return;
     }
+    // Not under launchd: re-exec the freshly-swapped bundle in place.
+    const { spawn } = await import("node:child_process");
+    spawn(process.execPath, [process.argv[1] ?? "", "daemon", String(heartbeatMin)], {
+      detached: true,
+      stdio: "ignore",
+    }).unref();
+    process.exit(0);
   }
 
   async function syncNow(reason: string): Promise<void> {
