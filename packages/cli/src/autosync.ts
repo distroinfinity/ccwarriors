@@ -4,7 +4,36 @@ import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
-const LABEL = "xyz.ccwarriors.sync";
+export const LABEL = "xyz.ccwarriors.sync";
+
+/** `launchctl bootstrap gui/<uid> <plist>` — modern load (replaces `load`). */
+export function bootstrapArgs(uid: number, plistPath: string): string[] {
+  return ["bootstrap", `gui/${uid}`, plistPath];
+}
+/** `launchctl kickstart -k gui/<uid>/<label>` — force (re)start the tracked job. */
+export function kickstartArgs(uid: number, label: string): string[] {
+  return ["kickstart", "-k", `gui/${uid}/${label}`];
+}
+/** `launchctl bootout gui/<uid>/<label>` — modern unload. */
+export function bootoutArgs(uid: number, label: string): string[] {
+  return ["bootout", `gui/${uid}/${label}`];
+}
+
+/** Pure status string. Liveness only meaningful on darwin (launchd). */
+export function statusLine(opts: {
+  enabled: boolean;
+  minutes: number;
+  jobAlive: boolean;
+  platform: NodeJS.Platform;
+}): string {
+  if (!opts.enabled) return "off";
+  if (opts.platform === "darwin") {
+    return opts.jobAlive
+      ? `on — background daemon streaming (heartbeat every ${opts.minutes}m)`
+      : "on but daemon NOT running — run `ccwarriors autosync on` to restart it";
+  }
+  return `on — cron sync every ${opts.minutes} min`;
+}
 
 const plistPath = () => path.join(os.homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 const markerPath = () => path.join(os.homedir(), ".claude-warriors", "autosync.json");
