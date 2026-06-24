@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bootstrapArgs, kickstartArgs, bootoutArgs, statusLine, LABEL } from "../src/autosync.js";
+import { bootstrapArgs, kickstartArgs, bootoutArgs, statusLine, LABEL, darwinAutosyncSteps } from "../src/autosync.js";
 
 describe("launchctl argv builders", () => {
   it("bootstrap targets the gui domain with the plist path", () => {
@@ -36,5 +36,17 @@ describe("statusLine", () => {
   it("linux always reports cron (no launchd liveness)", () => {
     expect(statusLine({ enabled: true, minutes: 5, jobAlive: false, platform: "linux" }))
       .toContain("cron sync");
+  });
+});
+
+describe("darwinAutosyncSteps", () => {
+  it("is bootout → bootstrap → kickstart, never legacy load", () => {
+    const verbs = darwinAutosyncSteps(501, "/u/x.plist", LABEL).map((s) => s[0]);
+    expect(verbs).toEqual(["bootout", "bootstrap", "kickstart"]);
+  });
+  it("passes the plist path to bootstrap and the job to kickstart", () => {
+    const steps = darwinAutosyncSteps(501, "/u/x.plist", LABEL);
+    expect(steps[1]).toEqual(["bootstrap", "gui/501", "/u/x.plist"]);
+    expect(steps[2]).toEqual(["kickstart", "-k", `gui/501/${LABEL}`]);
   });
 });

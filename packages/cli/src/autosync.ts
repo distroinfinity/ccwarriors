@@ -19,6 +19,13 @@ export function bootoutArgs(uid: number, label: string): string[] {
   return ["bootout", `gui/${uid}/${label}`];
 }
 
+/** Ordered launchctl steps to (re)load the daemon on macOS: clear any stale
+ *  instance, modern-load the plist, force-start. bootout/bootstrap may no-op
+ *  (not loaded / already loaded) — only kickstart must succeed. */
+export function darwinAutosyncSteps(uid: number, plist: string, label: string): string[][] {
+  return [bootoutArgs(uid, label), bootstrapArgs(uid, plist), kickstartArgs(uid, label)];
+}
+
 /** Pure status string. Liveness only meaningful on darwin (launchd). */
 export function statusLine(opts: {
   enabled: boolean;
@@ -78,12 +85,19 @@ export function autosyncOn(minutes: number): void {
 `;
     mkdirSync(path.dirname(plistPath()), { recursive: true });
     writeFileSync(plistPath(), plist);
-    try {
-      execFileSync("launchctl", ["unload", plistPath()], { stdio: "ignore" });
-    } catch {
-      /* not loaded yet */
+    const uid = process.getuid?.() ?? 501;
+    // Modern bootstrap + kickstart. Legacy `load` + RunAtLoad/KeepAlive is
+    // unreliable on recent macOS (job never starts/relaunches — issue #91).
+    const steps = darwinAutosyncSteps(uid, plistPath(), LABEL);
+    for (const args of steps) {
+      try {
+        execFileSync("launchctl", args, { stdio: "ignore" });
+      } catch {
+        // bootout (not loaded) and bootstrap (already loaded) may fail benignly;
+        // a kickstart failure is real — surface it.
+        if (args[0] === "kickstart") throw new Error("autosync: launchctl kickstart failed");
+      }
     }
-    execFileSync("launchctl", ["load", plistPath()], { stdio: "ignore" });
   } else if (process.platform === "linux") {
     const schedule = every < 60 ? `*/${every} * * * *` : `0 */${Math.max(1, Math.round(every / 60))} * * *`;
     const line = `${schedule} PATH=${pathEnv} ${node} ${cli} sync >> ${logPath()} 2>&1 # ${LABEL}`;
