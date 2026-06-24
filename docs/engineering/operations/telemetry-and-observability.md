@@ -19,7 +19,7 @@ CLI beacons are fire-and-forget (4s await only on rollback, since the process is
 
 **Sync health:** `sync_failed` (CLI, after 3 consecutive hard failures — fleet signal, not per-failure spam), `tool_collection_failed` (one agent's ccusage read broke), `ccusage_fallback` (pinned version crashed, fell back to `20.0.6`), `insights_received` / `deep_insights_received` / `story_transcripts_received` / `transcripts_rejected`, `insights_extract_error`.
 
-**Integrity:** `plausibility_flagged` (reason + detail — the quarantine feed to watch), `unknown_model_priced` (LiteLLM lagging a new model — expect totals to shift when real prices land), `estimate_mismatch` (client estimate vs server math diverged >25% — tampered client *or* stale pricing table), `admin_flag` / `admin_unflag`.
+**Integrity:** `plausibility_flagged` (reason + detail — the quarantine feed to watch), `unknown_model_priced` (LiteLLM lagging a new model — expect totals to shift when real prices land), `estimate_mismatch` (client estimate vs server math diverged >25% — tampered client *or* stale pricing table), `price_override_active` (`{ model }`, distinctId `system`, on boot + each 24h refresh — a hand-priced override in `lib/pricing.ts` is still shadowing LiteLLM; when it stops firing, upstream has priced the model and the override entry can be deleted), `admin_flag` / `admin_unflag`.
 
 **Self-update fleet:** `self_update_applied`, `self_update_failed`, `self_update_rollback` (from/to build ids — a spike here means a bad release went out; flip `CLI_UPDATE_ENABLED=0` while you fix it).
 

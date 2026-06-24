@@ -14,6 +14,7 @@ import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
 import { startFxRefresh } from "./lib/fx.js";
+import { captureEvent } from "./routes/telemetry.js";
 
 async function main() {
   const cfg = parseConfig(process.env);
@@ -117,7 +118,14 @@ async function main() {
   }
 
   // Keep model pricing current (committed snapshot already loaded at import).
-  startPricingRefresh();
+  // Emit a per-refresh signal for any hand-priced override still shadowing
+  // LiteLLM — its disappearance is how we learn upstream priced the model and
+  // the override can be removed (see lib/pricing.ts `activeOverrides`).
+  startPricingRefresh((activeModels) => {
+    for (const model of activeModels) {
+      captureEvent("price_override_active", "system", { model });
+    }
+  });
   // Keep the donation USD→INR rate current (fallback constant until first fetch).
   startFxRefresh();
 

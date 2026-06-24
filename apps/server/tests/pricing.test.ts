@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { indexPrices, loadPricingSnapshot, lookupModelPrice, priceModels } from "../src/lib/pricing.js";
+import {
+  activeOverrides,
+  indexPrices,
+  loadPricingSnapshot,
+  lookupModelPrice,
+  priceModels,
+} from "../src/lib/pricing.js";
 
 describe("pricing engine (committed LiteLLM snapshot)", () => {
   it("knows the models our agents actually emit", () => {
@@ -100,5 +106,16 @@ describe("gpt-5.3-codex-spark price override", () => {
     const upstream = { input: 9e-9, output: 8e-9, cacheCreate: 9e-9, cacheRead: 9e-9 };
     expect(lookupModelPrice("gpt-5.3-codex-spark")).toEqual(upstream);
     expect(lookupModelPrice("chatgpt/gpt-5.3-codex-spark")).toEqual(upstream);
+  });
+
+  it("reports the override as active while upstream lacks a real price", () => {
+    expect(activeOverrides()).toContain("gpt-5.3-codex-spark");
+  });
+
+  it("drops from activeOverrides once upstream prices it (self-heal signal)", () => {
+    indexPrices({
+      "chatgpt/gpt-5.3-codex-spark": { input_cost_per_token: 9e-9, output_cost_per_token: 8e-9 },
+    });
+    expect(activeOverrides()).not.toContain("gpt-5.3-codex-spark");
   });
 });

@@ -139,9 +139,18 @@ export async function refreshPricing(): Promise<boolean> {
   }
 }
 
-export function startPricingRefresh(): NodeJS.Timeout {
-  void refreshPricing();
-  const t = setInterval(() => void refreshPricing(), REFRESH_MS);
+// `onRefresh` receives the still-active overrides after each refresh (boot +
+// every 24h). Kept as a callback so the pricing lib never depends on the
+// telemetry layer; the caller decides how to surface it (see index.ts).
+export function startPricingRefresh(
+  onRefresh?: (activeOverrideModels: string[]) => void,
+): NodeJS.Timeout {
+  const run = async () => {
+    await refreshPricing();
+    onRefresh?.(activeOverrides());
+  };
+  void run();
+  const t = setInterval(() => void run(), REFRESH_MS);
   t.unref();
   return t;
 }
@@ -149,6 +158,19 @@ export function startPricingRefresh(): NodeJS.Timeout {
 export function lookupModelPrice(modelName: string): ModelPrice | null {
   const name = modelName.toLowerCase().trim();
   return exact.get(name) ?? basename.get(name) ?? basename.get(name.split("/").pop() ?? "") ?? null;
+}
+
+/**
+ * Override keys currently shadowing upstream — LiteLLM still lacks a real price
+ * for them. Reference equality is decisive: an *active* override is the exact
+ * object indexPrices() inserted from PRICE_OVERRIDES, whereas a self-healed one
+ * resolves to upstream's object. When a model stops appearing here, LiteLLM has
+ * priced it and the override entry can be deleted.
+ */
+export function activeOverrides(): string[] {
+  return Object.entries(PRICE_OVERRIDES)
+    .filter(([model, price]) => lookupModelPrice(model) === price)
+    .map(([model]) => model);
 }
 
 export interface PricedDay {
