@@ -20,6 +20,9 @@ describe("statusLine", () => {
     expect(statusLine({ enabled: false, minutes: 5, jobAlive: false, platform: "darwin" }))
       .toBe("off");
   });
+  it("off when not enabled regardless of platform", () => {
+    expect(statusLine({ enabled: false, minutes: 5, jobAlive: false, platform: "linux" })).toBe("off");
+  });
   it("darwin + alive → streaming", () => {
     expect(statusLine({ enabled: true, minutes: 5, jobAlive: true, platform: "darwin" }))
       .toContain("background daemon streaming");
@@ -28,6 +31,7 @@ describe("statusLine", () => {
     const s = statusLine({ enabled: true, minutes: 5, jobAlive: false, platform: "darwin" });
     expect(s).toContain("NOT running");
     expect(s).toContain("ccwarriors autosync on");
+    expect(s).toContain("on but");
   });
   it("linux always reports cron (no launchd liveness)", () => {
     expect(statusLine({ enabled: true, minutes: 5, jobAlive: false, platform: "linux" }))
