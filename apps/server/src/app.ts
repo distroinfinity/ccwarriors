@@ -10,6 +10,7 @@ import { authRoute } from "./routes/auth.js";
 import { orgsRoute, type DiscordCfg } from "./routes/orgs.js";
 import { installerRoute } from "./routes/installer.js";
 import { telemetryRoute, captureEvent } from "./routes/telemetry.js";
+import { daemonHealthRoute } from "./routes/daemon-health.js";
 import { adminRoute } from "./routes/admin.js";
 import { donateRoute } from "./routes/donate.js";
 import { sponsorsRoute } from "./routes/sponsors.js";
@@ -96,6 +97,9 @@ export function createApp(deps?: AppDeps) {
   app.route("/telemetry", telemetryRoute());
   if (deps) {
     app.route("/ingest", ingestRoute(deps.db, deps.store, deps.onIngest));
+    // Stale-daemon detection (issue #91) — shares the /telemetry prefix with the
+    // beacon route; the scheduled health workflow polls /telemetry/stale-daemons.
+    app.route("/telemetry", daemonHealthRoute(deps.db));
     app.route("/leaderboard", leaderboardRoute(deps.store));
     app.route("/admin", adminRoute(deps.db, deps.store, deps.onIngest));
     app.route("/sponsors", sponsorsRoute(deps.db));

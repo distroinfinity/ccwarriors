@@ -28,6 +28,7 @@ CLI beacons are fire-and-forget (4s await only on rollback, since the process is
 ## Health and triage
 
 - `GET /health` — Railway's healthcheck; restart-on-failure handles crashes.
+- **Autosync daemons going dark:** `GET /telemetry/stale-daemons` reports daemon-like users (≥ `DAEMON_MIN_SYNCS_7D` syncs in 7d) whose last sync has gone stale (`silent2h`/`silent12h`/`silent24h` counts + a worst-first sample with their stuck build). The scheduled health workflow polls it and pages only on a spike (≥5 daemons AND ≥40% silent >12h) — the signature of a release-wide self-update relaunch failure (issue #91). A silently-dead daemon emits no client beacon, so this server-side view is the only way to see it.
 - **Board looks stale:** the global board is WS-pushed, org boards poll REST every 10s. Confirm which transport before digging — an org board lagging ≤10s is working as designed.
 - **User says their number is wrong:** check `unknown_model_priced` (new model at default price) and `estimate_mismatch` first; then `usage_days` for their machineId split.
 - **User vanished from the board:** `plausibility_flagged` has the reason; `users.flagReason` has the first three signals; `/admin/unflag` restores after review.
