@@ -31,6 +31,22 @@ const DEFAULT_PRICE: ModelPrice = {
   cacheRead: 0.3e-6,
 };
 
+// Models we've hand-priced ahead of LiteLLM. Canonical case: a ChatGPT-Pro
+// preview model (gpt-5.3-codex-spark) that ships to the LiteLLM table with a
+// NULL per-token cost, so indexPrices() skips it and it falls to DEFAULT_PRICE
+// — firing unknown_model_priced on every ingest. Published rate is $1.75/$14
+// per 1M (identical to the gpt-5.3-codex sibling); OpenAI bills no separate
+// cache-creation, so cacheCreate = input. Applied as a FALLBACK in
+// indexPrices() (see there): fills a gap only, so a real upstream price wins.
+const PRICE_OVERRIDES: Record<string, ModelPrice> = {
+  "gpt-5.3-codex-spark": {
+    input: 1.75e-6,
+    output: 14e-6,
+    cacheCreate: 1.75e-6,
+    cacheRead: 1.75e-7,
+  },
+};
+
 type RawPrices = Record<
   string,
   {
@@ -65,7 +81,7 @@ const SNAPSHOT_PATH = path.join(
 let exact = new Map<string, ModelPrice>();
 let basename = new Map<string, ModelPrice>();
 
-function indexPrices(raw: RawPrices) {
+export function indexPrices(raw: RawPrices) {
   const ex = new Map<string, ModelPrice>();
   const base = new Map<string, ModelPrice>();
   for (const [key, v] of Object.entries(raw)) {
@@ -82,6 +98,21 @@ function indexPrices(raw: RawPrices) {
     ex.set(lower, price);
     const short = lower.split("/").pop();
     if (short && !base.has(short)) base.set(short, price);
+  }
+  // Hand-priced overrides fill ONLY a genuine gap: a model upstream prices under
+  // NO key (absent, or sent with the null/zero cost the loop above dropped). The
+  // basename index is populated for every priced model regardless of provider
+  // prefix, so `base.has(short)` is the canonical "upstream already prices this"
+  // test — gating the whole override on it self-heals the moment LiteLLM gives
+  // any `…/gpt-5.3-codex-spark` a real price, even under the prefixed key form it
+  // currently uses. Re-run on every refresh, so the override survives without
+  // ever shadowing a real upstream price.
+  for (const [key, price] of Object.entries(PRICE_OVERRIDES)) {
+    const lower = key.toLowerCase();
+    const short = lower.split("/").pop() ?? lower;
+    if (base.has(short)) continue;
+    ex.set(lower, price);
+    base.set(short, price);
   }
   exact = ex;
   basename = base;
@@ -108,9 +139,18 @@ export async function refreshPricing(): Promise<boolean> {
   }
 }
 
-export function startPricingRefresh(): NodeJS.Timeout {
-  void refreshPricing();
-  const t = setInterval(() => void refreshPricing(), REFRESH_MS);
+// `onRefresh` receives the still-active overrides after each refresh (boot +
+// every 24h). Kept as a callback so the pricing lib never depends on the
+// telemetry layer; the caller decides how to surface it (see index.ts).
+export function startPricingRefresh(
+  onRefresh?: (activeOverrideModels: string[]) => void,
+): NodeJS.Timeout {
+  const run = async () => {
+    await refreshPricing();
+    onRefresh?.(activeOverrides());
+  };
+  void run();
+  const t = setInterval(() => void run(), REFRESH_MS);
   t.unref();
   return t;
 }
@@ -118,6 +158,19 @@ export function startPricingRefresh(): NodeJS.Timeout {
 export function lookupModelPrice(modelName: string): ModelPrice | null {
   const name = modelName.toLowerCase().trim();
   return exact.get(name) ?? basename.get(name) ?? basename.get(name.split("/").pop() ?? "") ?? null;
+}
+
+/**
+ * Override keys currently shadowing upstream — LiteLLM still lacks a real price
+ * for them. Reference equality is decisive: an *active* override is the exact
+ * object indexPrices() inserted from PRICE_OVERRIDES, whereas a self-healed one
+ * resolves to upstream's object. When a model stops appearing here, LiteLLM has
+ * priced it and the override entry can be deleted.
+ */
+export function activeOverrides(): string[] {
+  return Object.entries(PRICE_OVERRIDES)
+    .filter(([model, price]) => lookupModelPrice(model) === price)
+    .map(([model]) => model);
 }
 
 export interface PricedDay {
