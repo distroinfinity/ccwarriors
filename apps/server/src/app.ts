@@ -94,7 +94,7 @@ export function createApp(deps?: AppDeps) {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
   app.route("/", installerRoute());
-  app.route("/telemetry", telemetryRoute());
+  app.route("/telemetry", telemetryRoute(deps?.store));
   if (deps) {
     app.route("/ingest", ingestRoute(deps.db, deps.store, deps.onIngest));
     // Stale-daemon detection (issue #91) — shares the /telemetry prefix with the

@@ -8,6 +8,7 @@ import { readUsage, formatEstimates } from "./ccusage.js";
 import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./core.js";
 import { collectTranscripts } from "./transcripts.js";
 import { maybeSelfUpdate, markUpdateSuccess, markBuildAlive } from "./selfupdate.js";
+import { relaunchAfterUpdate } from "./autosync.js";
 import { nextBackoffMs, shouldSync } from "./backoff.js";
 import { resolveAuthAction } from "./authstate.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
@@ -59,11 +60,39 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
   }
 
   async function checkForUpdate(): Promise<void> {
-    if ((await maybeSelfUpdate()) === "updated") {
-      // launchd (KeepAlive) restarts us on the freshly-swapped bundle.
-      log("self-update installed — restarting on the new build");
+    if ((await maybeSelfUpdate()) !== "updated") return;
+    // Bundle swapped. Relaunch onto the new build.
+    log("self-update installed — relaunching on the new build");
+    const outcome = relaunchAfterUpdate();
+    if (outcome === "relaunched") {
+      // Under launchd: kickstart -k SIGKILLs us and restarts the tracked job on
+      // the new bundle (KeepAlive alone silently no-ops on recent macOS — #91).
       process.exit(0);
     }
+    if (outcome === "kickstart_failed") {
+      // Under launchd but kickstart errored. Do NOT re-exec — a detached copy
+      // would race launchd's own (KeepAlive) restart and double-run. Beacon the
+      // stall; selfUpdateBootCheck + the fleet monitor net a true death.
+      log("self-update relaunch failed — kickstart errored; leaving launchd to restart");
+      await postTelemetry("self_update_relaunch_failed", { fromBuild: __BUILD_ID__, step: "kickstart" });
+      process.exit(0);
+    }
+    // "foreground": not under launchd — re-exec the freshly-swapped bundle.
+    const script = process.argv[1];
+    if (!script) {
+      // No script path to re-exec (shouldn't happen for an installed bundle).
+      // Don't spawn `node ""` (a silently-broken child); exit so the next run
+      // picks up the new bundle.
+      log("self-update applied but no script path to re-exec — exiting; next run uses the new build");
+      process.exit(0);
+    }
+    log("relaunching via re-exec (foreground daemon)");
+    const { spawn } = await import("node:child_process");
+    spawn(process.execPath, [script, "daemon", String(heartbeatMin)], {
+      detached: true,
+      stdio: "ignore",
+    }).unref();
+    process.exit(0);
   }
 
   async function syncNow(reason: string): Promise<void> {
@@ -170,6 +199,8 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       syncing = false;
       // We ran a full sync cycle without crashing → this build is alive even if
       // the sync itself failed for external reasons. Clears any rollback marker.
+      // On a successful sync markUpdateSuccess() already cleared it, so this is a
+      // no-op then (markBuildAlive re-reads the marker first) — not a double-delete.
       markBuildAlive();
       if (pending) {
         pending = false;

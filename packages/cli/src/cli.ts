@@ -4,7 +4,7 @@ import { bold, cyan, dim, green, red, underline, yellow } from "./ui.js";
 import { loadConfig, saveConfig, clearConfig, ensureMachineId, ensureInsightsSalt, CONSENT_VERSION, type Config } from "./config.js";
 import { runLoginFlow } from "./auth.js";
 import { readUsage, formatEstimates } from "./ccusage.js";
-import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus } from "./autosync.js";
+import { autosyncEnabled, autosyncOff, autosyncOn, autosyncStatus, ensureDaemonAlive } from "./autosync.js";
 import { runDaemon } from "./daemon.js";
 import { API_BASE, WEB_BASE, postIngest, postTelemetry, postInsightsDeep, postTranscripts, setInsightsConsent, getInsightsMode } from "./core.js";
 import { maybeSelfUpdate, markUpdateSuccess, selfUpdateBootCheck } from "./selfupdate.js";
@@ -12,6 +12,13 @@ import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 import { collectTranscripts } from "./transcripts.js";
 
 declare const __BUILD_ID__: string;
+
+// Canonical install commands — shown in `--help` and in the self-update
+// fallback nudge. Keep in sync with apps/web (the YourCard reinstall nudge)
+// and apps/web/public/install.sh, which can't import this constant.
+const INSTALL_SH = "curl -fsSL https://ccwarriors.xyz/install.sh | bash";
+const INSTALL_PS1 = "irm https://ccwarriors.xyz/install.ps1 | iex";
+const installCommand = (): string => (process.platform === "win32" ? INSTALL_PS1 : INSTALL_SH);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -23,8 +30,8 @@ ${bold("ccwarriors")} — sync your AI coding costs and climb the leaderboard
 ${dim("Counts every agent ccusage can read: Claude Code, Codex, Gemini, Copilot, OpenCode, Amp, and friends.")}
 
 ${bold("INSTALL")}
-  macOS/Linux:  curl -fsSL https://ccwarriors.xyz/install.sh | bash
-  Windows:      irm https://ccwarriors.xyz/install.ps1 | iex
+  macOS/Linux:  ${INSTALL_SH}
+  Windows:      ${INSTALL_PS1}
 
 ${bold("USAGE")}
   ccwarriors            Sync costs (default)
@@ -222,8 +229,12 @@ async function cmdSync(): Promise<void> {
 
   // After a good sync (and after the user has their output): pick up a newer
   // build if one shipped. Cron/manual runs use it on their next invocation.
-  if ((await maybeSelfUpdate()) === "updated") {
-    console.log(dim("   (ccwarriors updated itself — new version active on the next run)"));
+  const updateOutcome = await maybeSelfUpdate();
+  if (updateOutcome === "updated") {
+    console.log(dim("   ccwarriors updated to the latest build — active on the next run"));
+  } else if (updateOutcome === "failed") {
+    console.log(yellow("   A new ccwarriors is available but auto-update couldn't apply it."));
+    console.log(yellow(`   Reinstall to get the latest (profiles, insights, all your tools): ${installCommand()}`));
   }
 }
 
@@ -496,6 +507,14 @@ async function main(): Promise<void> {
   if (cmd === "sync" || cmd === undefined) {
     await selfUpdateBootCheck();
     await cmdSync();
+    // A manual run is the moment to revive a daemon that died on a past
+    // self-update (#91). Silent unless we acted: re-armed it, or tried and failed.
+    const heal = ensureDaemonAlive();
+    if (heal === "rearmed") {
+      console.log(dim("   (autosync daemon was down — restarted it)"));
+    } else if (heal === "failed") {
+      console.log(yellow("   autosync daemon is down and couldn't be restarted — run `ccwarriors autosync on`"));
+    }
     return;
   }
 

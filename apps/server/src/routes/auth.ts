@@ -10,6 +10,7 @@ import { createSessionToken, readSessionToken, sessionCookie, sign, verify } fro
 import { orgBySlug } from "../lib/orgs.js";
 import { orgWebUrl } from "./orgs.js";
 import { sanitizeRef } from "./installer.js";
+import { currentBuildId, isBuildOutdated } from "../lib/build-id.js";
 import { captureEvent } from "./telemetry.js";
 
 interface AuthCfg {
@@ -200,9 +201,20 @@ export function authRoute(db: DB, cfg: AuthCfg) {
             .from(orgMembers)
             .where(eq(orgMembers.userId, user.id))
         : [];
+      // Nudge a reinstall when a synced client can't reach new features
+      // (profiles/insights): pre-self-update clients, or ones stalled off the
+      // latest build. isBuildOutdated is the shared policy (see build-id.ts).
+      const outdatedClient =
+        !!user &&
+        user.lastSyncedAt !== null &&
+        isBuildOutdated({
+          hasBreakdown: user.hasBreakdown,
+          clientBuildId: user.clientBuildId,
+          latestBuildId: currentBuildId(),
+        });
       return c.json({
         ...session,
-        outdatedClient: !!user && !user.hasBreakdown && user.lastSyncedAt !== null,
+        outdatedClient,
         underReview: !!user?.flaggedAt,
         orgs: memberships.map((m) => m.orgSlug),
       });

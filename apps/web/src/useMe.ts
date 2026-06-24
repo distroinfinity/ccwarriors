@@ -4,7 +4,8 @@ import { API_HTTP } from "./api";
 export interface Me {
   login: string;
   avatarUrl: string;
-  /** CLI still on the claude-only build — show the re-install nudge. */
+  /** CLI is out of date (pre-self-update build, or stuck off the latest) —
+   * show the re-install nudge so they can unlock new features. */
   outdatedClient?: boolean;
   /** Plausibility-flagged — stats hidden from boards pending review. */
   underReview?: boolean;
