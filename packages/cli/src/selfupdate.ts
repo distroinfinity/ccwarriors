@@ -29,7 +29,9 @@ const buildId = (): string => (typeof __BUILD_ID__ === "string" ? __BUILD_ID__ :
 
 // How many process starts the marker survives before we assume the new build
 // is broken and roll back. Generous: transient network errors shouldn't revert.
-const MAX_STARTS_BEFORE_ROLLBACK = 5;
+export const MAX_STARTS_BEFORE_ROLLBACK = 5;
+// How long after a swap we wait before assuming the new build never relaunched.
+export const RELAUNCH_STALE_MS = 30 * 60_000;
 
 let attemptedBuild: string | null = null;
 
@@ -48,10 +50,22 @@ function installedCliPath(): string | null {
 const markerPath = (cliPath: string) => path.join(path.dirname(cliPath), "update-pending.json");
 const prevPath = (cliPath: string) => `${cliPath}.prev`;
 
-interface UpdateMarker {
+export interface UpdateMarker {
   buildId: string;
   fromBuild: string;
   starts: number;
+  at?: number;
+}
+
+/** Roll back when the new build is broken: it keeps crashing (starts climbs to
+ *  MAX), OR it was swapped but never came up at all (starts still 0 well after
+ *  the swap — a relaunch that never happened). The age guard prevents rolling
+ *  back a fresh build on its legitimate first start. */
+export function shouldRollback(marker: UpdateMarker, opts: { now: number; prevExists: boolean }): boolean {
+  if (!opts.prevExists) return false;
+  if (marker.starts >= MAX_STARTS_BEFORE_ROLLBACK) return true;
+  if (marker.starts === 0 && marker.at && opts.now - marker.at > RELAUNCH_STALE_MS) return true;
+  return false;
 }
 
 function readMarker(cliPath: string): UpdateMarker | null {
@@ -73,14 +87,18 @@ export async function selfUpdateBootCheck(): Promise<void> {
   const marker = readMarker(cliPath);
   if (!marker || marker.buildId !== buildId()) return;
 
-  if (marker.starts >= MAX_STARTS_BEFORE_ROLLBACK && existsSync(prevPath(cliPath))) {
+  const prevExists = existsSync(prevPath(cliPath));
+  if (shouldRollback(marker, { now: Date.now(), prevExists })) {
     try {
       copyFileSync(prevPath(cliPath), cliPath);
       unlinkSync(markerPath(cliPath));
-      console.error(`ccwarriors: build ${marker.buildId} failed to sync — rolled back to ${marker.fromBuild}`);
+      const neverStarted = marker.starts === 0;
+      console.error(`ccwarriors: build ${marker.buildId} ${neverStarted ? "never relaunched" : "failed to sync"} — rolled back to ${marker.fromBuild}`);
       // Await the beacon (4s timeout) so the rollback is actually observable —
       // a fire-and-forget here never flushed before the exit below.
-      await postTelemetry("self_update_rollback", { fromBuild: marker.fromBuild, toBuild: marker.buildId });
+      await postTelemetry(neverStarted ? "self_update_relaunch_failed" : "self_update_rollback", {
+        fromBuild: marker.fromBuild, toBuild: marker.buildId,
+      });
       // Exit non-zero: launchd relaunches into the restored bundle; an
       // interactive user sees the message and can simply re-run.
       process.exit(1);
@@ -216,7 +234,7 @@ export async function maybeSelfUpdate(): Promise<UpdateOutcome> {
     copyFileSync(cliPath, prevPath(cliPath));
     writeFileSync(
       markerPath(cliPath),
-      JSON.stringify({ buildId: target, fromBuild: buildId(), starts: 0 } satisfies UpdateMarker),
+      JSON.stringify({ buildId: target, fromBuild: buildId(), starts: 0, at: Date.now() } satisfies UpdateMarker),
     );
     renameSync(next, cliPath);
   } catch (err) {
