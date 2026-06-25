@@ -28,3 +28,8 @@ export function tierLabel(tier: string): string {
   const up = tier.toUpperCase();
   return g ? `${g} ${up}` : up;
 }
+
+/** Glyph + name split apart so the row can align them on a shared center axis. */
+export function tierParts(tier: string): { glyph: string | null; name: string } {
+  return { glyph: TIER_GLYPH[tier.toLowerCase()] ?? null, name: tier.toUpperCase() };
+}

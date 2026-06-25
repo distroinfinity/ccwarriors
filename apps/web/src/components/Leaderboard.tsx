@@ -5,7 +5,7 @@ import { Avatar } from "./Avatar";
 import { ClawdLogo } from "./ClawdLogo";
 import { InstallBlock } from "./InstallBlock";
 import { FilterChips } from "./FilterChips";
-import { BLOCKS, formatUsd, tierLabel } from "../util";
+import { BLOCKS, formatUsd, tierParts } from "../util";
 import { TickerValue } from "./TickerValue";
 import { BoardSkeleton } from "./Skeleton";
 import { PixelGlyph } from "./PixelGlyph";
@@ -117,7 +117,15 @@ function Row({
         <div className="x">@{entry.xHandle ?? entry.githubLogin}</div>
       </a>
       <div className="tierc">
-        {tierLabel(entry.tier)}
+        {(() => {
+          const { glyph, name } = tierParts(entry.tier);
+          return (
+            <>
+              {glyph && <span className="tier-glyph">{glyph}</span>}
+              <span className="tier-name">{name}</span>
+            </>
+          );
+        })()}
         {entry.craft && (
           <span className="craft-chip mono" title={`Craft: ${entry.craft.tier}`}>
             {entry.craft.score}
@@ -355,7 +363,8 @@ export function Leaderboard({
                   delta={delta}
                   live={rank <= liveEntries.length}
                   located={locatedLogin === entry.githubLogin}
-                  hideOrgBadge={org?.slug}
+                  // Org board hides its own pill; the global board also suppresses the NS pill.
+                  hideOrgBadge={org?.slug ?? "ns"}
                 />
               ))}
             </AnimatePresence>
