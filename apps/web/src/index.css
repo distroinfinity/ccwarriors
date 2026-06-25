@@ -190,7 +190,10 @@ header{ display:flex; align-items:center; justify-content:space-between; padding
   padding:2.5px 5px 2px; border:1px solid color-mix(in srgb, var(--or) 50%, transparent);
   background:color-mix(in srgb, var(--or) 8%, transparent); color:var(--or); }
 .who .x{ font-size:11.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.tierc{ font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
+.tierc{ display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--bronze); letter-spacing:.04em; text-transform:uppercase; }
+/* Glyph carries a tall bounding box; pin its own line-height and center it so it sits on the name's axis. */
+.tierc .tier-glyph{ flex:none; font-size:12px; line-height:1; }
+.tierc .tier-name{ line-height:1; }
 .spark{ font-family:'Geist Mono'; font-size:13px; color:var(--spark); letter-spacing:-1px; }
 .spark b{ color:var(--or); }
 .amt{ text-align:right; font-size:15px; font-weight:700; }
@@ -504,6 +507,12 @@ html[data-theme="dark"] .pillar-tip{ background:#1a1b1f; box-shadow:0 12px 28px 
 .axis-fill{ display:block; height:100%; background:var(--or); opacity:.3; transition:width .6s ease; }
 .axis-fill.f0{ opacity:1; } .axis-fill.f1{ opacity:.75; } .axis-fill.f2{ opacity:.5; }
 .axis-v{ width:26px; text-align:right; font-weight:700; }
+/* Pillar labels ("ORCHESTRATION", "VERIFICATION") run longer than the radar-axis
+   labels, so give them a fixed, non-shrinking column that can't bleed into the
+   bar, plus a touch more gap + row rhythm for breathing room. */
+.pillar-k{ width:112px; flex:none; white-space:nowrap; }
+.axis.pillar-row{ gap:14px; margin-top:9px; }
+.axis.pillar-row .axis-v{ width:30px; }
 .axis-note{ margin-top:14px; font-size:11.5px; color:var(--muted); letter-spacing:.04em; }
 /* Sample-size provenance under pillar/axis bars and the card deck — same
    muted small-print register as .axis-note. */
