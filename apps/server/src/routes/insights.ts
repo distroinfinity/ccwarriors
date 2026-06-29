@@ -112,6 +112,9 @@ const sessionRecordSchema = z.object({
   wordTotal: count.optional(),
   recovery: z.object({ loops: count, medianBreakoutMs: count }).optional(),
   extensions: z.record(z.string().max(16), count).optional(),
+  tool: z.string().max(40).optional(),
+  skillSpawns: count.optional(),
+  skillsUsed: z.record(z.string().max(64), count).optional(),
 });
 
 const MAX_DEEP_SESSIONS = 2000;
