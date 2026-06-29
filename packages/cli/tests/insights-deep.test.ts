@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // collectDeepInsights reads PROJECTS_DIR / HOME from env at module load, so we
 // set both BEFORE importing the module (dynamic import inside the test).
@@ -29,6 +29,9 @@ function mkrepo(): string {
 
 beforeEach(() => {
   cleanup = [];
+  // Reset the module registry so each test re-evaluates module-level constants
+  // (PROJECTS_DIR, HOME) from the current process.env values set in the test.
+  vi.resetModules();
 });
 
 afterEach(() => {
@@ -122,5 +125,37 @@ describe("collectDeepInsights", () => {
     expect(json).not.toContain(EDITED);
     expect(json).not.toContain("main"); // gitBranch never travels
     expect(json).not.toContain("/"); // no filesystem path separators at all
+  });
+
+  it("stamps tool=claude and carries skill usage onto uploaded records", async () => {
+    const repo = mkrepo();
+    const now = Date.now();
+    const startIso = new Date(now - 6 * 60_000).toISOString();
+    const endIso = new Date(now - 5 * 60_000).toISOString();
+
+    const projects = mkdtempSync(join(tmpdir(), "ccw-deep-skill-projects-"));
+    cleanup.push(projects);
+    const home = mkdtempSync(join(tmpdir(), "ccw-deep-skill-home-"));
+    cleanup.push(home);
+    const sessDir = join(projects, "proj-skill");
+    mkdirSync(sessDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "user", message: { content: "use tdd please now" }, cwd: repo, gitBranch: "main", timestamp: startIso }),
+      JSON.stringify({ type: "assistant", message: { model: "claude-opus-4-8", content: [{ type: "tool_use", name: "Skill", input: { skill: "test-driven-development", args: "secret" } }] }, cwd: repo, gitBranch: "main", timestamp: endIso }),
+    ];
+    writeFileSync(join(sessDir, "session.jsonl"), lines.join("\n") + "\n");
+
+    process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
+    process.env["CCWARRIORS_HOME"] = home;
+
+    const { collectDeepInsights } = await import("../src/insights.js");
+    const result = await collectDeepInsights("testsalt");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const rec = result.payload.sessions[0]!;
+    expect(rec.tool).toBe("claude");
+    expect(rec.skillSpawns).toBe(1);
+    expect(rec.skillsUsed).toEqual({ "test-driven-development": 1 });
+    expect(JSON.stringify(result.payload)).not.toContain("secret");
   });
 });

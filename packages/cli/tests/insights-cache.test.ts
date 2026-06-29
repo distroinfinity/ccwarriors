@@ -117,7 +117,7 @@ describe("collectDeepInsights cache resilience", () => {
     expect(result.status).toBe("ok");
 
     const saved = JSON.parse(readFileSync(join(home, "insights-cache.json"), "utf8"));
-    expect(saved.version).toBe(4);
+    expect(saved.version).toBe(5);
     expect(saved.lastSentAt).toBe(sentAt);
     expect(saved.files["/bogus/old.jsonl"]).toBeUndefined();
   });
@@ -154,6 +154,8 @@ describe("isValidSessionStats", () => {
     wordBuckets: { "1-5": 1, "6-10": 0, "11-25": 0, "26+": 0 },
     thankYous: 0, wordTotal: 3, recoveryLoops: 0, extensions: {}, recoveryBreakoutMs: [], shortPrompts: [],
     startMs: 1, endMs: 2, cwd: null, gitBranch: null, model: null, editedFiles: [], eventGapsMs: [],
+    // tool-aware + skill signals added in Task 1 (v5 cache shape)
+    tool: "claude", skillSpawns: 0, skillsUsed: {},
   };
 
   it("accepts a complete SessionStats", async () => {

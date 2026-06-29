@@ -437,6 +437,19 @@ async function walkSessions(): Promise<SessionStats[]> {
   return sessions;
 }
 
+/**
+ * A deep-extraction source: one originating agent and a collector returning its
+ * in-window SessionStats. collectDeepInsights iterates every registered source
+ * and stamps each session with the source's `tool`. Later plans push one entry
+ * per agent (Codex, Gemini, …); this seam keeps that purely additive.
+ */
+export interface DeepSource {
+  readonly tool: string;
+  collect(): Promise<SessionStats[]>;
+}
+
+export const DEEP_SOURCES: DeepSource[] = [{ tool: "claude", collect: walkSessions }];
+
 /** Collect insights for sessions modified within the window. Cache makes
     repeat runs parse only new/changed files. */
 export async function collectInsights(): Promise<InsightsPayload | null> {
@@ -461,6 +474,10 @@ export interface SessionRecord {
   wordTotal: number;
   recovery: { loops: number; medianBreakoutMs: number };
   extensions: Record<string, number>; // capped to the top 10 by count
+  // tool-aware + skill signals (older servers ignore unknown fields).
+  tool: string; // originating agent: "claude" | "codex" | ...
+  skillSpawns: number;
+  skillsUsed: Record<string, number>; // capped to the top 10 by count
 }
 
 export interface InsightsDeepPayload {
@@ -520,6 +537,9 @@ function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): Sessio
     wordTotal: s.wordTotal ?? 0,
     recovery: { loops: s.recoveryLoops ?? 0, medianBreakoutMs: median(s.recoveryBreakoutMs ?? []) },
     extensions: topEntries(s.extensions ?? {}, 10),
+    tool: s.tool ?? "claude",
+    skillSpawns: s.skillSpawns ?? 0,
+    skillsUsed: topEntries(s.skillsUsed ?? {}, 10),
   };
 }
 
@@ -598,8 +618,28 @@ export interface DeepCollectOptions {
 
 export async function collectDeepInsights(salt: string, opts: DeepCollectOptions = {}): Promise<DeepCollectResult> {
   try {
-    const sessions = await walkSessions();
-    if (sessions.length === 0) return { status: "empty" };
+    const settled = await Promise.allSettled(
+      DEEP_SOURCES.map((src) =>
+        src.collect().then((ss) => {
+          for (const s of ss) s.tool = src.tool; // source tag is authoritative
+          return ss;
+        }),
+      ),
+    );
+    // Isolate per-source failures: a bad source yields [] but doesn't prevent
+    // other sources' results from being used (the multi-agent resilience seam).
+    const sessions = settled
+      .filter((r): r is PromiseFulfilledResult<SessionStats[]> => r.status === "fulfilled")
+      .flatMap((r) => r.value);
+    if (sessions.length === 0) {
+      // Distinguish "nothing to upload" from "something went wrong".
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) {
+        const msg = failed.reason instanceof Error ? failed.reason.message : String(failed.reason);
+        return { status: "error", message: msg };
+      }
+      return { status: "empty" };
+    }
 
     // Memoize "is this cwd inside a git repo": once a cwd is known non-git, a
     // later session in the same cwd skips the git spawns entirely. (readGitOutcome
