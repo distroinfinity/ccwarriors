@@ -14,6 +14,7 @@ export const WINDOW_DAYS = 40;
 const EXPLORE_TOOLS = new Set(["Read", "Grep", "Glob"]);
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const SPAWN_TOOLS = new Set(["Task", "Agent"]);
+const SKILL_TOOLS = new Set(["Skill"]);
 
 export interface SessionStats {
   prompts: number;
@@ -33,6 +34,10 @@ export interface SessionStats {
   wordTotal: number; // total words across prompts (exact avg replaces buckets)
   recoveryLoops: number; // runs of ≥3 consecutive error tool_results
   extensions: Record<string, number>; // file-extension histogram of agent edits
+  // ── tool-aware + skill signals (counts/names — safe to upload) ──
+  tool: string; // originating agent; "claude" for this (the Claude Code) parser
+  skillSpawns: number; // count of Skill-tool invocations
+  skillsUsed: Record<string, number>; // redacted skill-NAME histogram (no args)
   // ── richer per-session signal (some LOCAL-ONLY; see PRIVACY CONTRACT) ──
   recoveryBreakoutMs: number[]; // LOCAL-ONLY: collapsed to a median before upload
   shortPrompts: string[]; // LOCAL-ONLY: go-to-prompt candidates; only the redacted top repeat may upload (consent v2)
@@ -91,6 +96,8 @@ export async function parseSessionLines(
   const eventGapsMs: number[] = [];
   let thankYous = 0, wordTotal = 0;
   const extensions: Record<string, number> = {};
+  let skillSpawns = 0;
+  const skillsUsed: Record<string, number> = {};
   const shortPrompts: string[] = [];
   // Recovery: a "failure loop" is ≥3 consecutive error tool_results (assistant
   // turns in between don't reset it). Breakout = first success or real prompt.
@@ -197,6 +204,15 @@ export async function parseSessionLines(
           }
         }
       }
+      if (SKILL_TOOLS.has(name)) {
+        skillSpawns++;
+        const inp = block["input"] as Record<string, unknown> | undefined;
+        const id = inp?.["skill"] ?? inp?.["name"] ?? inp?.["command"];
+        if (typeof id === "string" && id.trim()) {
+          const key = id.trim().slice(0, 64); // NAME only — never args
+          skillsUsed[key] = (skillsUsed[key] ?? 0) + 1;
+        }
+      }
     }
     maxParallel = Math.max(maxParallel, parallel);
   }
@@ -217,6 +233,7 @@ export async function parseSessionLines(
     prompts, interrupts, usedPlanMode, exploreBeforeFirstEdit, hadEdits,
     subagentSpawns, maxParallel, editCalls, assistantTurns, startHour, durationMinutes, wordBuckets,
     thankYous, wordTotal, recoveryLoops, extensions, recoveryBreakoutMs, shortPrompts,
+    tool: "claude", skillSpawns, skillsUsed,
     startMs: firstTs, endMs: lastTs, cwd, gitBranch, model,
     editedFiles: [...editedFiles], eventGapsMs,
   };

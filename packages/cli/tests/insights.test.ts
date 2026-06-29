@@ -51,6 +51,30 @@ describe("parseSessionLines", () => {
     expect(await parseSessionLines([line({ type: "file-history-snapshot" })])).toBeNull();
   });
 
+  it("tags tool=claude and counts Skill invocations by name (never args)", async () => {
+    const lines = [
+      line({ type: "user", message: { content: "use tdd to add the parser" }, timestamp: "2026-06-07T09:00:00.000Z" }),
+      line({
+        type: "assistant",
+        message: {
+          model: "claude-opus-4-8",
+          content: [
+            { type: "tool_use", name: "Skill", input: { skill: "test-driven-development", args: "secret args" } },
+            { type: "tool_use", name: "Skill", input: { skill: "test-driven-development" } },
+            { type: "tool_use", name: "Skill", input: { skill: "brainstorming" } },
+          ],
+        },
+        timestamp: "2026-06-07T09:00:05.000Z",
+      }),
+    ];
+    const s = (await parseSessionLines(lines))!;
+    expect(s.tool).toBe("claude");
+    expect(s.skillSpawns).toBe(3);
+    expect(s.skillsUsed).toEqual({ "test-driven-development": 2, brainstorming: 1 });
+    // Skill ARGS must never be captured anywhere in the stats.
+    expect(JSON.stringify(s)).not.toContain("secret args");
+  });
+
   it("joins only string text blocks across a multi-block prompt", async () => {
     const s = (await parseSessionLines([
       line({
