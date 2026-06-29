@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSessionLines, aggregateSessions, timingSummary, type SessionStats } from "../src/insights.js";
+import { parseSessionLines, aggregateSessions, timingSummary, isValidSessionStats, type SessionStats } from "../src/insights.js";
 
 const line = (o: object) => JSON.stringify(o);
 
@@ -126,5 +126,20 @@ describe("timingSummary", () => {
     const t = timingSummary([3000, 1000, 2000]); // sorted: 1000,2000,3000
     expect(t.medianGapMs).toBe(2000);
     expect(t.subSecondFraction).toBe(0);
+  });
+});
+
+describe("isValidSessionStats", () => {
+  it("accepts a full stats object and rejects one missing the new tool/skill fields", async () => {
+    const full = (await parseSessionLines([
+      line({ type: "user", message: { content: "do the thing now please" }, timestamp: "2026-06-07T09:00:00.000Z" }),
+    ]))!;
+    expect(isValidSessionStats(full)).toBe(true);
+
+    const stale: Record<string, unknown> = { ...full };
+    delete stale["tool"];
+    delete stale["skillSpawns"];
+    delete stale["skillsUsed"];
+    expect(isValidSessionStats(stale)).toBe(false);
   });
 });

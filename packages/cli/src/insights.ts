@@ -308,7 +308,8 @@ export function timingSummary(gapsMs: number[]): {
 // cwd/editedFiles/eventGapsMs, breaking the deep path). v3: purges caches
 // poisoned by the unbumped v2 shape change (entries without eventGapsMs).
 // v4: thankYous/wordTotal/recovery/extensions/shortPrompts signals added.
-const CACHE_VERSION = 4;
+// v5: tool tag + skillSpawns/skillsUsed added (old entries lack them → re-parse).
+const CACHE_VERSION = 5;
 
 /**
  * Structural check on a cached SessionStats. The version bump handles known
@@ -320,7 +321,7 @@ export function isValidSessionStats(x: unknown): x is SessionStats {
   const o = x as Record<string, unknown>;
   const numeric = [
     "prompts", "interrupts", "subagentSpawns", "maxParallel", "editCalls", "assistantTurns",
-    "startHour", "durationMinutes", "thankYous", "wordTotal", "recoveryLoops",
+    "startHour", "durationMinutes", "thankYous", "wordTotal", "recoveryLoops", "skillSpawns",
   ];
   for (const k of numeric) if (typeof o[k] !== "number") return false;
   const booleans = ["usedPlanMode", "exploreBeforeFirstEdit", "hadEdits"];
@@ -335,6 +336,8 @@ export function isValidSessionStats(x: unknown): x is SessionStats {
   if (!o["extensions"] || typeof o["extensions"] !== "object") return false;
   // Nullable fields must be PRESENT (null is fine; absent means stale shape).
   for (const k of ["startMs", "endMs", "cwd", "gitBranch", "model"]) if (!(k in o)) return false;
+  if (typeof o["tool"] !== "string") return false;
+  if (!o["skillsUsed"] || typeof o["skillsUsed"] !== "object") return false;
   return true;
 }
 
