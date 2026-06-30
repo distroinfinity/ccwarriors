@@ -7,10 +7,11 @@ import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { readGitOutcome, type SessionGitOutcome } from "./git.js";
+import { readGitOutcome, runGit, type SessionGitOutcome } from "./git.js";
 import { redact } from "./redact.js";
 import type { SessionStats } from "./session-stats.js";
 import { parseCodexLines } from "./sources/codex.js";
+import { parseAiderLog, clusterAiderCommits, AIDER_LOG_FORMAT } from "./sources/aider.js";
 export type { SessionStats };
 
 export const WINDOW_DAYS = 40;
@@ -445,6 +446,41 @@ async function collectCodexSessions(): Promise<SessionStats[]> {
 }
 
 /**
+ * Aider's "special path": it keeps no transcripts. Given the repo cwds the
+ * session-log sources discovered, list each repo's in-window aider-trailer
+ * commits, cluster them, and return SessionStats. The git-outcome pass in
+ * collectDeepInsights then computes outcomes over each cluster's window.
+ * Best-effort: a repo that fails to log contributes nothing.
+ *
+ * Limitation (documented): aider sessions are only found in repos where a
+ * session-log agent (Claude/Codex) also worked — aider-only repos are not
+ * discovered in v1.
+ */
+async function collectAiderSessions(cwds: string[]): Promise<SessionStats[]> {
+  const sinceIso = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
+  // Resolve each cwd to its repo root and dedupe, so we log each repo once.
+  const roots = new Set<string>();
+  for (const cwd of cwds) {
+    const top = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
+    if (top && top.trim()) roots.add(top.trim());
+  }
+  const out: SessionStats[] = [];
+  for (const root of roots) {
+    const log = await runGit(root, [
+      "log",
+      "HEAD",
+      "--no-merges",
+      `--since=${sinceIso}`,
+      `--format=${AIDER_LOG_FORMAT}`,
+      "--numstat",
+    ]);
+    if (!log) continue;
+    out.push(...clusterAiderCommits(parseAiderLog(log), root));
+  }
+  return out;
+}
+
+/**
  * A deep-extraction source: one originating agent and a collector returning its
  * in-window SessionStats. collectDeepInsights iterates every registered source
  * and stamps each session with the source's `tool`. Later plans push one entry
@@ -459,6 +495,18 @@ export const DEEP_SOURCES: DeepSource[] = [
   { tool: "claude", collect: walkSessions },
   { tool: "codex", collect: collectCodexSessions },
 ];
+
+/**
+ * A git-trailer source: an agent (Aider) that has no session logs and instead
+ * reconstructs sessions from its commits. It runs in a SECOND phase, after the
+ * session-log sources, because it needs the repo cwds those sources discovered.
+ */
+export interface GitTrailerSource {
+  readonly tool: string;
+  collect(cwds: string[]): Promise<SessionStats[]>;
+}
+
+export const GIT_TRAILER_SOURCES: GitTrailerSource[] = [{ tool: "aider", collect: collectAiderSessions }];
 
 /** Collect insights for sessions modified within the window. Cache makes
     repeat runs parse only new/changed files. */
@@ -628,22 +676,41 @@ export interface DeepCollectOptions {
 
 export async function collectDeepInsights(salt: string, opts: DeepCollectOptions = {}): Promise<DeepCollectResult> {
   try {
-    const settled = await Promise.allSettled(
+    // Phase 1 — session-log sources (Claude, Codex). Each yields SessionStats
+    // and is stamped with its source's tool.
+    const phase1 = await Promise.allSettled(
       DEEP_SOURCES.map((src) =>
         src.collect().then((ss) => {
-          for (const s of ss) s.tool = src.tool; // source tag is authoritative
+          for (const s of ss) s.tool = src.tool;
           return ss;
         }),
       ),
     );
-    // Isolate per-source failures: a bad source yields [] but doesn't prevent
-    // other sources' results from being used (the multi-agent resilience seam).
-    const sessions = settled
+    const sessions = phase1
       .filter((r): r is PromiseFulfilledResult<SessionStats[]> => r.status === "fulfilled")
       .flatMap((r) => r.value);
+
+    // Phase 2 — git-trailer sources (Aider) reconstruct sessions from commits
+    // in the repos discovered above; they own no logs of their own.
+    const knownCwds = [...new Set(sessions.map((s) => s.cwd).filter((c): c is string => !!c))];
+    const phase2 = await Promise.allSettled(
+      GIT_TRAILER_SOURCES.map((src) =>
+        src.collect(knownCwds).then((ss) => {
+          for (const s of ss) s.tool = src.tool;
+          return ss;
+        }),
+      ),
+    );
+    sessions.push(
+      ...phase2
+        .filter((r): r is PromiseFulfilledResult<SessionStats[]> => r.status === "fulfilled")
+        .flatMap((r) => r.value),
+    );
+
     if (sessions.length === 0) {
-      // Distinguish "nothing to upload" from "something went wrong".
-      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      // Distinguish "nothing to upload" from "something went wrong" across BOTH
+      // phases (a failed source is rejected; zero sessions with no failure is empty).
+      const failed = [...phase1, ...phase2].find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed) {
         const msg = failed.reason instanceof Error ? failed.reason.message : String(failed.reason);
         return { status: "error", message: msg };

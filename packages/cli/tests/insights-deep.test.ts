@@ -168,6 +168,60 @@ describe("collectDeepInsights", () => {
     expect(JSON.stringify(result.payload)).not.toContain("secret");
   });
 
+  it("reconstructs Aider sessions from git-trailer commits in discovered repos", async () => {
+    const repo = mkrepo();
+    const now = Date.now();
+    const claudeStart = new Date(now - 12 * 60_000).toISOString();
+    const claudeEnd = new Date(now - 11 * 60_000).toISOString();
+    const aiderDate = new Date(now - 9 * 60_000).toISOString();
+
+    // An aider-authored commit (the special-path signal): a Co-authored-by
+    // trailer with an aider.chat email. git's --trailer adds a real trailer.
+    const env = { ...process.env, GIT_AUTHOR_DATE: aiderDate, GIT_COMMITTER_DATE: aiderDate };
+    writeFileSync(join(repo, "aider-edit.ts"), "export const z = 1;\n");
+    execFileSync("git", ["-C", repo, "add", "-A"], { stdio: "ignore" });
+    execFileSync(
+      "git",
+      ["-C", repo, "commit", "-q", "-m", "feat: aider change", "--trailer", "Co-authored-by: aider (gpt-4o) <aider@aider.chat>"],
+      { env, stdio: "ignore" },
+    );
+
+    // A Claude session in the SAME repo so collectDeepInsights discovers its cwd
+    // and hands it to the Aider (trailer) phase.
+    const projects = mkdtempSync(join(tmpdir(), "ccw-aider-projects-"));
+    cleanup.push(projects);
+    const home = mkdtempSync(join(tmpdir(), "ccw-aider-home-"));
+    cleanup.push(home);
+    const sessDir = join(projects, "proj");
+    mkdirSync(sessDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "user", message: { content: "start the work now please" }, cwd: repo, timestamp: claudeStart }),
+      JSON.stringify({ type: "assistant", message: { model: "claude-opus-4-8", content: [{ type: "text", text: "ok" }] }, cwd: repo, timestamp: claudeEnd }),
+    ];
+    writeFileSync(join(sessDir, "s.jsonl"), lines.join("\n") + "\n");
+
+    process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
+    process.env["CCWARRIORS_HOME"] = home;
+    // CODEX_DIR stays at the beforeEach absent default → no Codex sessions.
+
+    const { collectDeepInsights } = await import("../src/insights.js");
+    const result = await collectDeepInsights("salt");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+
+    const aider = result.payload.sessions.find((r) => r.tool === "aider");
+    const claude = result.payload.sessions.find((r) => r.tool === "claude");
+    expect(claude).toBeDefined();
+    expect(aider).toBeDefined();
+    expect(aider!.model).toBe("gpt-4o");
+    expect(aider!.assistantTurns).toBe(1); // one aider commit
+    expect(aider!.git).not.toBeNull();
+    expect(aider!.git!.commitsInWindow).toBeGreaterThanOrEqual(1);
+    expect(aider!.git!.aiLinkedCommits).toBe(1); // basename match on aider-edit.ts
+    // PRIVACY: no path/branch/model-args leak.
+    expect(JSON.stringify(result.payload)).not.toContain(repo);
+  });
+
   it("collects Codex rollout sessions with tool=codex and a git outcome", async () => {
     const repo = mkrepo();
     const now = Date.now();
