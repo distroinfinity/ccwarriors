@@ -6,7 +6,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { readGitOutcome, type SessionGitOutcome } from "./git.js";
 import { redact } from "./redact.js";
 import type { SessionStats } from "./session-stats.js";
@@ -319,9 +319,9 @@ const HOME = process.env["CCWARRIORS_HOME"] ?? join(homedir(), ".claude-warriors
 const CACHE_PATH = join(HOME, "insights-cache.json");
 const PROJECTS_DIR = process.env["CCWARRIORS_CLAUDE_DIR"] ?? join(homedir(), ".claude", "projects");
 
-async function loadCache(): Promise<CacheFile> {
+async function loadCache(path: string = CACHE_PATH): Promise<CacheFile> {
   try {
-    const cache = JSON.parse(await readFile(CACHE_PATH, "utf8")) as CacheFile;
+    const cache = JSON.parse(await readFile(path, "utf8")) as CacheFile;
     // Stale schema → drop parsed entries (keep lastSentAt throttle), re-parse.
     if (cache.version !== CACHE_VERSION) {
       return { version: CACHE_VERSION, files: {}, lastSentAt: cache.lastSentAt };
@@ -332,10 +332,10 @@ async function loadCache(): Promise<CacheFile> {
   }
 }
 
-async function saveCache(cache: CacheFile): Promise<void> {
+async function saveCache(cache: CacheFile, path: string = CACHE_PATH): Promise<void> {
   cache.version = CACHE_VERSION;
-  await mkdir(HOME, { recursive: true, mode: 0o700 });
-  await writeFile(CACHE_PATH, JSON.stringify(cache), { encoding: "utf8", mode: 0o600 });
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, JSON.stringify(cache), { encoding: "utf8", mode: 0o600 });
 }
 
 async function parseFile(path: string): Promise<SessionStats | null> {
@@ -344,65 +344,74 @@ async function parseFile(path: string): Promise<SessionStats | null> {
 }
 
 /**
- * Walk the project dirs, parsing every in-window session file (with the
- * path+size+mtime cache so repeat runs only re-parse new/changed files), and
- * return the resulting SessionStats. Shared by collectInsights (aggregate) and
- * collectDeepInsights (per-session). Returns [] if PROJECTS_DIR is absent.
+ * Generic per-file parse cache: stat each candidate file, skip out-of-window
+ * ones, reuse a valid cached parse on size+mtime match, else parse and cache.
+ * Prunes cache entries for files not seen THIS walk, then saves to `cachePath`.
+ * Each source passes its OWN cachePath so sources never prune each other.
+ */
+export async function walkJsonlSessions(
+  files: string[],
+  cachePath: string,
+  parse: (path: string) => Promise<SessionStats | null>,
+): Promise<SessionStats[]> {
+  const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
+  const cache = await loadCache(cachePath);
+  const seen = new Set<string>();
+  const sessions: SessionStats[] = [];
+  for (const full of files) {
+    let st;
+    try {
+      st = await stat(full);
+    } catch {
+      continue;
+    }
+    if (st.mtimeMs < cutoff) continue; // outside window
+    seen.add(full);
+    const cached = cache.files[full];
+    let stats: SessionStats | null;
+    if (
+      cached &&
+      cached.size === st.size &&
+      cached.mtimeMs === st.mtimeMs &&
+      (cached.stats === null || isValidSessionStats(cached.stats))
+    ) {
+      stats = cached.stats;
+    } else {
+      try {
+        stats = await parse(full);
+      } catch {
+        // File vanished between stat and read → store null; pruned next run.
+        stats = null;
+      }
+      cache.files[full] = { size: st.size, mtimeMs: st.mtimeMs, stats };
+    }
+    if (stats) sessions.push(stats);
+  }
+  for (const key of Object.keys(cache.files)) if (!seen.has(key)) delete cache.files[key];
+  await saveCache(cache, cachePath);
+  return sessions;
+}
+
+/**
+ * Discover Claude Code session files (~/.claude/projects/<proj>/*.jsonl) and
+ * parse them through the shared cache. Returns [] if PROJECTS_DIR is absent.
  */
 async function walkSessions(): Promise<SessionStats[]> {
   if (!existsSync(PROJECTS_DIR)) return [];
-  const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
-  const cache = await loadCache();
-  const seen = new Set<string>();
-  const sessions: SessionStats[] = [];
-
+  const files: string[] = [];
   const projectDirs = await readdir(PROJECTS_DIR, { withFileTypes: true });
   for (const dirent of projectDirs) {
     if (!dirent.isDirectory()) continue;
     const dir = join(PROJECTS_DIR, dirent.name);
-    let files: string[];
+    let names: string[];
     try {
-      files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+      names = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
     } catch {
       continue;
     }
-    for (const f of files) {
-      const full = join(dir, f);
-      let st;
-      try {
-        st = await stat(full);
-      } catch {
-        continue;
-      }
-      if (st.mtimeMs < cutoff) continue; // outside window
-      seen.add(full);
-      const cached = cache.files[full];
-      let stats: SessionStats | null;
-      if (
-        cached &&
-        cached.size === st.size &&
-        cached.mtimeMs === st.mtimeMs &&
-        (cached.stats === null || isValidSessionStats(cached.stats))
-      ) {
-        stats = cached.stats;
-      } else {
-        try {
-          stats = await parseFile(full);
-        } catch {
-          // File vanished between stat and read → catch stores null; pruned next run.
-          stats = null;
-        }
-        cache.files[full] = { size: st.size, mtimeMs: st.mtimeMs, stats };
-      }
-      if (stats) sessions.push(stats);
-    }
+    for (const f of names) files.push(join(dir, f));
   }
-
-  // Drop cache entries for files gone or aged out (bound the cache size).
-  for (const key of Object.keys(cache.files)) if (!seen.has(key)) delete cache.files[key];
-  await saveCache(cache);
-
-  return sessions;
+  return walkJsonlSessions(files, CACHE_PATH, parseFile);
 }
 
 /**
