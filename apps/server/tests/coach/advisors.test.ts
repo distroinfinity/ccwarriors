@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { cacheEfficiencyAdvisor } from "../../src/lib/coach/advisors/cache-efficiency.js";
 import { burnForecastAdvisor } from "../../src/lib/coach/advisors/burn-forecast.js";
+import { crossToolAdvisor } from "../../src/lib/coach/advisors/cross-tool.js";
+import { modelMixModule } from "../../src/lib/coach/advisors/model-mix.js";
 import type { CoachContext } from "../../src/lib/coach/types.js";
 import { makeBenchmarks } from "../../src/lib/coach/benchmark.js";
 
@@ -62,5 +64,42 @@ describe("burnForecastAdvisor", () => {
 
   it("returns null when there is no spend at all", () => {
     expect(burnForecastAdvisor(ctx({ windowCostUsd: 0, burn: { projectedMonthUsd: 0, priorMonthUsd: null, runRatePerDay: 0 } }))).toBeNull();
+  });
+});
+
+describe("crossToolAdvisor", () => {
+  it("compares effective $/Mtok between the user's own tools, no outcome claim", () => {
+    const rec = crossToolAdvisor(ctx({
+      usageByTool: [
+        { tool: "claude", cost: 100, inputTokens: 10_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }, // $10/Mtok
+        { tool: "codex", cost: 10, inputTokens: 10_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 },   // $1/Mtok
+      ],
+    }))!;
+    expect(rec.id).toBe("cross-tool");
+    expect(rec.visibility).toBe("owner");
+    expect(rec.outcomeImpact).toBeNull(); // token-cost only
+    expect(rec.evidenceLine).toContain("Codex");
+    expect(rec.evidenceLine).toContain("Claude Code");
+  });
+
+  it("returns null with fewer than two tools that have tokens", () => {
+    expect(crossToolAdvisor(ctx({
+      usageByTool: [{ tool: "claude", cost: 100, inputTokens: 1_000_000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 }],
+    }))).toBeNull();
+  });
+});
+
+describe("modelMixModule", () => {
+  it("is an informational public module with no recommendation/advice", () => {
+    const mod = modelMixModule(ctx())!;
+    expect(mod.id).toBe("model-mix");
+    expect(mod.visibility).toBe("public");
+    expect(mod.informationalOnly).toBe(true);
+    expect(mod.tip).toBeNull(); // never "move to Sonnet"
+    expect(mod.value).toContain("Opus");
+  });
+
+  it("returns null when there is no model mix", () => {
+    expect(modelMixModule(ctx({ efficiency: null }))).toBeNull();
   });
 });
