@@ -9,46 +9,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readGitOutcome, type SessionGitOutcome } from "./git.js";
 import { redact } from "./redact.js";
+import type { SessionStats } from "./session-stats.js";
+export type { SessionStats };
 
 export const WINDOW_DAYS = 40;
 const EXPLORE_TOOLS = new Set(["Read", "Grep", "Glob"]);
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const SPAWN_TOOLS = new Set(["Task", "Agent"]);
 const SKILL_TOOLS = new Set(["Skill"]);
-
-export interface SessionStats {
-  prompts: number;
-  interrupts: number;
-  usedPlanMode: boolean;
-  exploreBeforeFirstEdit: boolean;
-  hadEdits: boolean;
-  subagentSpawns: number;
-  maxParallel: number;
-  editCalls: number;
-  assistantTurns: number;
-  startHour: number; // machine-local 0-23
-  durationMinutes: number;
-  wordBuckets: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
-  // ── new deep signals (counts — safe to upload) ──
-  thankYous: number; // prompts containing a thanks
-  wordTotal: number; // total words across prompts (exact avg replaces buckets)
-  recoveryLoops: number; // runs of ≥3 consecutive error tool_results
-  extensions: Record<string, number>; // file-extension histogram of agent edits
-  // ── tool-aware + skill signals (counts/names — safe to upload) ──
-  tool: string; // originating agent; "claude" for this (the Claude Code) parser
-  skillSpawns: number; // count of Skill-tool invocations
-  skillsUsed: Record<string, number>; // redacted skill-NAME histogram (no args)
-  // ── richer per-session signal (some LOCAL-ONLY; see PRIVACY CONTRACT) ──
-  recoveryBreakoutMs: number[]; // LOCAL-ONLY: collapsed to a median before upload
-  shortPrompts: string[]; // LOCAL-ONLY: go-to-prompt candidates; only the redacted top repeat may upload (consent v2)
-  startMs: number | null; // first event epoch ms
-  endMs: number | null; // last event epoch ms
-  cwd: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
-  gitBranch: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
-  model: string | null; // model on the most assistant turns (safe to upload)
-  editedFiles: string[]; // LOCAL-ONLY: input to readGitOutcome, never uploaded
-  eventGapsMs: number[]; // LOCAL-ONLY: collapsed to a timing summary before upload
-}
 
 export interface InsightsPayload {
   windowDays: number;
