@@ -36,7 +36,7 @@ export const cacheEfficiencyAdvisor: Advisor = (ctx) => {
   const freshShare = totalTokens > 0
     ? ctx.usageByTool.reduce((s, t) => s + t.inputTokens + t.cacheCreationTokens, 0) / totalTokens
     : 0;
-  const monthlyFreshSpend = ctx.windowCostUsd * freshShare * (30 / ctx.windowDays);
+  const monthlyFreshSpend = ctx.windowCostUsd * freshShare * (30 / Math.max(ctx.windowDays, 1));
   const high = Math.round(gap * monthlyFreshSpend * CACHE_DISCOUNT * 100) / 100;
   const low = Math.round(high * LOW_BAND * 100) / 100;
 

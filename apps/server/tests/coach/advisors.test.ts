@@ -36,6 +36,7 @@ describe("cacheEfficiencyAdvisor", () => {
     }))!;
     expect(rec.severity).toBe("good");
     expect(rec.dollarImpact).toBeNull();
+    expect(rec.themeKey).toBe("mid-session-switch");
   });
 
   it("returns null when cacheReadRatio is unavailable", () => {
