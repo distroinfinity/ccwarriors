@@ -84,28 +84,12 @@ export async function buildCoachContext(
   const windowCostUsd = usageByTool.reduce((s, t) => s + t.cost, 0);
 
   // Efficiency over the window: build UsageDayLike rows from a full-window read.
-  // When modelBreakdown is absent (legacy rows), synthesise one entry from the
-  // direct token columns so computeEfficiency can compute cacheReadRatio.
   const cutoff = cutoffDay(now, COACH_WINDOW_DAYS);
   const effRows = await db
-    .select({
-      day: usageDays.day, cost: usageDays.cost, tool: usageDays.tool,
-      modelBreakdown: usageDays.modelBreakdown,
-      inputTokens: usageDays.inputTokens, outputTokens: usageDays.outputTokens,
-      cacheCreationTokens: usageDays.cacheCreationTokens, cacheReadTokens: usageDays.cacheReadTokens,
-    })
+    .select({ day: usageDays.day, cost: usageDays.cost, modelBreakdown: usageDays.modelBreakdown })
     .from(usageDays)
     .where(eq(usageDays.userId, user.id));
-  const dayRows: UsageDayLike[] = effRows.map((r) => {
-    let modelBreakdown = r.modelBreakdown as ModelTokens[] | null;
-    if (!modelBreakdown || modelBreakdown.length === 0) {
-      const total = r.inputTokens + r.outputTokens + r.cacheCreationTokens + r.cacheReadTokens;
-      if (total > 0) {
-        modelBreakdown = [{ modelName: r.tool, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cacheCreationTokens: r.cacheCreationTokens, cacheReadTokens: r.cacheReadTokens }];
-      }
-    }
-    return { day: r.day, cost: Number(r.cost), modelBreakdown };
-  });
+  const dayRows: UsageDayLike[] = effRows.map((r) => ({ day: r.day, cost: Number(r.cost), modelBreakdown: r.modelBreakdown as ModelTokens[] | null }));
   const efficiency = dayRows.length > 0 ? computeEfficiency(dayRows, cutoff) : null;
 
   const monthlyCacheRatios = await loadMonthlyCacheRatios(db, user.id, now);

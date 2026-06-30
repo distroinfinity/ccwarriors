@@ -53,7 +53,7 @@ describe("buildCoachContext", () => {
   it("assembles a deep-mode context with apportioned sessions", async () => {
     const db = await makeDb();
     const u = await freshUser(db, "ctx", "deep");
-    await db.insert(usageDays).values({ userId: u.id, machineId: "m", tool: "claude", day: "2026-06-10", inputTokens: 1000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 9000, cost: "8" });
+    await db.insert(usageDays).values({ userId: u.id, machineId: "m", tool: "claude", day: "2026-06-10", inputTokens: 1000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 9000, cost: "8", modelBreakdown: [{ modelName: "claude-opus-4-7", inputTokens: 1000, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 9000 }] });
     await db.insert((await import("../../src/db/schema.js")).userDeepSessions).values({
       userId: u.id, machineId: "m", windowDays: 40,
       sessions: [
