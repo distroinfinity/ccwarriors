@@ -10,6 +10,7 @@ import { join, dirname } from "node:path";
 import { readGitOutcome, type SessionGitOutcome } from "./git.js";
 import { redact } from "./redact.js";
 import type { SessionStats } from "./session-stats.js";
+import { parseCodexLines } from "./sources/codex.js";
 export type { SessionStats };
 
 export const WINDOW_DAYS = 40;
@@ -318,6 +319,8 @@ interface CacheFile {
 const HOME = process.env["CCWARRIORS_HOME"] ?? join(homedir(), ".claude-warriors");
 const CACHE_PATH = join(HOME, "insights-cache.json");
 const PROJECTS_DIR = process.env["CCWARRIORS_CLAUDE_DIR"] ?? join(homedir(), ".claude", "projects");
+const CODEX_DIR = process.env["CCWARRIORS_CODEX_DIR"] ?? join(homedir(), ".codex", "sessions");
+const CODEX_CACHE_PATH = join(HOME, "insights-cache-codex.json");
 
 async function loadCache(path: string = CACHE_PATH): Promise<CacheFile> {
   try {
@@ -414,6 +417,33 @@ async function walkSessions(): Promise<SessionStats[]> {
   return walkJsonlSessions(files, CACHE_PATH, parseFile);
 }
 
+async function parseCodexFile(path: string): Promise<SessionStats | null> {
+  const rl = createInterface({ input: createReadStream(path, "utf8"), crlfDelay: Infinity });
+  return parseCodexLines(rl);
+}
+
+/**
+ * Discover Codex rollout files (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl)
+ * and parse them through the shared cache (its own cache file, disjoint from
+ * Claude's). Returns [] if CODEX_DIR is absent or unreadable.
+ */
+async function collectCodexSessions(): Promise<SessionStats[]> {
+  if (!existsSync(CODEX_DIR)) return [];
+  let entries: string[];
+  try {
+    entries = (await readdir(CODEX_DIR, { recursive: true })) as string[];
+  } catch {
+    return [];
+  }
+  const files = entries
+    .filter((rel) => {
+      const base = rel.slice(Math.max(rel.lastIndexOf("/"), rel.lastIndexOf("\\")) + 1);
+      return base.startsWith("rollout-") && base.endsWith(".jsonl");
+    })
+    .map((rel) => join(CODEX_DIR, rel));
+  return walkJsonlSessions(files, CODEX_CACHE_PATH, parseCodexFile);
+}
+
 /**
  * A deep-extraction source: one originating agent and a collector returning its
  * in-window SessionStats. collectDeepInsights iterates every registered source
@@ -425,7 +455,10 @@ export interface DeepSource {
   collect(): Promise<SessionStats[]>;
 }
 
-export const DEEP_SOURCES: DeepSource[] = [{ tool: "claude", collect: walkSessions }];
+export const DEEP_SOURCES: DeepSource[] = [
+  { tool: "claude", collect: walkSessions },
+  { tool: "codex", collect: collectCodexSessions },
+];
 
 /** Collect insights for sessions modified within the window. Cache makes
     repeat runs parse only new/changed files. */

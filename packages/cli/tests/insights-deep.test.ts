@@ -32,6 +32,9 @@ beforeEach(() => {
   // Reset the module registry so each test re-evaluates module-level constants
   // (PROJECTS_DIR, HOME) from the current process.env values set in the test.
   vi.resetModules();
+  // Isolate the Codex source by default: point it at a path that does not
+  // exist so collectCodexSessions yields [] unless a test opts in.
+  process.env["CCWARRIORS_CODEX_DIR"] = join(tmpdir(), "ccw-codex-absent-DO-NOT-CREATE");
 });
 
 afterEach(() => {
@@ -48,6 +51,7 @@ afterEach(() => {
   // test's now-removed temp dirs via vi.resetModules() re-reading the env.
   delete process.env["CCWARRIORS_CLAUDE_DIR"];
   delete process.env["CCWARRIORS_HOME"];
+  delete process.env["CCWARRIORS_CODEX_DIR"];
 });
 
 describe("collectDeepInsights", () => {
@@ -162,5 +166,55 @@ describe("collectDeepInsights", () => {
     expect(rec.skillSpawns).toBe(1);
     expect(rec.skillsUsed).toEqual({ "test-driven-development": 1 });
     expect(JSON.stringify(result.payload)).not.toContain("secret");
+  });
+
+  it("collects Codex rollout sessions with tool=codex and a git outcome", async () => {
+    const repo = mkrepo();
+    const now = Date.now();
+    const startIso = new Date(now - 8 * 60_000).toISOString();
+    const midIso = new Date(now - 7 * 60_000).toISOString();
+    const endIso = new Date(now - 6 * 60_000).toISOString();
+
+    // A commit inside the Codex session window (editedFiles is [] for Codex, so
+    // attribution is time-window only: commitsInWindow counts it, aiLinked is 0).
+    const env = { ...process.env, GIT_AUTHOR_DATE: midIso, GIT_COMMITTER_DATE: midIso };
+    writeFileSync(join(repo, "thing.ts"), "export const a = 1;\n");
+    execFileSync("git", ["-C", repo, "add", "-A"], { stdio: "ignore" });
+    execFileSync("git", ["-C", repo, "commit", "-q", "-m", "feat: add thing"], { env, stdio: "ignore" });
+
+    // Synthetic Codex sessions dir with the real nested YYYY/MM/DD/rollout-*.jsonl shape.
+    const codex = mkdtempSync(join(tmpdir(), "ccw-codex-"));
+    cleanup.push(codex);
+    const dayDir = join(codex, "2026", "06", "29");
+    mkdirSync(dayDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "session_meta", timestamp: startIso, payload: { session_id: "s1", cwd: repo } }),
+      JSON.stringify({ type: "turn_context", timestamp: startIso, payload: { cwd: repo, model: "gpt-5.5" } }),
+      JSON.stringify({ type: "event_msg", timestamp: startIso, payload: { type: "user_message", message: "do it" } }),
+      JSON.stringify({ type: "response_item", timestamp: endIso, payload: { type: "message", role: "assistant", content: [] } }),
+    ];
+    writeFileSync(join(dayDir, "rollout-2026-06-29T12-00-00-abc.jsonl"), lines.join("\n") + "\n");
+
+    // Isolate Claude (empty) so ONLY Codex contributes; point Codex at our dir.
+    const projects = mkdtempSync(join(tmpdir(), "ccw-codex-claude-"));
+    cleanup.push(projects);
+    const home = mkdtempSync(join(tmpdir(), "ccw-codex-home-"));
+    cleanup.push(home);
+    process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
+    process.env["CCWARRIORS_HOME"] = home;
+    process.env["CCWARRIORS_CODEX_DIR"] = codex;
+
+    const { collectDeepInsights } = await import("../src/insights.js");
+    const result = await collectDeepInsights("salt");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payload.sessions.length).toBe(1);
+    const rec = result.payload.sessions[0]!;
+    expect(rec.tool).toBe("codex");
+    expect(rec.model).toBe("gpt-5.5");
+    expect(rec.git).not.toBeNull();
+    expect(rec.git!.commitsInWindow).toBe(1);
+    // PRIVACY: no path/branch leaks.
+    expect(JSON.stringify(result.payload)).not.toContain(repo);
   });
 });

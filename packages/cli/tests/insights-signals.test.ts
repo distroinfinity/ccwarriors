@@ -13,6 +13,9 @@ let cleanup: string[] = [];
 beforeEach(() => {
   cleanup = [];
   vi.resetModules();
+  // Isolate the Codex source by default: point it at a path that does not
+  // exist so collectCodexSessions yields [] unless a test opts in.
+  process.env["CCWARRIORS_CODEX_DIR"] = join(tmpdir(), "ccw-codex-absent-DO-NOT-CREATE");
 });
 
 afterEach(() => {
@@ -25,6 +28,7 @@ afterEach(() => {
   }
   delete process.env["CCWARRIORS_CLAUDE_DIR"];
   delete process.env["CCWARRIORS_HOME"];
+  delete process.env["CCWARRIORS_CODEX_DIR"];
 });
 
 function tmp(prefix: string): string {

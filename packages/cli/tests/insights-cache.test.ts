@@ -28,6 +28,7 @@ afterEach(() => {
   cleanup = [];
   delete process.env["CCWARRIORS_CLAUDE_DIR"];
   delete process.env["CCWARRIORS_HOME"];
+  delete process.env["CCWARRIORS_CODEX_DIR"];
 });
 
 function tmp(prefix: string): string {
@@ -55,6 +56,7 @@ function writeSession(projects: string, name = "session.jsonl"): string {
 async function importInsights(projects: string, home: string) {
   process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
   process.env["CCWARRIORS_HOME"] = home;
+  process.env["CCWARRIORS_CODEX_DIR"] = join(home, "codex-absent");
   return import("../src/insights.js");
 }
 
