@@ -2,10 +2,9 @@ import { describe, it, expect } from "vitest";
 import { parseAiderLog, clusterAiderCommits, AIDER_SESSION_GAP_MS, type AiderCommit } from "../src/sources/aider.js";
 
 // Mirror the wire format the real git produces for AIDER_LOG_FORMAT:
-//   <HDR>%H \t %aI \t <coauthor-trailer-values joined by US>
+//   <HDR>%H \t %aI \t <coauthor-trailer-values joined by the unit separator>
 //   <numstat rows>  added \t deleted \t path
 const HDR = "\x01A\x01";
-const US = "\x1f";
 const hdr = (sha: string, iso: string, coauthors: string) => `${HDR}${sha}\t${iso}\t${coauthors}`;
 const file = (a: number, d: number, p: string) => `${a}\t${d}\t${p}`;
 

@@ -32,9 +32,12 @@ beforeEach(() => {
   // Reset the module registry so each test re-evaluates module-level constants
   // (PROJECTS_DIR, HOME) from the current process.env values set in the test.
   vi.resetModules();
-  // Isolate the Codex source by default: point it at a path that does not
-  // exist so collectCodexSessions yields [] unless a test opts in.
+  // Isolate both session-log sources by default: point them at paths that do
+  // not exist so the collectors yield [] unless a test opts in. Defaulting
+  // CLAUDE_DIR too (not just CODEX_DIR) keeps a future deep test from silently
+  // reading the real ~/.claude/projects if it forgets to set CLAUDE_DIR.
   process.env["CCWARRIORS_CODEX_DIR"] = join(tmpdir(), "ccw-codex-absent-DO-NOT-CREATE");
+  process.env["CCWARRIORS_CLAUDE_DIR"] = join(tmpdir(), "ccw-claude-absent-DO-NOT-CREATE");
 });
 
 afterEach(() => {
