@@ -43,6 +43,11 @@ afterEach(() => {
     }
   }
   cleanup = [];
+  // Clear the env each test set, so a later test (e.g. Plan 2's per-agent
+  // source tests) that forgets to set them can't silently inherit a prior
+  // test's now-removed temp dirs via vi.resetModules() re-reading the env.
+  delete process.env["CCWARRIORS_CLAUDE_DIR"];
+  delete process.env["CCWARRIORS_HOME"];
 });
 
 describe("collectDeepInsights", () => {
