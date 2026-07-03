@@ -1,7 +1,13 @@
 import { and, eq, gte } from "drizzle-orm";
 import type { DB } from "../../db/index.js";
-import { users, usageDays } from "../../db/schema.js";
+import { users, usageDays, userDeepSessions } from "../../db/schema.js";
 import type { Benchmarks } from "./types.js";
+
+interface CohortDistributions extends Record<string, number[]> {
+  cacheReadRatio: number[];
+  revertRatio: number[];
+  dollarPerSurvivingLine: number[];
+}
 
 // Reuses the value of PERCENTILE_MIN_POPULATION (craft-score.ts:42) so the two
 // systems flip to cohort percentiles at the same population.
@@ -33,7 +39,7 @@ export function makeBenchmarks(distributions: Record<string, number[]>): Benchma
  * Per-consenting-public-user window cache-read ratio across the cohort.
  * cacheReadRatio = cacheRead / (input + cacheCreation + cacheRead) over the window.
  */
-export async function loadCohortDistributions(db: DB, now: number): Promise<Record<string, number[]>> {
+export async function loadCohortDistributions(db: DB, now: number): Promise<CohortDistributions> {
   const cutoff = new Date(now - WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
   const rows = await db
     .select({
@@ -60,7 +66,39 @@ export async function loadCohortDistributions(db: DB, now: number): Promise<Reco
   for (const { read, denom } of sums.values()) {
     if (denom > 0) cacheReadRatio.push(Math.round((read / denom) * 1000) / 1000);
   }
-  return { cacheReadRatio };
+
+  // Per consenting public user: revert ratio + $/surviving-line from deep sessions.
+  const deepRows = await db
+    .select({ userId: userDeepSessions.userId, sessions: userDeepSessions.sessions })
+    .from(userDeepSessions)
+    .innerJoin(users, eq(users.id, userDeepSessions.userId))
+    .where(and(eq(users.insightsConsent, true), eq(users.insightsVisibility, "public")));
+  // window cost per user (reuse the same window/consent filter as cacheReadRatio):
+  const costRows = await db
+    .select({ userId: usageDays.userId, cost: usageDays.cost })
+    .from(usageDays)
+    .innerJoin(users, eq(users.id, usageDays.userId))
+    .where(and(gte(usageDays.day, cutoff), eq(users.insightsConsent, true), eq(users.insightsVisibility, "public")));
+  const windowCost = new Map<string, number>();
+  for (const r of costRows) windowCost.set(r.userId, (windowCost.get(r.userId) ?? 0) + Number(r.cost));
+
+  const revertRatio: number[] = [];
+  const dollarPerSurvivingLine: number[] = [];
+  for (const r of deepRows) {
+    let added = 0, reverted = 0;
+    for (const s of r.sessions) {
+      if (!s.git) continue;
+      added += s.git.linesAdded;
+      reverted += s.git.revertedLinesWithin14d;
+    }
+    if (added <= 0) continue;
+    revertRatio.push(Math.round((reverted / added) * 1000) / 1000);
+    const surviving = Math.max(1, added - reverted);
+    const cost = windowCost.get(r.userId) ?? 0;
+    if (cost > 0) dollarPerSurvivingLine.push(Math.round((cost / surviving) * 1000) / 1000);
+  }
+
+  return { cacheReadRatio, revertRatio, dollarPerSurvivingLine };
 }
 
 let cache: { at: number; benchmarks: Benchmarks } | null = null;
