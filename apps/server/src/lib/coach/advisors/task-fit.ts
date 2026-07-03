@@ -18,7 +18,7 @@ export const taskFitAdvisor: Advisor = (ctx) => {
     (byKind.get(k) ?? byKind.set(k, []).get(k)!).push(s);
   }
 
-  let best: { kind: Kind; topLabel: string; ratio: number; topYield: number } | null = null;
+  let best: { kind: Kind; topLabel: string; ratio: number } | null = null;
   for (const kind of KINDS) {
     const sessions = byKind.get(kind);
     if (!sessions) continue;
@@ -33,7 +33,7 @@ export const taskFitAdvisor: Advisor = (ctx) => {
     yields.sort((a, b) => b.yld - a.yld);
     const top = yields[0]!, bottom = yields[yields.length - 1]!;
     const ratio = top.yld / bottom.yld;
-    if (!best || ratio > best.ratio) best = { kind, topLabel: top.label, ratio, topYield: top.yld };
+    if (!best || ratio > best.ratio) best = { kind, topLabel: top.label, ratio };
   }
   if (!best) return null;
 

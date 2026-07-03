@@ -83,4 +83,11 @@ describe("taskFitAdvisor", () => {
     expect(rec.evidenceLine.toLowerCase()).toContain("codex");
     expect(rec.outcomeImpact).toContain("×");
   });
+
+  it("excludes a sub-floor group so a kind with one qualifying group stays silent", () => {
+    const claude = Array.from({ length: 5 }, () => sess({ tool: "claude", model: "claude-opus-4-7", estimatedCost: 100, git: refactor({ linesAdded: 100 }) }));
+    const codex = Array.from({ length: 4 }, () => sess({ tool: "codex", model: "gpt-5-codex", estimatedCost: 100, git: refactor({ linesAdded: 300 }) })); // 4 < MIN_KIND_SESSIONS → excluded
+    // Only the claude group clears the 5-session floor → one comparable group → not comparable → null.
+    expect(taskFitAdvisor(ctx({ deepSessions: [...claude, ...codex] }))).toBeNull();
+  });
 });
