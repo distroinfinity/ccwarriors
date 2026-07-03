@@ -61,6 +61,13 @@ describe("costPerOutcomeAdvisor", () => {
     expect(rec.outcomeImpact).not.toBeNull();
   });
 
+  it("omits the PR proxy clause when no session has a remote", () => {
+    const sessions = Array.from({ length: 6 }, () => sess({ estimatedCost: 50, git: git({ linesAdded: 100, revertedLinesWithin14d: 0, commitsInWindow: 2, hasRemote: false }) }));
+    const rec = costPerOutcomeAdvisor(ctx({ deepSessions: sessions }))!;
+    expect(rec.evidenceLine).toContain("surviving line");
+    expect(rec.evidenceLine).not.toContain("merged-PR");
+  });
+
   it("returns null in deep mode with no surviving lines", () => {
     const sessions = Array.from({ length: 6 }, () => sess({ estimatedCost: 5, git: git({ linesAdded: 0 }) }));
     expect(costPerOutcomeAdvisor(ctx({ deepSessions: sessions }))).toBeNull();

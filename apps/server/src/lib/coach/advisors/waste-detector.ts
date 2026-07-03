@@ -1,6 +1,6 @@
 import type { Advisor } from "../types.js";
 import { withGit, revertRatio, totalCost, MIN_GROUP_SESSIONS } from "../deep.js";
-import { pct, formatUsd } from "../format.js";
+import { pct } from "../format.js";
 
 const LOW_BAND = 0.5; // conservative low end of the reverted-spend range
 
@@ -13,8 +13,8 @@ export const wasteDetectorAdvisor: Advisor = (ctx) => {
   if (ratio === null) return null;
 
   const cohort = ctx.benchmarks.rank("revertRatio", ratio);
-  const cohortNote = cohort ? ` cohort median tier: percentile ${cohort.percentile} (n=${cohort.population}).` : "";
-  const evidenceLine = `Reverted-within-14d lines are ${pct(ratio)} of what you added this window.${cohortNote}`;
+  const cohortNote = cohort ? ` — cohort percentile ${cohort.percentile} (n=${cohort.population}).` : ".";
+  const evidenceLine = `Reverted-within-14d lines are ${pct(ratio)} of what you added this window${cohortNote}`;
 
   // Reverted share of deep spend, hedged as a range, labeled estimate downstream.
   const revertedSpend = totalCost(g) * ratio;
