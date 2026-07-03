@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { wasteDetectorAdvisor } from "../../src/lib/coach/advisors/waste-detector.js";
+import { costPerOutcomeAdvisor } from "../../src/lib/coach/advisors/cost-per-outcome.js";
 import type { CoachContext } from "../../src/lib/coach/types.js";
 import { makeBenchmarks } from "../../src/lib/coach/benchmark.js";
 import { sess, git } from "./deep-fixtures.js";
@@ -40,5 +41,25 @@ describe("wasteDetectorAdvisor", () => {
     const rec = wasteDetectorAdvisor(ctx({ deepSessions: sessions, benchmarks }))!;
     expect(rec.evidenceLine).toContain("cohort");
     expect(rec.evidenceLine).toContain("n=30");
+  });
+});
+
+describe("costPerOutcomeAdvisor", () => {
+  it("is public, reports $/surviving-line + a labeled PR proxy", () => {
+    const sessions = Array.from({ length: 6 }, () => sess({
+      estimatedCost: 50, git: git({ linesAdded: 100, revertedLinesWithin14d: 0, commitsInWindow: 2, hasRemote: true }),
+    }));
+    const rec = costPerOutcomeAdvisor(ctx({ deepSessions: sessions }))!;
+    expect(rec.visibility).toBe("public");
+    expect(rec.severity).toBe("good");
+    expect(rec.dollarImpact).toBeNull();
+    expect(rec.evidenceLine).toContain("surviving line");
+    expect(rec.evidenceLine.toLowerCase()).toContain("proxy");
+    expect(rec.outcomeImpact).not.toBeNull();
+  });
+
+  it("returns null in deep mode with no surviving lines", () => {
+    const sessions = Array.from({ length: 6 }, () => sess({ estimatedCost: 5, git: git({ linesAdded: 0 }) }));
+    expect(costPerOutcomeAdvisor(ctx({ deepSessions: sessions }))).toBeNull();
   });
 });
