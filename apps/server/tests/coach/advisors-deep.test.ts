@@ -3,6 +3,7 @@ import { wasteDetectorAdvisor } from "../../src/lib/coach/advisors/waste-detecto
 import { costPerOutcomeAdvisor } from "../../src/lib/coach/advisors/cost-per-outcome.js";
 import { taskFitAdvisor } from "../../src/lib/coach/advisors/task-fit.js";
 import { skillFitAdvisor } from "../../src/lib/coach/advisors/skill-fit.js";
+import { behaviorCoachAdvisor } from "../../src/lib/coach/advisors/behavior-coach.js";
 import type { CoachContext } from "../../src/lib/coach/types.js";
 import { makeBenchmarks } from "../../src/lib/coach/benchmark.js";
 import { sess, git } from "./deep-fixtures.js";
@@ -117,5 +118,22 @@ describe("skillFitAdvisor", () => {
   it("returns null in deep mode with low revert and no skill split", () => {
     const sessions = Array.from({ length: 6 }, () => sess({ git: git({ linesAdded: 100, revertedLinesWithin14d: 2 }) }));
     expect(skillFitAdvisor(ctx({ deepSessions: sessions }))).toBeNull();
+  });
+});
+
+describe("behaviorCoachAdvisor", () => {
+  it("fires when plan-mode sessions yield materially more surviving LOC/$", () => {
+    const plan = Array.from({ length: 5 }, () => sess({ usedPlanMode: true, estimatedCost: 100, git: git({ linesAdded: 300 }) }));   // 3 LOC/$
+    const noPlan = Array.from({ length: 5 }, () => sess({ usedPlanMode: false, estimatedCost: 100, git: git({ linesAdded: 100 }) })); // 1 LOC/$
+    const rec = behaviorCoachAdvisor(ctx({ deepSessions: [...plan, ...noPlan] }))!;
+    expect(rec.id).toBe("behavior-coach");
+    expect(rec.visibility).toBe("owner");
+    expect(rec.evidenceLine.toLowerCase()).toContain("plan");
+    expect(rec.outcomeImpact).toContain("×");
+  });
+
+  it("returns null when the plan/no-plan split is not comparable", () => {
+    const sessions = Array.from({ length: 6 }, () => sess({ usedPlanMode: true, estimatedCost: 10, git: git({ linesAdded: 100 }) }));
+    expect(behaviorCoachAdvisor(ctx({ deepSessions: sessions }))).toBeNull();
   });
 });
