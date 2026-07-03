@@ -5,6 +5,7 @@ import { crossToolAdvisor } from "./advisors/cross-tool.js";
 import { wasteDetectorAdvisor } from "./advisors/waste-detector.js";
 import { costPerOutcomeAdvisor } from "./advisors/cost-per-outcome.js";
 import { taskFitAdvisor } from "./advisors/task-fit.js";
+import { skillFitAdvisor } from "./advisors/skill-fit.js";
 import { modelMixModule } from "./advisors/model-mix.js";
 
 // Recommendation-producing advisors. Plan 4 appends the five Tier-2 deep advisors.
@@ -15,6 +16,7 @@ export const ADVISORS: Record<string, Advisor> = {
   "waste-detector": wasteDetectorAdvisor,
   "cost-per-outcome": costPerOutcomeAdvisor,
   "task-fit": taskFitAdvisor,
+  "skill-fit": skillFitAdvisor,
 };
 
 // Standalone informational module providers (no recommendation attached).

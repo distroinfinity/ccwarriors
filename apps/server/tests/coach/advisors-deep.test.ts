@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { wasteDetectorAdvisor } from "../../src/lib/coach/advisors/waste-detector.js";
 import { costPerOutcomeAdvisor } from "../../src/lib/coach/advisors/cost-per-outcome.js";
 import { taskFitAdvisor } from "../../src/lib/coach/advisors/task-fit.js";
+import { skillFitAdvisor } from "../../src/lib/coach/advisors/skill-fit.js";
 import type { CoachContext } from "../../src/lib/coach/types.js";
 import { makeBenchmarks } from "../../src/lib/coach/benchmark.js";
 import { sess, git } from "./deep-fixtures.js";
@@ -89,5 +90,32 @@ describe("taskFitAdvisor", () => {
     const codex = Array.from({ length: 4 }, () => sess({ tool: "codex", model: "gpt-5-codex", estimatedCost: 100, git: refactor({ linesAdded: 300 }) })); // 4 < MIN_KIND_SESSIONS → excluded
     // Only the claude group clears the 5-session floor → one comparable group → not comparable → null.
     expect(taskFitAdvisor(ctx({ deepSessions: [...claude, ...codex] }))).toBeNull();
+  });
+});
+
+describe("skillFitAdvisor", () => {
+  it("data branch: fires when skill sessions revert materially less (own-data)", () => {
+    const withSkill = Array.from({ length: 5 }, () => sess({
+      skillsUsed: { "test-driven-development": 1 }, git: git({ linesAdded: 100, revertedLinesWithin14d: 5 }),
+    }));
+    const without = Array.from({ length: 5 }, () => sess({ git: git({ linesAdded: 100, revertedLinesWithin14d: 40 }) }));
+    const rec = skillFitAdvisor(ctx({ deepSessions: [...withSkill, ...without] }))!;
+    expect(rec.id).toBe("skill-fit");
+    expect(rec.visibility).toBe("owner");
+    expect(rec.evidenceLine).toContain("test-driven-development");
+    expect(rec.confidence).toBe("solid");
+    expect(rec.action).toContain("test-driven-development");
+  });
+
+  it("catalog branch: high revert + no systematic-debugging → early suggestion", () => {
+    const sessions = Array.from({ length: 6 }, () => sess({ git: git({ linesAdded: 100, revertedLinesWithin14d: 30 }) }));
+    const rec = skillFitAdvisor(ctx({ deepSessions: sessions }))!;
+    expect(rec.confidence).toBe("early");
+    expect(rec.action.toLowerCase()).toContain("systematic-debugging");
+  });
+
+  it("returns null in deep mode with low revert and no skill split", () => {
+    const sessions = Array.from({ length: 6 }, () => sess({ git: git({ linesAdded: 100, revertedLinesWithin14d: 2 }) }));
+    expect(skillFitAdvisor(ctx({ deepSessions: sessions }))).toBeNull();
   });
 });
