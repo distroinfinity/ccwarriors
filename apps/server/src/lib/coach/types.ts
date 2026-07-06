@@ -25,6 +25,7 @@ export interface Recommendation {
   locked: boolean;
   themeKey?: string;   // recs sharing a themeKey are near-twins; ranker keeps the higher-scored
   whyHref?: string;
+  installTarget?: { skillId: string; command: string } | null;  // skill-fit only (Plan 5, skills.sh Tier-A)
 }
 
 export interface Module {

@@ -2,6 +2,7 @@ import type { Advisor, Recommendation } from "../types.js";
 import type { CoachSession } from "../types.js";
 import { withGit, revertRatio, MIN_GROUP_SESSIONS } from "../deep.js";
 import { pct } from "../format.js";
+import { resolveInstallTarget } from "../skills-catalog.js";
 
 const MATERIAL_DROP = 0.3;        // skill side must revert >=30% relatively less to claim a win
 const CATALOG_REVERT_FLOOR = 0.15; // catalog branch trigger
@@ -39,6 +40,7 @@ export const skillFitAdvisor: Advisor = (ctx) => {
         dollarImpact: null, outcomeImpact: `${drop}% fewer reverts with ${skill}`,
         confidence: "solid", severity: "improve", locked: false,
         themeKey: "skill-fit", whyHref: "/help/coach#skill-fit",
+        installTarget: resolveInstallTarget(skill),
       };
       return rec;
     }
@@ -56,6 +58,7 @@ export const skillFitAdvisor: Advisor = (ctx) => {
       dollarImpact: null, outcomeImpact: null,
       confidence: "early", severity: "improve", locked: false,
       themeKey: "skill-fit", whyHref: "/help/coach#skill-fit",
+      installTarget: resolveInstallTarget("systematic-debugging"),
     };
   }
   return null;

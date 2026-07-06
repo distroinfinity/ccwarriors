@@ -126,6 +126,16 @@ describe("skillFitAdvisor", () => {
     const sessions = Array.from({ length: 6 }, () => sess({ git: git({ linesAdded: 100, revertedLinesWithin14d: 2 }) }));
     expect(skillFitAdvisor(ctx({ deepSessions: sessions }))).toBeNull();
   });
+
+  it("attaches an installTarget for a catalog skill", () => {
+    const withSkill = Array.from({ length: 5 }, () => sess({
+      skillsUsed: { "test-driven-development": 1 }, git: git({ linesAdded: 100, revertedLinesWithin14d: 5 }),
+    }));
+    const without = Array.from({ length: 5 }, () => sess({ git: git({ linesAdded: 100, revertedLinesWithin14d: 40 }) }));
+    const rec = skillFitAdvisor(ctx({ deepSessions: [...withSkill, ...without] }))!;
+    expect(rec.installTarget).not.toBeNull();
+    expect(rec.installTarget!.command).toBe("npx skills find test-driven-development");
+  });
 });
 
 describe("behaviorCoachAdvisor", () => {
