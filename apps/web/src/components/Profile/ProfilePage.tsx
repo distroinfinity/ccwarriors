@@ -3,6 +3,7 @@ import { useProfile, useProfileInsights, type Profile, type ProfileInsights, typ
 import { ClawdLogo } from "../ClawdLogo";
 import { InstallBlock } from "../InstallBlock";
 import { ArchetypeCard } from "./ArchetypeCard";
+import { CoachSection } from "./CoachSection";
 import { InsightCards } from "./InsightCards";
 import { RhythmPanel } from "./RhythmPanel";
 import { OwnerControls } from "./OwnerControls";
@@ -56,6 +57,7 @@ export function ProfilePage({ login }: { login: string }) {
   return (
     <div className="profile">
       <ArchetypeCard profile={p} insightsLoading={insightsLoading} insightsError={insightsError} onConsentChanged={refetch} />
+      <CoachSection login={login} refreshKey={refreshKey} />
       <ByTheNumbers profile={p} insightsLoading={insightsLoading} />
       <InsightCards
         cards={cards}
