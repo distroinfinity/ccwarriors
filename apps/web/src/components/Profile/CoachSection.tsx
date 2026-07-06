@@ -1,10 +1,6 @@
 import { useState } from "react";
 import { useProfileCoach, type CoachPayload, type CoachRecommendation, type CoachModule } from "../../useCoach";
 
-const SEVERITY_TAG: Record<CoachRecommendation["severity"], string> = {
-  save: "opportunity", improve: "improve", good: "strong",
-};
-
 function headline(recs: CoachRecommendation[]): string {
   const dollars = recs.reduce((s, r) => s + (r.dollarImpact?.low ?? 0), 0);
   const parts: string[] = [];
@@ -38,7 +34,7 @@ function FeedRow({ rec }: { rec: CoachRecommendation }) {
           )}
           <div className="coach-row-meta mono">
             {rec.confidence === "early" && <span className="coach-badge">early read</span>}
-            {rec.whyHref && <a className="coach-why" href={rec.whyHref}>why →</a>}
+            {rec.whyHref && <a className="coach-why" href={rec.whyHref} tabIndex={open ? undefined : -1}>why →</a>}
           </div>
         </div>
       </div>
