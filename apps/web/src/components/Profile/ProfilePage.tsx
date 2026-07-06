@@ -57,7 +57,7 @@ export function ProfilePage({ login }: { login: string }) {
   return (
     <div className="profile">
       <ArchetypeCard profile={p} insightsLoading={insightsLoading} insightsError={insightsError} onConsentChanged={refetch} />
-      <CoachSection login={login} refreshKey={refreshKey} />
+      {coreReady && p && !p.insights.locked && <CoachSection login={login} refreshKey={refreshKey} />}
       <ByTheNumbers profile={p} insightsLoading={insightsLoading} />
       <InsightCards
         cards={cards}

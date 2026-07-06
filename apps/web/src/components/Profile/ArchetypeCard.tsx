@@ -289,7 +289,7 @@ function PendingPanel({ onPoll }: { onPoll: () => void }) {
 // Reused verbatim by the locked chooser (the ask) and the unlocked transparency
 // block (the receipt) so the promise and the proof can never drift apart.
 const DEEP_UPLOADS: Array<{ k: string; v: string }> = [
-  { k: "Agents read locally", v: "Claude Code, Codex, Gemini, Copilot CLI, OpenCode, Aider — on your machine only" },
+  { k: "Agents read locally", v: "Claude Code, Codex, Aider — on your machine only" },
   { k: "Per-session counts", v: "prompts, tool calls, plan-mode turns" },
   { k: "Timing summaries", v: "session length, active hours, gaps" },
   { k: "Model names", v: "which models you ran" },
