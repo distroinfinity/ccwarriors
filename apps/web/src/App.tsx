@@ -17,6 +17,7 @@ import { Legal } from "./components/Legal";
 import { Sponsor } from "./components/Sponsor/Sponsor";
 import { ProfilePage } from "./components/Profile/ProfilePage";
 import { StoryPage } from "./components/Profile/StoryPage";
+import { HelpCoach } from "./components/Help/HelpCoach";
 import { API_HTTP } from "./api";
 import type { Entry } from "./types";
 
@@ -27,9 +28,10 @@ const HIDE_LEGAL = true;
 const path = window.location.pathname.replace(/\/+$/, "");
 const isHow = path === "/how";
 const isLegal = !HIDE_LEGAL && path === "/legal";
+const isHelpCoach = path === "/help/coach";
 // Top-level segments that are NOT profiles (own pages/assets). Extend as the
 // app grows real top-level routes so they don't get swallowed by /<login>.
-const RESERVED_TOP_LEVEL = new Set(["how", "legal"]);
+const RESERVED_TOP_LEVEL = new Set(["how", "legal", "help"]);
 const PROFILE_LOGIN: string | null = (() => {
   // Legacy /u/<login> stays valid for links already shared.
   const legacy = path.match(/^\/u\/([A-Za-z0-9-]{1,39})$/);
@@ -48,6 +50,7 @@ const STORY_LOGIN: string | null = (() => {
 })();
 if (isHow) document.title = "How it works · CCWarriors";
 if (isLegal) document.title = "Legal · CCWarriors";
+if (isHelpCoach) document.title = "How the coach reads your spend · CCWarriors";
 
 // Org co-brand (ns.ccwarriors.xyz / ?org=ns): applied before first paint so
 // the page doesn't flash the default accent. Theme itself is resolved by the
@@ -55,7 +58,7 @@ if (isLegal) document.title = "Legal · CCWarriors";
 const ORG = detectOrg();
 if (ORG) {
   document.documentElement.setAttribute("data-org", ORG.slug);
-  if (!isHow && !isLegal) document.title = ORG.title;
+  if (!isHow && !isLegal && !isHelpCoach) document.title = ORG.title;
 }
 
 type Board = "30d" | "allTime";
@@ -197,6 +200,8 @@ export default function App() {
             <HowItWorks />
           ) : isLegal ? (
             <Legal />
+          ) : isHelpCoach ? (
+            <HelpCoach />
           ) : (
             <>
               <Hero org={ORG} />
@@ -236,7 +241,7 @@ export default function App() {
             </>
           )}
         </main>
-        {!isHow && !isLegal && !PROFILE_LOGIN && !STORY_LOGIN && <Sponsor />}
+        {!isHow && !isLegal && !isHelpCoach && !PROFILE_LOGIN && !STORY_LOGIN && <Sponsor />}
         <footer>
           <div className="fleft">
             <div className="fbrand">

@@ -829,3 +829,8 @@ html[data-theme="dark"] .coach-card:not(.locked):hover{ box-shadow:0 8px 22px rg
   .coach-row, .coach-card{ animation:none; }
   .coach-row-collapse, .coach-row-collapse > .coach-row-body, .coach-row-chev, .coach-card{ transition:none; }
 }
+.help-coach{ max-width:720px; margin:0 auto; padding:40px 20px 80px; }
+.help-lede{ color:var(--muted); font-size:14.5px; line-height:1.6; }
+.help-section{ margin-top:26px; border-top:1px solid var(--line); padding-top:18px; }
+.help-section h2{ font-size:16px; margin:0 0 8px; }
+.help-source{ font-size:11px; color:var(--muted); margin-top:6px; }
