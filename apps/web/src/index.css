@@ -834,3 +834,20 @@ html[data-theme="dark"] .coach-card:not(.locked):hover{ box-shadow:0 8px 22px rg
 .help-section{ margin-top:26px; border-top:1px solid var(--line); padding-top:18px; }
 .help-section h2{ font-size:16px; margin:0 0 8px; }
 .help-source{ font-size:11px; color:var(--muted); margin-top:6px; }
+
+/* Skill outcome leaderboard (Plan 6). */
+.skl-page{ max-width:760px; margin:0 auto; padding:40px 20px 80px; }
+.skl-lede{ color:var(--muted); font-size:14px; line-height:1.6; max-width:640px; }
+.skl-list{ margin-top:22px; display:flex; flex-direction:column; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); }
+.skl-row{ display:flex; gap:14px; align-items:flex-start; padding:15px 16px; }
+.skl-row + .skl-row{ border-top:1px solid var(--line); }
+.skl-rank{ font-size:13px; color:var(--muted); min-width:20px; }
+.skl-main{ flex:1; display:flex; flex-direction:column; gap:6px; }
+.skl-name{ font-size:14.5px; font-weight:600; color:var(--ink); }
+.skl-claim{ font-size:13px; line-height:1.5; color:color-mix(in srgb,var(--muted) 74%,var(--ink)); }
+.skl-install{ align-self:flex-start; font-size:11.5px; padding:5px 9px; border-radius:6px; background:var(--ink); color:var(--bg); }
+.skl-meta{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; font-size:10.5px; white-space:nowrap; }
+.skl-badge{ letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+.skl-badge.cal{ color:var(--up); border-color:color-mix(in srgb,var(--up) 45%,var(--line)); }
+.skl-n{ color:var(--muted); }
+.skl-empty{ margin-top:22px; color:var(--muted); font-size:12.5px; }
