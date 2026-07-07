@@ -48,4 +48,12 @@ describe("loadSkillOutcomes", () => {
     const out = await loadSkillOutcomes(db, NOW);
     expect(out.find((s) => s.skill === "rare-skill")).toBeUndefined();
   });
+
+  it("omits a skill whose non-adopter side is below the floor (k-anonymity)", async () => {
+    const db = await makeDb();
+    for (let i = 0; i < 5; i++) await pubUser(db, `pop${i}`, 100, 10, { "popular": 1 });
+    await pubUser(db, "lone", 100, 30, undefined); // only 1 non-adopter → row must be suppressed
+    const out = await loadSkillOutcomes(db, NOW);
+    expect(out.find((s) => s.skill === "popular")).toBeUndefined();
+  });
 });

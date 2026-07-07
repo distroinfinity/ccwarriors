@@ -55,13 +55,15 @@ export async function loadSkillOutcomes(db: DB, _now: number): Promise<SkillOutc
   const out: SkillOutcome[] = [];
   for (const skill of allSkills) {
     const withS = cohort.filter((u) => u.skills.has(skill)).map((u) => u.revert);
-    if (withS.length < MIN_SKILL_REPORT) continue;
     const withoutS = cohort.filter((u) => !u.skills.has(skill)).map((u) => u.revert);
-    const mw = median(withS), mo = median(withoutS);
+    // k-anonymize BOTH sides: a public median must never be one individual's exact ratio.
+    if (withS.length < MIN_SKILL_REPORT || withoutS.length < MIN_SKILL_REPORT) continue;
+    const round3 = (x: number) => Math.round(x * 1000) / 1000;
+    const mw = round3(median(withS)), mo = round3(median(withoutS));
     out.push({
       skill, adopters: withS.length, nonAdopters: withoutS.length,
       medianRevertWith: mw, medianRevertWithout: mo,
-      relativeDelta: mo > 0 ? (mo - mw) / mo : 0,
+      relativeDelta: mo > 0 ? round3((mo - mw) / mo) : 0,
       calibrated: withS.length >= SKILL_CALIBRATED,
     });
   }
