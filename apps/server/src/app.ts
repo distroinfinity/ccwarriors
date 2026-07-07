@@ -14,6 +14,7 @@ import { daemonHealthRoute } from "./routes/daemon-health.js";
 import { adminRoute } from "./routes/admin.js";
 import { donateRoute } from "./routes/donate.js";
 import { sponsorsRoute } from "./routes/sponsors.js";
+import { skillsRoute } from "./routes/skills.js";
 import { insightsRoute } from "./routes/insights.js";
 import { profileRoute } from "./routes/profile.js";
 import { ogRoute } from "./routes/og.js";
@@ -103,6 +104,7 @@ export function createApp(deps?: AppDeps) {
     app.route("/leaderboard", leaderboardRoute(deps.store));
     app.route("/admin", adminRoute(deps.db, deps.store, deps.onIngest));
     app.route("/sponsors", sponsorsRoute(deps.db));
+    app.route("/skills", skillsRoute(deps.db));
     if (deps.insightsStore) {
       app.route(
         "/insights",
