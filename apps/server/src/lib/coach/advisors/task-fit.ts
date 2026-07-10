@@ -2,8 +2,17 @@ import type { Advisor } from "../types.js";
 import { withGit, dominantKind, survivingLocPerDollar, groupBy, MIN_KIND_SESSIONS, type Kind, KIND_LABEL } from "../deep.js";
 import type { CoachSession } from "../types.js";
 import { modelFamily } from "../format.js";
+import { toolLabel } from "../../tools.js";
 
 const KINDS: Kind[] = ["fixes", "features", "refactors", "other"];
+
+// A grouping key is `${tool}/${modelFamily}`; render it as a human label
+// ("codex/openai" -> "Codex · openai") so user-facing copy never shows the raw key.
+function groupLabel(key: string): string {
+  const slash = key.indexOf("/");
+  if (slash < 0) return toolLabel(key);
+  return `${toolLabel(key.slice(0, slash))} · ${key.slice(slash + 1)}`;
+}
 
 export const taskFitAdvisor: Advisor = (ctx) => {
   if (!ctx.deepMode) return null;
@@ -38,11 +47,12 @@ export const taskFitAdvisor: Advisor = (ctx) => {
   if (!best) return null;
 
   const mult = Math.round(best.ratio * 10) / 10;
+  const label = groupLabel(best.topLabel);
   return {
     id: "task-fit", tier: 2, category: "fit", visibility: "owner",
     title: "Route this task type to your higher-yield agent",
-    evidenceLine: `For your ${KIND_LABEL[best.kind]}, ${best.topLabel} lands ~${mult}× the surviving LOC/$ of your lowest option (your own sessions).`,
-    action: `Send more of your ${KIND_LABEL[best.kind]} to ${best.topLabel}.`,
+    evidenceLine: `For your ${KIND_LABEL[best.kind]}, ${label} lands ~${mult}× the surviving LOC/$ of your lowest option (your own sessions).`,
+    action: `Send more of your ${KIND_LABEL[best.kind]} to ${label}.`,
     dollarImpact: null,
     outcomeImpact: `~${mult}× surviving LOC/$ on ${KIND_LABEL[best.kind]}`,
     confidence: best.ratio >= 2 ? "solid" : "early",

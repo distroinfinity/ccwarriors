@@ -89,7 +89,8 @@ describe("taskFitAdvisor", () => {
     expect(rec.id).toBe("task-fit");
     expect(rec.visibility).toBe("owner");
     expect(rec.evidenceLine).toContain("refactors");
-    expect(rec.evidenceLine.toLowerCase()).toContain("codex");
+    expect(rec.evidenceLine).toContain("Codex");       // display label, not the raw grouping key
+    expect(rec.evidenceLine).not.toContain("codex/");  // never surface "codex/openai"
     expect(rec.outcomeImpact).toContain("×");
   });
 
