@@ -429,7 +429,7 @@ async function cmdInsights(args: string[]): Promise<void> {
 async function cmdAutosync(args: string[]): Promise<void> {
   const sub = args[0];
   if (sub === "on") {
-    const minutes = Number(args[1] ?? 5) || 5;
+    const minutes = Number(args[1] ?? 15) || 15;
     autosyncOn(minutes);
     if (process.platform === "darwin") {
       console.log(green("Autosync on — background daemon streaming your usage in real time."));
@@ -500,7 +500,7 @@ async function main(): Promise<void> {
 
   if (cmd === "daemon") {
     await selfUpdateBootCheck();
-    await runDaemon(Number(args[1] ?? 5) || 5);
+    await runDaemon(Number(args[1] ?? 15) || 15);
     return;
   }
 

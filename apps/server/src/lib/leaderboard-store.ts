@@ -63,6 +63,14 @@ export class LeaderboardStore {
   // Secondary index: lowercased login → id, so getByLogin (hit on every profile
   // request) is O(1) instead of a full scan. Kept in sync by upsert.
   private loginIndex = new Map<string, string>();
+  // sorted() results survive until the next mutation. Boards are read far more
+  // often than written (every request, rank lookup, and WS broadcast re-sorts
+  // otherwise), and the churn of short-lived sorted copies is real RSS.
+  private sortCache = new Map<string, Entry[]>();
+
+  private invalidate(): void {
+    this.sortCache.clear();
+  }
 
   upsert(e: Entry): void {
     const prev = this.entries.get(e.id);
@@ -72,6 +80,7 @@ export class LeaderboardStore {
     }
     this.entries.set(e.id, e);
     this.loginIndex.set(e.githubLogin.toLowerCase(), e.id);
+    this.invalidate();
   }
 
   get(id: string): Entry | undefined {
@@ -91,12 +100,18 @@ export class LeaderboardStore {
 
   setFlagged(id: string, flagged: boolean): void {
     const e = this.entries.get(id);
-    if (e) this.entries.set(id, { ...e, flagged });
+    if (e) {
+      this.entries.set(id, { ...e, flagged });
+      this.invalidate();
+    }
   }
 
   setOrgs(id: string, orgs: string[]): void {
     const e = this.entries.get(id);
-    if (e) this.entries.set(id, { ...e, orgs });
+    if (e) {
+      this.entries.set(id, { ...e, orgs });
+      this.invalidate();
+    }
   }
 
   /** Set or strip craft on an existing entry. Pass undefined to strip (on consent revoke
@@ -111,6 +126,7 @@ export class LeaderboardStore {
       updated.craft = craft;
     }
     this.entries.set(id, updated);
+    this.invalidate();
   }
 
   private visible(org?: string): Entry[] {
@@ -154,10 +170,13 @@ export class LeaderboardStore {
    *   4. githubLogin asc (lexicographic guarantee — always unique)
    */
   private sorted(board: Board, tool?: string, org?: string): Entry[] {
+    const key = `${board}|${tool ?? ""}|${org ?? ""}`;
+    const hit = this.sortCache.get(key);
+    if (hit) return hit;
     const pool = tool
       ? this.visible(org).filter((e) => metric(e, board, tool) > 0)
       : this.visible(org);
-    return pool.sort((a, b) => {
+    const result = pool.sort((a, b) => {
       const md = metric(b, board, tool) - metric(a, board, tool);
       if (md !== 0) return md;
       const ad = b.costAllTime - a.costAllTime;
@@ -167,6 +186,8 @@ export class LeaderboardStore {
       if (aAt !== bAt) return aAt - bAt;
       return a.githubLogin.localeCompare(b.githubLogin);
     });
+    this.sortCache.set(key, result);
+    return result;
   }
 
   getTop(board: Board, limit: number, offset = 0, tool?: string, org?: string): Entry[] {

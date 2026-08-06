@@ -92,7 +92,12 @@ export function createApp(deps?: AppDeps) {
   app.use("/leaderboard", cacheEtag);
   app.use("/sponsors", cacheEtag);
 
-  app.get("/health", (c) => c.json({ status: "ok" }));
+  // rss/heapUsed expose live memory so RSS tuning (heap caps, cache changes)
+  // is observable with a curl instead of the Railway dashboard.
+  app.get("/health", (c) => {
+    const mem = process.memoryUsage();
+    return c.json({ status: "ok", rss: mem.rss, heapUsed: mem.heapUsed });
+  });
   app.route("/", installerRoute());
   app.route("/telemetry", telemetryRoute(deps?.store));
   if (deps) {

@@ -14,6 +14,7 @@ import { attachBroadcast } from "./ws/broadcast.js";
 import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "./seed.js";
 import { startPricingRefresh } from "./lib/pricing.js";
 import { startFxRefresh } from "./lib/fx.js";
+import { startRetention } from "./services/retention.js";
 import { captureEvent } from "./routes/telemetry.js";
 
 async function main() {
@@ -45,7 +46,27 @@ async function main() {
   // Legacy rows (no tool_breakdown) derive an all-claude breakdown at load —
   // no destructive backfill, the next sync overwrites it correctly anyway.
   try {
-    const rows = await db.select().from(users);
+    // Explicit column list: SELECT * dragged github_access_token, pinned_cards,
+    // flag_reason, etc. through the boot transient for every user — real peak
+    // RSS on a memory-billed host. Only what the store needs rides along.
+    const rows = await db
+      .select({
+        id: users.id,
+        githubLogin: users.githubLogin,
+        avatarUrl: users.avatarUrl,
+        xHandle: users.xHandle,
+        tier: users.tier,
+        cardScene: users.cardScene,
+        cost30d: users.cost30d,
+        costAllTime: users.costAllTime,
+        toolBreakdown: users.toolBreakdown,
+        flaggedAt: users.flaggedAt,
+        lastSyncedAt: users.lastSyncedAt,
+        insightsConsent: users.insightsConsent,
+        insightsVisibility: users.insightsVisibility,
+        craftScore: users.craftScore,
+      })
+      .from(users);
     // Verified org memberships ride along into the store (org boards + badges).
     const orgRows = await db.select().from(orgMembers);
     const orgsByUser = new Map<string, string[]>();
@@ -128,11 +149,15 @@ async function main() {
   });
   // Keep the donation USD→INR rate current (fallback constant until first fetch).
   startFxRefresh();
+  // Prune old sync snapshots daily (first run delayed past boot hydration).
+  startRetention(db);
 
-  // permessage-deflate: the snapshot repeats each user across boards (top30d /
-  // topAllTime / byTool) and compresses ~6×. Negotiated per client, so old
-  // web clients keep working unchanged.
-  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: true });
+  // permessage-deflate is OFF: each socket's zlib context costs ~200-400KB RSS
+  // and fragments the allocator (a well-known `ws` memory issue). Memory is
+  // ~90% of the Railway bill; the ~6× larger payload every 15s is far cheaper
+  // (egress is $0.05/GB) than the resident zlib state. Clients that negotiated
+  // compression before simply receive uncompressed frames — no protocol break.
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   const broadcast = attachBroadcast(wss, store);
 
   let authDeps:

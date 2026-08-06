@@ -16,7 +16,12 @@ async function seedDaemon(
 ) {
   const u = await seedUser(db, { login, token: login });
   if (!u) throw new Error(`failed to seed ${login}`);
-  await db.update(users).set({ lastSyncedAt: at(o.lastSyncH) }).where(eq(users.id, u.id));
+  // Mirror ingest: every sync stamps users.last_synced_at AND client_build_id
+  // (the route reads lastBuild straight off the users row).
+  await db
+    .update(users)
+    .set({ lastSyncedAt: at(o.lastSyncH), clientBuildId: o.build })
+    .where(eq(users.id, u.id));
   // Newest snapshot (i=0) carries `build` and sits at lastSyncH; the rest are
   // older history, all inside the 7-day window the query scans.
   const rows = Array.from({ length: o.count }, (_, i) => ({

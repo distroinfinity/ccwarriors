@@ -5,7 +5,11 @@ import * as schema from "./schema.js";
 export type DB = ReturnType<typeof createDb>;
 
 export function createDb(url: string) {
-  const client = postgres(url);
+  // Small pool: traffic is one sync per machine every ~15 min plus board reads
+  // served from memory. postgres-js defaults to 10 connections, and each idle
+  // Postgres backend is real RSS on a memory-billed host. idle_timeout returns
+  // backends between bursts.
+  const client = postgres(url, { max: 4, idle_timeout: 30 });
   return drizzlePg(client, { schema });
 }
 

@@ -9,8 +9,10 @@ import {
   bigint,
   integer,
   date,
+  index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Per-tool served aggregate, server-computed. Null on rows written by legacy
 // (claude-only) clients — derived as { claude: totals } at read time.
@@ -104,7 +106,9 @@ export type InsightsPayload = {
   longestSessionMinutes: number;
 };
 
-export const users = pgTable("users", {
+export const users = pgTable(
+  "users",
+  {
   id: uuid("id").primaryKey().defaultRandom(),
   githubId: text("github_id").notNull().unique(),
   githubLogin: text("github_login").notNull(),
@@ -152,18 +156,35 @@ export const users = pgTable("users", {
   consentVersion: integer("consent_version"),
   // Owner-curated deck order: up to 4 card keys pinned to the front.
   pinnedCards: jsonb("pinned_cards").$type<string[]>(),
-});
+  },
+  (t) => [
+    // Every authenticated CLI request resolves its bearer token through this
+    // column — without the index that was a seq scan per sync.
+    index("users_cli_token_hash").on(t.cliTokenHash),
+    // Profile/OG/badge routes look users up by lower(github_login).
+    index("users_github_login_lower").on(sql`lower(${t.githubLogin})`),
+  ],
+);
 
-export const snapshots = pgTable("snapshots", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id),
-  cost30d: numeric("cost_30d").notNull(),
-  costAllTime: numeric("cost_all_time").notNull(),
-  ccusageVersion: text("ccusage_version").notNull().default(""),
-  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
-  toolBreakdown: jsonb("tool_breakdown").$type<ToolBreakdown>(),
-  clientBuildId: text("client_build_id"),
-});
+export const snapshots = pgTable(
+  "snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    cost30d: numeric("cost_30d").notNull(),
+    costAllTime: numeric("cost_all_time").notNull(),
+    ccusageVersion: text("ccusage_version").notNull().default(""),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+    toolBreakdown: jsonb("tool_breakdown").$type<ToolBreakdown>(),
+    clientBuildId: text("client_build_id"),
+  },
+  (t) => [
+    // Serves the stale-daemons 7-day join and the retention pruner's
+    // captured_at range scans (see services/retention.ts).
+    index("snapshots_user_captured").on(t.userId, t.capturedAt),
+    index("snapshots_captured_at").on(t.capturedAt),
+  ],
+);
 
 // Raw per-user/tool/day usage — what the server prices and audits.
 // Costs are server-computed from token counts; client dollars are never trusted.

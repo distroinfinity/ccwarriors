@@ -5,7 +5,10 @@ name: health
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    # Hourly, not */10: each run fires ~13 requests at the Railway API
+    # including a full CLI-bundle install — at 10min cadence the health check
+    # itself was a measurable slice of the hosting bill.
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 permissions:

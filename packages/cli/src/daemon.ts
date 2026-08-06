@@ -28,7 +28,17 @@ const WATCH_DIRS = [
 
 const log = (m: string) => console.log(`[${new Date().toISOString()}] ${m}`);
 
-export async function runDaemon(heartbeatMin = 5): Promise<void> {
+export async function runDaemon(heartbeatMin = 15): Promise<void> {
+  // Floor the heartbeat at 15m regardless of what the caller passed: existing
+  // installs have the old 5m interval baked into their launchd plist / crontab
+  // args, and self-update swaps only the bundle — this clamp is how the whole
+  // fleet migrates to the calmer cadence without touching plists. fs.watch
+  // still syncs within seconds during active sessions, so only the idle-time
+  // heartbeat (and its /cli/version check) slows down. Env var is the
+  // escape hatch for debugging (values <1 are still floored to 1 below).
+  const envMin = Number(process.env["CCWARRIORS_HEARTBEAT_MIN"]);
+  const effectiveMin =
+    Number.isFinite(envMin) && envMin > 0 ? envMin : Math.max(heartbeatMin, 15);
   const config = await loadConfig();
   if (!config) {
     console.error("not enlisted — run `ccwarriors login` first");
@@ -88,7 +98,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
     }
     log("relaunching via re-exec (foreground daemon)");
     const { spawn } = await import("node:child_process");
-    spawn(process.execPath, [script, "daemon", String(heartbeatMin)], {
+    spawn(process.execPath, [script, "daemon", String(effectiveMin)], {
       detached: true,
       stdio: "ignore",
     }).unref();
@@ -222,7 +232,7 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
     }, DEBOUNCE_MS);
   }
 
-  log(`ccwarriors daemon up (${__BUILD_ID__}) — heartbeat every ${heartbeatMin}m`);
+  log(`ccwarriors daemon up (${__BUILD_ID__}) — heartbeat every ${effectiveMin}m`);
   void syncNow("startup");
   void checkForUpdate();
 
@@ -254,5 +264,5 @@ export async function runDaemon(heartbeatMin = 5): Promise<void> {
       if (shouldSync(Date.now(), nextAllowedSyncAt)) void syncNow("heartbeat");
     })();
     void checkForUpdate();
-  }, Math.max(1, heartbeatMin) * 60_000);
+  }, Math.max(1, effectiveMin) * 60_000);
 }
