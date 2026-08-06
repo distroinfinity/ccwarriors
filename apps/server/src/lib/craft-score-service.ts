@@ -1,7 +1,7 @@
 // Assembles the pure CraftInput from a user's stored deep sessions + usage_days,
 // then computes pillars + craft score + trust tier. Kept out of craft-score.ts
 // so that file stays pure (no DB/efficiency coupling, easy to unit test).
-import { eq } from "drizzle-orm";
+import { and, eq, gte } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { usageDays, userDeepSessions, type SessionRecord } from "../db/schema.js";
 import { computeEfficiency, type UsageDayLike } from "./efficiency.js";
@@ -67,17 +67,21 @@ export async function loadUsageSignal(
   userId: string,
   now: number,
 ): Promise<{ windowCostUsd: number; windowTokens: number; cacheReadRatio: number | null; opusShare: number }> {
+  // Window filter lives in the WHERE clause: everything below only reads
+  // in-window rows (computeEfficiency re-filters by the same cutoff), and
+  // selecting a user's entire history dragged all model_breakdown jsonb
+  // through the DB and the app heap on every profile/deep-insights request.
+  const cutoff = new Date(now - WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
   const rows = await db
     .select({ day: usageDays.day, cost: usageDays.cost, modelBreakdown: usageDays.modelBreakdown })
     .from(usageDays)
-    .where(eq(usageDays.userId, userId));
-  const cutoff = new Date(now - WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10);
+    .where(and(eq(usageDays.userId, userId), gte(usageDays.day, cutoff)));
   const dayRows: UsageDayLike[] = rows.map((r) => ({
     day: r.day,
     cost: Number(r.cost),
     modelBreakdown: r.modelBreakdown,
   }));
-  const window = dayRows.filter((r) => r.day >= cutoff);
+  const window = dayRows;
   const windowCostUsd = window.reduce((s, r) => s + r.cost, 0);
   const windowTokens = window.reduce(
     (s, r) =>

@@ -10,7 +10,7 @@ describe("health", () => {
     const app = createApp();
     const res = await app.request("/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "ok" });
+    expect(await res.json()).toMatchObject({ status: "ok" });
   });
 });
 
@@ -91,7 +91,7 @@ describe("cors", () => {
 
     const first = await app.request("/leaderboard", { headers: { Origin: origin } });
     expect(first.status).toBe(200);
-    expect(first.headers.get("cache-control")).toBe("public, max-age=5");
+    expect(first.headers.get("cache-control")).toBe("public, max-age=15");
     expect(first.headers.get("access-control-allow-origin")).toBe(origin);
     const etag = first.headers.get("etag");
     expect(etag).toBeTruthy();

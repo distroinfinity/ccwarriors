@@ -16,7 +16,8 @@ function envNum(name: string, fallback: number): number {
 export function staleDaemonThresholds() {
   return {
     // Min syncs in the trailing 7 days to count as a daemon (vs. occasional
-    // manual `ccwarriors`). A 5-min-heartbeat daemon does hundreds per day.
+    // manual `ccwarriors`). Even at the 15-min heartbeat a daemon does ~96
+    // syncs per day, so 20/week still cleanly separates daemons from humans.
     minSyncs7d: envNum("DAEMON_MIN_SYNCS_7D", 20),
     // A daemon user silent longer than this is reported in the `stale` sample.
     staleHours: envNum("DAEMON_SILENT_HOURS", 2),

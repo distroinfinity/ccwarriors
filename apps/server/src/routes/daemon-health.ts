@@ -7,9 +7,10 @@ import { findStaleDaemons, type DaemonSyncRow } from "../lib/daemon-health.js";
 // GET /telemetry/stale-daemons — server-side detection of silently-dead autosync
 // daemons (issue #91). Public + unauthenticated like /telemetry/failures (the
 // scheduled health workflow polls it without a secret); github_logins are public
-// board data anyway. The underlying query groups 7 days of snapshots, so the
-// result is cached briefly to keep repeated polls off the DB.
-const CACHE_TTL_MS = 60_000;
+// board data anyway. The underlying query groups 7 days of snapshots — 30 min
+// of staleness is acceptable (the health workflow polls hourly) and keeps the
+// scan from running on every poll.
+const CACHE_TTL_MS = 30 * 60_000;
 
 export function daemonHealthRoute(db: DB, now: () => number = Date.now): Hono {
   const app = new Hono();
@@ -20,14 +21,15 @@ export function daemonHealthRoute(db: DB, now: () => number = Date.now): Hono {
     if (cache && t - cache.at < CACHE_TTL_MS) return c.json(cache.body as object);
 
     const sevenDaysAgo = new Date(t - 7 * 86_400_000);
+    // lastBuild comes straight off users.client_build_id (ingest updates it on
+    // every sync) — the previous array_agg(... order by captured_at) sorted a
+    // user's entire 7-day snapshot history just to recover the same value.
     const rows = await db
       .select({
         githubLogin: users.githubLogin,
         lastSyncedAt: users.lastSyncedAt,
         syncs7d: sql<number>`count(${snapshots.id})::int`,
-        lastBuild: sql<
-          string | null
-        >`(array_agg(${snapshots.clientBuildId} order by ${snapshots.capturedAt} desc))[1]`,
+        lastBuild: users.clientBuildId,
       })
       .from(users)
       .innerJoin(

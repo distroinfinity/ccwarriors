@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { captureEvent } from "./telemetry.js";
 import { repoRoot, readBuildId } from "../lib/build-id.js";
@@ -26,6 +26,26 @@ const ASSETS = {
   "cli.js": { rel: path.join("packages", "cli", "dist", "cli.js"), type: "application/javascript; charset=utf-8", rewrite: false },
 } as const;
 
+// Asset bodies cached per (file, mtime): the multi-MB CLI bundle was being
+// readFileSync'd on every request (daemon self-updates + the health cron's
+// e2e installs), a steady source of allocation churn on a memory-billed host.
+// A statSync per hit keeps dev rebuilds and hotfixes visible.
+const bodyCache = new Map<string, { mtimeMs: number; body: string }>();
+
+function readAssetCached(file: string): string | null {
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
+  const hit = bodyCache.get(file);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.body;
+  const body = readFileSync(file, "utf8");
+  bodyCache.set(file, { mtimeMs, body });
+  return body;
+}
+
 export function installerRoute() {
   const app = new Hono();
   const root = repoRoot();
@@ -42,31 +62,46 @@ export function installerRoute() {
   for (const [name, asset] of Object.entries(ASSETS)) {
     app.get(`/${name}`, (c) => {
       const file = path.join(root, asset.rel);
-      if (!existsSync(file)) return c.json({ error: "asset_unavailable" }, 503);
+      const cached = readAssetCached(file);
+      if (cached === null) return c.json({ error: "asset_unavailable" }, 503);
 
-      let body = readFileSync(file, "utf8");
-      if (asset.rewrite) {
-        // Point the script's default BASE at whichever host served it, so the
-        // follow-up cli.js download stays on the working host.
-        const url = new URL(c.req.url);
-        const proto = c.req.header("x-forwarded-proto") ?? url.protocol.replace(":", "");
-        const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? url.host;
-        for (const origin of REWRITE_ORIGINS) body = body.replaceAll(origin, `${proto}://${host}`);
-
-        // Channel attribution: ?ref=hn is baked into the served script as the
-        // CCWARRIORS_REF default, so beacons + enlistment attribute even though
-        // the script runs far from the browser that carried the ref. Strict
-        // whitelist — the value lands inside a shell/PowerShell script.
-        const ref = sanitizeRef(c.req.query("ref"));
-        if (ref) {
-          body = body
-            .replaceAll('${CCWARRIORS_REF:-}', `\${CCWARRIORS_REF:-${ref}}`) // install.sh
-            .replaceAll('"%CCW_REF_DEFAULT%"', `"${ref}"`); // install.ps1
+      // The bundle is immutable per deploy and never rewritten — let clients
+      // and any intermediary cache it briefly, and 304 the self-updaters that
+      // already have this build. Rewritten scripts stay no-cache (they vary by
+      // host and ?ref).
+      if (!asset.rewrite) {
+        const etag = `"${readBuildId(file)}"`;
+        if (c.req.header("if-none-match") === etag) {
+          return c.body(null, 304, { etag });
         }
-        captureEvent(`${name === "install.ps1" ? "install_ps1" : "install_sh"}_download`, "anonymous", {
-          ...(ref ? { ref } : {}),
+        return c.body(cached, 200, {
+          "content-type": asset.type,
+          "cache-control": "public, max-age=300",
+          etag,
         });
       }
+
+      // Point the script's default BASE at whichever host served it, so the
+      // follow-up cli.js download stays on the working host.
+      const url = new URL(c.req.url);
+      const proto = c.req.header("x-forwarded-proto") ?? url.protocol.replace(":", "");
+      const host = c.req.header("x-forwarded-host") ?? c.req.header("host") ?? url.host;
+      let body = cached;
+      for (const origin of REWRITE_ORIGINS) body = body.replaceAll(origin, `${proto}://${host}`);
+
+      // Channel attribution: ?ref=hn is baked into the served script as the
+      // CCWARRIORS_REF default, so beacons + enlistment attribute even though
+      // the script runs far from the browser that carried the ref. Strict
+      // whitelist — the value lands inside a shell/PowerShell script.
+      const ref = sanitizeRef(c.req.query("ref"));
+      if (ref) {
+        body = body
+          .replaceAll('${CCWARRIORS_REF:-}', `\${CCWARRIORS_REF:-${ref}}`) // install.sh
+          .replaceAll('"%CCW_REF_DEFAULT%"', `"${ref}"`); // install.ps1
+      }
+      captureEvent(`${name === "install.ps1" ? "install_ps1" : "install_sh"}_download`, "anonymous", {
+        ...(ref ? { ref } : {}),
+      });
       return c.body(body, 200, { "content-type": asset.type, "cache-control": "no-cache" });
     });
   }

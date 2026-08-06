@@ -3,7 +3,9 @@ import { API_HTTP } from "./api";
 import type { BoardState } from "./useLeaderboard";
 import type { Entry, ToolInfo } from "./types";
 
-const POLL_MS = 10_000;
+// 30s: org boards move slowly (syncs land every few minutes at most) and each
+// poll is a full board recompute on the API — 10s was pure server load.
+const POLL_MS = 30_000;
 const TOP_N = 100;
 
 const EMPTY: BoardState = {

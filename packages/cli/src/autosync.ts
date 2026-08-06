@@ -184,7 +184,7 @@ export function shouldRearm(opts: { enabled: boolean; platform: NodeJS.Platform;
 
 export function autosyncStatus(): string {
   if (!autosyncEnabled()) return "off";
-  let minutes = 5;
+  let minutes = 15;
   try { minutes = (JSON.parse(readFileSync(markerPath(), "utf8")) as { minutes: number }).minutes; } catch { /* default */ }
   const jobAlive = process.platform === "darwin" ? launchdJobAlive() : true;
   return statusLine({ enabled: true, minutes, jobAlive, platform: process.platform });

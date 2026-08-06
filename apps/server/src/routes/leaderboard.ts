@@ -35,7 +35,7 @@ export function leaderboardRoute(store: LeaderboardStore) {
     }
     // Short browser cache matched to the org poll cadence; pairs with the
     // etag middleware in app.ts so unchanged polls collapse to 304s.
-    c.header("Cache-Control", "public, max-age=5");
+    c.header("Cache-Control", "public, max-age=15");
     return c.json({
       board,
       tool: tool ?? null,
