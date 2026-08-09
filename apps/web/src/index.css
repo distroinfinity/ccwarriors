@@ -759,3 +759,95 @@ html[data-theme="dark"] .deck-plate{ background:var(--or); color:#0a0a0b; }
 .consent-upgrade-text b{ font-size:13px; }
 .consent-upgrade-text p{ font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0; }
 .consent-upgrade .btn{ flex:0 0 auto; width:auto; padding:11px 18px; margin:0; }
+
+/* Coach — "Get more from your spend" (Plan 5). Native chrome, utility feed —
+   deliberately NOT a .deck-card: this is an action list you scan and expand,
+   not a collectible you'd share. Halftone/mono/print identity carries over
+   via the dashed "locked" convention and the same hairline/mono microcopy
+   rhythm as .deck-header / .bynum. */
+.coach{ margin-top:40px; }
+.coach-header{ display:flex; align-items:baseline; gap:14px; margin-bottom:18px; }
+.coach-label{ font-size:12px; letter-spacing:.2em; color:var(--ink); font-weight:600; white-space:nowrap; }
+.coach-header::after{ content:""; flex:1; height:1px; background:var(--line); order:1; }
+.coach-headline{ order:2; font-size:11px; letter-spacing:.03em; color:var(--or); white-space:nowrap; }
+.coach-feed{ display:flex; flex-direction:column; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); }
+.coach-row{ animation:cardin .3s ease both; }
+.coach-row + .coach-row{ border-top:1px solid var(--line); }
+.coach-row:nth-child(2){ animation-delay:.03s; }
+.coach-row:nth-child(3){ animation-delay:.06s; }
+.coach-row:nth-child(4){ animation-delay:.09s; }
+.coach-row:nth-child(5){ animation-delay:.12s; }
+.coach-row-head{ width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px;
+  background:none; border:0; cursor:pointer; text-align:left; color:var(--ink); font:inherit;
+  transition:background .15s ease; }
+.coach-row-head:hover{ background:color-mix(in srgb,var(--or) 5%,transparent); }
+.coach-row-head:focus-visible{ outline:2px solid var(--or); outline-offset:-2px; }
+.coach-row-title{ flex:1; font-size:14.5px; font-weight:550; }
+.coach-row-impact{ font-size:12px; color:var(--or); white-space:nowrap; }
+.coach-row-chev{ width:16px; text-align:center; color:var(--muted); font-size:15px; line-height:1;
+  transition:color .18s ease; }
+.coach-row.open .coach-row-chev{ color:var(--or); }
+/* Grid-rows(0fr→1fr) collapses to a true zero height — no measured-height JS,
+   no pop. The inner body cross-fades a beat behind the height so opening
+   reads as "reveal", closing reads as a quick tuck-away. */
+.coach-row-collapse{ display:grid; grid-template-rows:0fr; transition:grid-template-rows .3s cubic-bezier(.4,0,.2,1); }
+.coach-row.open .coach-row-collapse{ grid-template-rows:1fr; }
+.coach-row-collapse > .coach-row-body{ overflow:hidden; opacity:0; transition:opacity .16s ease; }
+.coach-row.open .coach-row-collapse > .coach-row-body{ opacity:1; transition:opacity .28s ease .08s; }
+.coach-row-body{ padding:0 16px 16px 16px; display:flex; flex-direction:column; gap:9px; }
+.coach-evidence{ margin:0; font-size:13.5px; line-height:1.55; color:color-mix(in srgb,var(--muted) 72%,var(--ink)); }
+.coach-action{ margin:0; font-size:13.5px; line-height:1.5; color:var(--ink); }
+.coach-install{ display:block; font-size:12px; padding:8px 10px; border-radius:6px; background:var(--ink); color:var(--bg); overflow-x:auto; }
+.coach-row-meta{ display:flex; gap:12px; align-items:center; font-size:10.5px; }
+.coach-badge{ letter-spacing:.06em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+.coach-why{ color:var(--muted); border-bottom:1px solid transparent; transition:color .15s, border-color .15s; }
+.coach-why:hover{ color:var(--or); border-bottom-color:var(--or); }
+.coach-why:focus-visible{ outline:2px solid var(--or); outline-offset:2px; }
+.coach-grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); margin-top:16px; }
+.coach-card{ border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:14px 15px;
+  display:flex; flex-direction:column; gap:6px; animation:cardin .3s ease both;
+  transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.coach-grid .coach-card:nth-child(2){ animation-delay:.03s; }
+.coach-grid .coach-card:nth-child(3){ animation-delay:.06s; }
+.coach-grid .coach-card:nth-child(4){ animation-delay:.09s; }
+.coach-card:not(.locked):hover{ border-color:color-mix(in srgb,var(--or) 35%,var(--line)); transform:translateY(-2px);
+  box-shadow:0 8px 20px rgba(22,20,15,.06); }
+html[data-theme="dark"] .coach-card:not(.locked):hover{ box-shadow:0 8px 22px rgba(0,0,0,.4); }
+/* Locked module: same dashed-border "sealed" language as .arch-locked, plus a
+   faint diagonal hatch — a redacted panel, not a dead gray box. */
+.coach-card.locked{ border-style:dashed; opacity:.9;
+  background-image:repeating-linear-gradient(135deg, color-mix(in srgb,var(--muted) 9%,transparent) 0 1px, transparent 1px 9px); }
+.coach-card-label{ font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+.coach-card-value{ font-family:'Geist Mono',monospace; font-size:19px; line-height:1.15; color:var(--ink); }
+.coach-card-bench{ font-size:11px; color:var(--muted); }
+.coach-card-tip{ font-size:12.5px; line-height:1.5; color:color-mix(in srgb,var(--muted) 76%,var(--ink)); }
+.coach-card-unlock{ font-size:11.5px; color:var(--or); border-bottom:1px solid transparent; align-self:flex-start; transition:border-color .15s; }
+.coach-card-unlock:hover{ border-bottom-color:var(--or); }
+.coach-card-unlock:focus-visible{ outline:2px solid var(--or); outline-offset:2px; }
+.coach-foot{ margin-top:14px; padding-top:12px; border-top:1px dashed var(--line); font-size:10.5px; color:var(--muted); }
+@media (prefers-reduced-motion: reduce){
+  .coach-row, .coach-card{ animation:none; }
+  .coach-row-collapse, .coach-row-collapse > .coach-row-body, .coach-row-chev, .coach-card{ transition:none; }
+}
+.help-coach{ max-width:720px; margin:0 auto; padding:40px 20px 80px; }
+.help-lede{ color:var(--muted); font-size:14.5px; line-height:1.6; }
+.help-section{ margin-top:26px; border-top:1px solid var(--line); padding-top:18px; }
+.help-section h2{ font-size:16px; margin:0 0 8px; }
+.help-source{ font-size:11px; color:var(--muted); margin-top:6px; }
+
+/* Skill outcome leaderboard (Plan 6). */
+.skl-page{ max-width:760px; margin:0 auto; padding:40px 20px 80px; }
+.skl-lede{ color:var(--muted); font-size:14px; line-height:1.6; max-width:640px; }
+.skl-list{ margin-top:22px; display:flex; flex-direction:column; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel); }
+.skl-row{ display:flex; gap:14px; align-items:flex-start; padding:15px 16px; }
+.skl-row + .skl-row{ border-top:1px solid var(--line); }
+.skl-rank{ font-size:13px; color:var(--muted); min-width:20px; }
+.skl-main{ flex:1; display:flex; flex-direction:column; gap:6px; }
+.skl-name{ font-size:14.5px; font-weight:600; color:var(--ink); }
+.skl-claim{ font-size:13px; line-height:1.5; color:color-mix(in srgb,var(--muted) 74%,var(--ink)); }
+.skl-install{ align-self:flex-start; font-size:11.5px; padding:5px 9px; border-radius:6px; background:var(--ink); color:var(--bg); }
+.skl-meta{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; font-size:10.5px; white-space:nowrap; }
+.skl-badge{ letter-spacing:.05em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+.skl-badge.cal{ color:var(--up); border-color:color-mix(in srgb,var(--up) 45%,var(--line)); }
+.skl-n{ color:var(--muted); }
+.skl-empty{ margin-top:22px; color:var(--muted); font-size:12.5px; }

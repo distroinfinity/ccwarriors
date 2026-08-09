@@ -26,6 +26,7 @@ import { applyPins, buildInsightCards, featuredDeck, selectDeck, type InsightCar
 import { githubVerified } from "../lib/github-stats.js";
 import { getGithubStatsCached } from "../lib/github-stats-service.js";
 import { buildStack, type StackProfile } from "../lib/stack.js";
+import { buildCoach } from "../lib/coach/build.js";
 
 export interface ProfileDeps {
   db: DB;
@@ -293,6 +294,26 @@ export function profileRoute(deps: ProfileDeps) {
     c.header("Cache-Control", isOwner ? "private, no-store" : "public, max-age=30");
     if (!isOwner) c.header("Vary", "Cookie");
     return c.json(insights);
+  });
+
+  // Lazy coach read (#progressive-load): the "Get more from your spend" section,
+  // fetched in parallel after core paint. Mirrors /:login/insights gating.
+  app.get("/:login/coach", async (c) => {
+    const raw = c.req.param("login");
+    if (!LOGIN_RE.test(raw)) return c.json({ error: "not_found" }, 404);
+    const [user] = await deps.db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.githubLogin}) = ${raw.toLowerCase()}`);
+    if (!user) return c.json({ error: "not_found" }, 404);
+    const isOwner = ownerOf(c, user.githubId);
+    // Same consent / private-profile gating as /insights (profile.ts:120-123).
+    if (!user.insightsConsent) return c.json({ locked: true, reason: "no_consent" });
+    if (user.insightsVisibility === "private" && !isOwner) return c.json({ locked: true, reason: "no_consent" });
+    const payload = await buildCoach(deps.db, user, isOwner, Date.now());
+    c.header("Cache-Control", isOwner ? "private, no-store" : "public, max-age=30");
+    if (!isOwner) c.header("Vary", "Cookie");
+    return c.json(payload);
   });
 
   app.get("/:login", async (c) => {

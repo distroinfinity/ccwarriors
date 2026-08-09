@@ -6,44 +6,19 @@ import { createReadStream, existsSync } from "node:fs";
 import { readFile, writeFile, readdir, stat, mkdir } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { readGitOutcome, type SessionGitOutcome } from "./git.js";
+import { join, dirname } from "node:path";
+import { readGitOutcome, runGit, type SessionGitOutcome } from "./git.js";
 import { redact } from "./redact.js";
+import type { SessionStats } from "./session-stats.js";
+import { parseCodexLines } from "./sources/codex.js";
+import { parseAiderLog, clusterAiderCommits, AIDER_LOG_FORMAT } from "./sources/aider.js";
+export type { SessionStats };
 
 export const WINDOW_DAYS = 40;
 const EXPLORE_TOOLS = new Set(["Read", "Grep", "Glob"]);
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const SPAWN_TOOLS = new Set(["Task", "Agent"]);
-
-export interface SessionStats {
-  prompts: number;
-  interrupts: number;
-  usedPlanMode: boolean;
-  exploreBeforeFirstEdit: boolean;
-  hadEdits: boolean;
-  subagentSpawns: number;
-  maxParallel: number;
-  editCalls: number;
-  assistantTurns: number;
-  startHour: number; // machine-local 0-23
-  durationMinutes: number;
-  wordBuckets: { "1-5": number; "6-10": number; "11-25": number; "26+": number };
-  // ── new deep signals (counts — safe to upload) ──
-  thankYous: number; // prompts containing a thanks
-  wordTotal: number; // total words across prompts (exact avg replaces buckets)
-  recoveryLoops: number; // runs of ≥3 consecutive error tool_results
-  extensions: Record<string, number>; // file-extension histogram of agent edits
-  // ── richer per-session signal (some LOCAL-ONLY; see PRIVACY CONTRACT) ──
-  recoveryBreakoutMs: number[]; // LOCAL-ONLY: collapsed to a median before upload
-  shortPrompts: string[]; // LOCAL-ONLY: go-to-prompt candidates; only the redacted top repeat may upload (consent v2)
-  startMs: number | null; // first event epoch ms
-  endMs: number | null; // last event epoch ms
-  cwd: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
-  gitBranch: string | null; // LOCAL-ONLY: input to readGitOutcome, never uploaded
-  model: string | null; // model on the most assistant turns (safe to upload)
-  editedFiles: string[]; // LOCAL-ONLY: input to readGitOutcome, never uploaded
-  eventGapsMs: number[]; // LOCAL-ONLY: collapsed to a timing summary before upload
-}
+const SKILL_TOOLS = new Set(["Skill"]);
 
 export interface InsightsPayload {
   windowDays: number;
@@ -91,6 +66,8 @@ export async function parseSessionLines(
   const eventGapsMs: number[] = [];
   let thankYous = 0, wordTotal = 0;
   const extensions: Record<string, number> = {};
+  let skillSpawns = 0;
+  const skillsUsed: Record<string, number> = {};
   const shortPrompts: string[] = [];
   // Recovery: a "failure loop" is ≥3 consecutive error tool_results (assistant
   // turns in between don't reset it). Breakout = first success or real prompt.
@@ -197,6 +174,15 @@ export async function parseSessionLines(
           }
         }
       }
+      if (SKILL_TOOLS.has(name)) {
+        skillSpawns++;
+        const inp = block["input"] as Record<string, unknown> | undefined;
+        const id = inp?.["skill"] ?? inp?.["name"] ?? inp?.["command"];
+        if (typeof id === "string" && id.trim()) {
+          const key = id.trim().slice(0, 64); // NAME only — never args
+          skillsUsed[key] = (skillsUsed[key] ?? 0) + 1;
+        }
+      }
     }
     maxParallel = Math.max(maxParallel, parallel);
   }
@@ -217,6 +203,7 @@ export async function parseSessionLines(
     prompts, interrupts, usedPlanMode, exploreBeforeFirstEdit, hadEdits,
     subagentSpawns, maxParallel, editCalls, assistantTurns, startHour, durationMinutes, wordBuckets,
     thankYous, wordTotal, recoveryLoops, extensions, recoveryBreakoutMs, shortPrompts,
+    tool: "claude", skillSpawns, skillsUsed,
     startMs: firstTs, endMs: lastTs, cwd, gitBranch, model,
     editedFiles: [...editedFiles], eventGapsMs,
   };
@@ -291,7 +278,8 @@ export function timingSummary(gapsMs: number[]): {
 // cwd/editedFiles/eventGapsMs, breaking the deep path). v3: purges caches
 // poisoned by the unbumped v2 shape change (entries without eventGapsMs).
 // v4: thankYous/wordTotal/recovery/extensions/shortPrompts signals added.
-const CACHE_VERSION = 4;
+// v5: tool tag + skillSpawns/skillsUsed added (old entries lack them → re-parse).
+const CACHE_VERSION = 5;
 
 /**
  * Structural check on a cached SessionStats. The version bump handles known
@@ -303,7 +291,7 @@ export function isValidSessionStats(x: unknown): x is SessionStats {
   const o = x as Record<string, unknown>;
   const numeric = [
     "prompts", "interrupts", "subagentSpawns", "maxParallel", "editCalls", "assistantTurns",
-    "startHour", "durationMinutes", "thankYous", "wordTotal", "recoveryLoops",
+    "startHour", "durationMinutes", "thankYous", "wordTotal", "recoveryLoops", "skillSpawns",
   ];
   for (const k of numeric) if (typeof o[k] !== "number") return false;
   const booleans = ["usedPlanMode", "exploreBeforeFirstEdit", "hadEdits"];
@@ -318,6 +306,8 @@ export function isValidSessionStats(x: unknown): x is SessionStats {
   if (!o["extensions"] || typeof o["extensions"] !== "object") return false;
   // Nullable fields must be PRESENT (null is fine; absent means stale shape).
   for (const k of ["startMs", "endMs", "cwd", "gitBranch", "model"]) if (!(k in o)) return false;
+  if (typeof o["tool"] !== "string") return false;
+  if (!o["skillsUsed"] || typeof o["skillsUsed"] !== "object") return false;
   return true;
 }
 
@@ -330,10 +320,12 @@ interface CacheFile {
 const HOME = process.env["CCWARRIORS_HOME"] ?? join(homedir(), ".claude-warriors");
 const CACHE_PATH = join(HOME, "insights-cache.json");
 const PROJECTS_DIR = process.env["CCWARRIORS_CLAUDE_DIR"] ?? join(homedir(), ".claude", "projects");
+const CODEX_DIR = process.env["CCWARRIORS_CODEX_DIR"] ?? join(homedir(), ".codex", "sessions");
+const CODEX_CACHE_PATH = join(HOME, "insights-cache-codex.json");
 
-async function loadCache(): Promise<CacheFile> {
+async function loadCache(path: string = CACHE_PATH): Promise<CacheFile> {
   try {
-    const cache = JSON.parse(await readFile(CACHE_PATH, "utf8")) as CacheFile;
+    const cache = JSON.parse(await readFile(path, "utf8")) as CacheFile;
     // Stale schema → drop parsed entries (keep lastSentAt throttle), re-parse.
     if (cache.version !== CACHE_VERSION) {
       return { version: CACHE_VERSION, files: {}, lastSentAt: cache.lastSentAt };
@@ -344,10 +336,10 @@ async function loadCache(): Promise<CacheFile> {
   }
 }
 
-async function saveCache(cache: CacheFile): Promise<void> {
+async function saveCache(cache: CacheFile, path: string = CACHE_PATH): Promise<void> {
   cache.version = CACHE_VERSION;
-  await mkdir(HOME, { recursive: true, mode: 0o700 });
-  await writeFile(CACHE_PATH, JSON.stringify(cache), { encoding: "utf8", mode: 0o600 });
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, JSON.stringify(cache), { encoding: "utf8", mode: 0o600 });
 }
 
 async function parseFile(path: string): Promise<SessionStats | null> {
@@ -356,66 +348,165 @@ async function parseFile(path: string): Promise<SessionStats | null> {
 }
 
 /**
- * Walk the project dirs, parsing every in-window session file (with the
- * path+size+mtime cache so repeat runs only re-parse new/changed files), and
- * return the resulting SessionStats. Shared by collectInsights (aggregate) and
- * collectDeepInsights (per-session). Returns [] if PROJECTS_DIR is absent.
+ * Generic per-file parse cache: stat each candidate file, skip out-of-window
+ * ones, reuse a valid cached parse on size+mtime match, else parse and cache.
+ * Prunes cache entries for files not seen THIS walk, then saves to `cachePath`.
+ * Each source passes its OWN cachePath so sources never prune each other.
+ */
+export async function walkJsonlSessions(
+  files: string[],
+  cachePath: string,
+  parse: (path: string) => Promise<SessionStats | null>,
+): Promise<SessionStats[]> {
+  const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
+  const cache = await loadCache(cachePath);
+  const seen = new Set<string>();
+  const sessions: SessionStats[] = [];
+  for (const full of files) {
+    let st;
+    try {
+      st = await stat(full);
+    } catch {
+      continue;
+    }
+    if (st.mtimeMs < cutoff) continue; // outside window
+    seen.add(full);
+    const cached = cache.files[full];
+    let stats: SessionStats | null;
+    if (
+      cached &&
+      cached.size === st.size &&
+      cached.mtimeMs === st.mtimeMs &&
+      (cached.stats === null || isValidSessionStats(cached.stats))
+    ) {
+      stats = cached.stats;
+    } else {
+      try {
+        stats = await parse(full);
+      } catch {
+        // File vanished between stat and read → store null; pruned next run.
+        stats = null;
+      }
+      cache.files[full] = { size: st.size, mtimeMs: st.mtimeMs, stats };
+    }
+    if (stats) sessions.push(stats);
+  }
+  for (const key of Object.keys(cache.files)) if (!seen.has(key)) delete cache.files[key];
+  await saveCache(cache, cachePath);
+  return sessions;
+}
+
+/**
+ * Discover Claude Code session files (~/.claude/projects/<proj>/*.jsonl) and
+ * parse them through the shared cache. Returns [] if PROJECTS_DIR is absent.
  */
 async function walkSessions(): Promise<SessionStats[]> {
   if (!existsSync(PROJECTS_DIR)) return [];
-  const cutoff = Date.now() - WINDOW_DAYS * 86_400_000;
-  const cache = await loadCache();
-  const seen = new Set<string>();
-  const sessions: SessionStats[] = [];
-
+  const files: string[] = [];
   const projectDirs = await readdir(PROJECTS_DIR, { withFileTypes: true });
   for (const dirent of projectDirs) {
     if (!dirent.isDirectory()) continue;
     const dir = join(PROJECTS_DIR, dirent.name);
-    let files: string[];
+    let names: string[];
     try {
-      files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+      names = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
     } catch {
       continue;
     }
-    for (const f of files) {
-      const full = join(dir, f);
-      let st;
-      try {
-        st = await stat(full);
-      } catch {
-        continue;
-      }
-      if (st.mtimeMs < cutoff) continue; // outside window
-      seen.add(full);
-      const cached = cache.files[full];
-      let stats: SessionStats | null;
-      if (
-        cached &&
-        cached.size === st.size &&
-        cached.mtimeMs === st.mtimeMs &&
-        (cached.stats === null || isValidSessionStats(cached.stats))
-      ) {
-        stats = cached.stats;
-      } else {
-        try {
-          stats = await parseFile(full);
-        } catch {
-          // File vanished between stat and read → catch stores null; pruned next run.
-          stats = null;
-        }
-        cache.files[full] = { size: st.size, mtimeMs: st.mtimeMs, stats };
-      }
-      if (stats) sessions.push(stats);
-    }
+    for (const f of names) files.push(join(dir, f));
   }
-
-  // Drop cache entries for files gone or aged out (bound the cache size).
-  for (const key of Object.keys(cache.files)) if (!seen.has(key)) delete cache.files[key];
-  await saveCache(cache);
-
-  return sessions;
+  return walkJsonlSessions(files, CACHE_PATH, parseFile);
 }
+
+async function parseCodexFile(path: string): Promise<SessionStats | null> {
+  const rl = createInterface({ input: createReadStream(path, "utf8"), crlfDelay: Infinity });
+  return parseCodexLines(rl);
+}
+
+/**
+ * Discover Codex rollout files (~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl)
+ * and parse them through the shared cache (its own cache file, disjoint from
+ * Claude's). Returns [] if CODEX_DIR is absent or unreadable.
+ */
+async function collectCodexSessions(): Promise<SessionStats[]> {
+  if (!existsSync(CODEX_DIR)) return [];
+  let entries: string[];
+  try {
+    entries = (await readdir(CODEX_DIR, { recursive: true })) as string[];
+  } catch {
+    return [];
+  }
+  const files = entries
+    .filter((rel) => {
+      const base = rel.slice(Math.max(rel.lastIndexOf("/"), rel.lastIndexOf("\\")) + 1);
+      return base.startsWith("rollout-") && base.endsWith(".jsonl");
+    })
+    .map((rel) => join(CODEX_DIR, rel));
+  return walkJsonlSessions(files, CODEX_CACHE_PATH, parseCodexFile);
+}
+
+/**
+ * Aider's "special path": it keeps no transcripts. Given the repo cwds the
+ * session-log sources discovered, list each repo's in-window aider-trailer
+ * commits, cluster them, and return SessionStats. The git-outcome pass in
+ * collectDeepInsights then computes outcomes over each cluster's window.
+ * Best-effort: a repo that fails to log contributes nothing.
+ *
+ * Limitation (documented): aider sessions are only found in repos where a
+ * session-log agent (Claude/Codex) also worked — aider-only repos are not
+ * discovered in v1.
+ */
+async function collectAiderSessions(cwds: string[]): Promise<SessionStats[]> {
+  const sinceIso = new Date(Date.now() - WINDOW_DAYS * 86_400_000).toISOString();
+  // Resolve each cwd to its repo root and dedupe, so we log each repo once.
+  const roots = new Set<string>();
+  for (const cwd of cwds) {
+    const top = await runGit(cwd, ["rev-parse", "--show-toplevel"]);
+    if (top && top.trim()) roots.add(top.trim());
+  }
+  const out: SessionStats[] = [];
+  for (const root of roots) {
+    const log = await runGit(root, [
+      "log",
+      "HEAD",
+      "--no-merges",
+      `--since=${sinceIso}`,
+      `--format=${AIDER_LOG_FORMAT}`,
+      "--numstat",
+    ]);
+    if (!log) continue;
+    out.push(...clusterAiderCommits(parseAiderLog(log), root));
+  }
+  return out;
+}
+
+/**
+ * A deep-extraction source: one originating agent and a collector returning its
+ * in-window SessionStats. collectDeepInsights iterates every registered source
+ * and stamps each session with the source's `tool`. Later plans push one entry
+ * per agent (Codex, Gemini, …); this seam keeps that purely additive.
+ */
+export interface DeepSource {
+  readonly tool: string;
+  collect(): Promise<SessionStats[]>;
+}
+
+export const DEEP_SOURCES: DeepSource[] = [
+  { tool: "claude", collect: walkSessions },
+  { tool: "codex", collect: collectCodexSessions },
+];
+
+/**
+ * A git-trailer source: an agent (Aider) that has no session logs and instead
+ * reconstructs sessions from its commits. It runs in a SECOND phase, after the
+ * session-log sources, because it needs the repo cwds those sources discovered.
+ */
+export interface GitTrailerSource {
+  readonly tool: string;
+  collect(cwds: string[]): Promise<SessionStats[]>;
+}
+
+export const GIT_TRAILER_SOURCES: GitTrailerSource[] = [{ tool: "aider", collect: collectAiderSessions }];
 
 /** Collect insights for sessions modified within the window. Cache makes
     repeat runs parse only new/changed files. */
@@ -441,6 +532,10 @@ export interface SessionRecord {
   wordTotal: number;
   recovery: { loops: number; medianBreakoutMs: number };
   extensions: Record<string, number>; // capped to the top 10 by count
+  // tool-aware + skill signals (older servers ignore unknown fields).
+  tool: string; // originating agent: "claude" | "codex" | ...
+  skillSpawns: number;
+  skillsUsed: Record<string, number>; // capped to the top 10 by count
 }
 
 export interface InsightsDeepPayload {
@@ -500,6 +595,9 @@ function toSessionRecord(s: SessionStats, git: SessionGitOutcome | null): Sessio
     wordTotal: s.wordTotal ?? 0,
     recovery: { loops: s.recoveryLoops ?? 0, medianBreakoutMs: median(s.recoveryBreakoutMs ?? []) },
     extensions: topEntries(s.extensions ?? {}, 10),
+    tool: s.tool ?? "claude",
+    skillSpawns: s.skillSpawns ?? 0,
+    skillsUsed: topEntries(s.skillsUsed ?? {}, 10),
   };
 }
 
@@ -578,8 +676,47 @@ export interface DeepCollectOptions {
 
 export async function collectDeepInsights(salt: string, opts: DeepCollectOptions = {}): Promise<DeepCollectResult> {
   try {
-    const sessions = await walkSessions();
-    if (sessions.length === 0) return { status: "empty" };
+    // Phase 1 — session-log sources (Claude, Codex). Each yields SessionStats
+    // and is stamped with its source's tool.
+    const phase1 = await Promise.allSettled(
+      DEEP_SOURCES.map((src) =>
+        src.collect().then((ss) => {
+          for (const s of ss) s.tool = src.tool;
+          return ss;
+        }),
+      ),
+    );
+    const sessions = phase1
+      .filter((r): r is PromiseFulfilledResult<SessionStats[]> => r.status === "fulfilled")
+      .flatMap((r) => r.value);
+
+    // Phase 2 — git-trailer sources (Aider) reconstruct sessions from commits
+    // in the repos discovered above; they own no logs of their own.
+    const knownCwds = [...new Set(sessions.map((s) => s.cwd).filter((c): c is string => !!c))];
+    const phase2 = await Promise.allSettled(
+      GIT_TRAILER_SOURCES.map((src) =>
+        src.collect(knownCwds).then((ss) => {
+          for (const s of ss) s.tool = src.tool;
+          return ss;
+        }),
+      ),
+    );
+    sessions.push(
+      ...phase2
+        .filter((r): r is PromiseFulfilledResult<SessionStats[]> => r.status === "fulfilled")
+        .flatMap((r) => r.value),
+    );
+
+    if (sessions.length === 0) {
+      // Distinguish "nothing to upload" from "something went wrong" across BOTH
+      // phases (a failed source is rejected; zero sessions with no failure is empty).
+      const failed = [...phase1, ...phase2].find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) {
+        const msg = failed.reason instanceof Error ? failed.reason.message : String(failed.reason);
+        return { status: "error", message: msg };
+      }
+      return { status: "empty" };
+    }
 
     // Memoize "is this cwd inside a git repo": once a cwd is known non-git, a
     // later session in the same cwd skips the git spawns entirely. (readGitOutcome

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSessionLines, aggregateSessions, timingSummary, type SessionStats } from "../src/insights.js";
+import { parseSessionLines, aggregateSessions, timingSummary, isValidSessionStats, type SessionStats } from "../src/insights.js";
 
 const line = (o: object) => JSON.stringify(o);
 
@@ -49,6 +49,30 @@ describe("parseSessionLines", () => {
 
   it("returns null for empty/attachment-only files", async () => {
     expect(await parseSessionLines([line({ type: "file-history-snapshot" })])).toBeNull();
+  });
+
+  it("tags tool=claude and counts Skill invocations by name (never args)", async () => {
+    const lines = [
+      line({ type: "user", message: { content: "use tdd to add the parser" }, timestamp: "2026-06-07T09:00:00.000Z" }),
+      line({
+        type: "assistant",
+        message: {
+          model: "claude-opus-4-8",
+          content: [
+            { type: "tool_use", name: "Skill", input: { skill: "test-driven-development", args: "secret args" } },
+            { type: "tool_use", name: "Skill", input: { skill: "test-driven-development" } },
+            { type: "tool_use", name: "Skill", input: { skill: "brainstorming" } },
+          ],
+        },
+        timestamp: "2026-06-07T09:00:05.000Z",
+      }),
+    ];
+    const s = (await parseSessionLines(lines))!;
+    expect(s.tool).toBe("claude");
+    expect(s.skillSpawns).toBe(3);
+    expect(s.skillsUsed).toEqual({ "test-driven-development": 2, brainstorming: 1 });
+    // Skill ARGS must never be captured anywhere in the stats.
+    expect(JSON.stringify(s)).not.toContain("secret args");
   });
 
   it("joins only string text blocks across a multi-block prompt", async () => {
@@ -102,5 +126,20 @@ describe("timingSummary", () => {
     const t = timingSummary([3000, 1000, 2000]); // sorted: 1000,2000,3000
     expect(t.medianGapMs).toBe(2000);
     expect(t.subSecondFraction).toBe(0);
+  });
+});
+
+describe("isValidSessionStats", () => {
+  it("accepts a full stats object and rejects one missing the new tool/skill fields", async () => {
+    const full = (await parseSessionLines([
+      line({ type: "user", message: { content: "do the thing now please" }, timestamp: "2026-06-07T09:00:00.000Z" }),
+    ]))!;
+    expect(isValidSessionStats(full)).toBe(true);
+
+    const stale: Record<string, unknown> = { ...full };
+    delete stale["tool"];
+    delete stale["skillSpawns"];
+    delete stale["skillsUsed"];
+    expect(isValidSessionStats(stale)).toBe(false);
   });
 });

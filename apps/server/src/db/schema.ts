@@ -77,6 +77,11 @@ export type SessionRecord = {
   wordTotal?: number;
   recovery?: { loops: number; medianBreakoutMs: number };
   extensions?: Record<string, number>;
+  // tool-aware + skill signals — optional: older clients omit them. Server
+  // treats a missing tool as "claude".
+  tool?: string;
+  skillSpawns?: number;
+  skillsUsed?: Record<string, number>;
 };
 
 // The deep payload the client sends (mirrors packages/cli/src/insights.ts

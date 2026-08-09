@@ -126,6 +126,7 @@ async function git(root: string, args: string[]): Promise<string | null> {
     return null;
   }
 }
+export { git as runGit };
 
 interface ParsedCommit {
   sha: string;

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // collectDeepInsights reads PROJECTS_DIR / HOME from env at module load, so we
 // set both BEFORE importing the module (dynamic import inside the test).
@@ -29,6 +29,15 @@ function mkrepo(): string {
 
 beforeEach(() => {
   cleanup = [];
+  // Reset the module registry so each test re-evaluates module-level constants
+  // (PROJECTS_DIR, HOME) from the current process.env values set in the test.
+  vi.resetModules();
+  // Isolate both session-log sources by default: point them at paths that do
+  // not exist so the collectors yield [] unless a test opts in. Defaulting
+  // CLAUDE_DIR too (not just CODEX_DIR) keeps a future deep test from silently
+  // reading the real ~/.claude/projects if it forgets to set CLAUDE_DIR.
+  process.env["CCWARRIORS_CODEX_DIR"] = join(tmpdir(), "ccw-codex-absent-DO-NOT-CREATE");
+  process.env["CCWARRIORS_CLAUDE_DIR"] = join(tmpdir(), "ccw-claude-absent-DO-NOT-CREATE");
 });
 
 afterEach(() => {
@@ -40,6 +49,12 @@ afterEach(() => {
     }
   }
   cleanup = [];
+  // Clear the env each test set, so a later test (e.g. Plan 2's per-agent
+  // source tests) that forgets to set them can't silently inherit a prior
+  // test's now-removed temp dirs via vi.resetModules() re-reading the env.
+  delete process.env["CCWARRIORS_CLAUDE_DIR"];
+  delete process.env["CCWARRIORS_HOME"];
+  delete process.env["CCWARRIORS_CODEX_DIR"];
 });
 
 describe("collectDeepInsights", () => {
@@ -122,5 +137,141 @@ describe("collectDeepInsights", () => {
     expect(json).not.toContain(EDITED);
     expect(json).not.toContain("main"); // gitBranch never travels
     expect(json).not.toContain("/"); // no filesystem path separators at all
+  });
+
+  it("stamps tool=claude and carries skill usage onto uploaded records", async () => {
+    const repo = mkrepo();
+    const now = Date.now();
+    const startIso = new Date(now - 6 * 60_000).toISOString();
+    const endIso = new Date(now - 5 * 60_000).toISOString();
+
+    const projects = mkdtempSync(join(tmpdir(), "ccw-deep-skill-projects-"));
+    cleanup.push(projects);
+    const home = mkdtempSync(join(tmpdir(), "ccw-deep-skill-home-"));
+    cleanup.push(home);
+    const sessDir = join(projects, "proj-skill");
+    mkdirSync(sessDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "user", message: { content: "use tdd please now" }, cwd: repo, gitBranch: "main", timestamp: startIso }),
+      JSON.stringify({ type: "assistant", message: { model: "claude-opus-4-8", content: [{ type: "tool_use", name: "Skill", input: { skill: "test-driven-development", args: "secret" } }] }, cwd: repo, gitBranch: "main", timestamp: endIso }),
+    ];
+    writeFileSync(join(sessDir, "session.jsonl"), lines.join("\n") + "\n");
+
+    process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
+    process.env["CCWARRIORS_HOME"] = home;
+
+    const { collectDeepInsights } = await import("../src/insights.js");
+    const result = await collectDeepInsights("testsalt");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    const rec = result.payload.sessions[0]!;
+    expect(rec.tool).toBe("claude");
+    expect(rec.skillSpawns).toBe(1);
+    expect(rec.skillsUsed).toEqual({ "test-driven-development": 1 });
+    expect(JSON.stringify(result.payload)).not.toContain("secret");
+  });
+
+  it("reconstructs Aider sessions from git-trailer commits in discovered repos", async () => {
+    const repo = mkrepo();
+    const now = Date.now();
+    const claudeStart = new Date(now - 12 * 60_000).toISOString();
+    const claudeEnd = new Date(now - 11 * 60_000).toISOString();
+    const aiderDate = new Date(now - 9 * 60_000).toISOString();
+
+    // An aider-authored commit (the special-path signal): a Co-authored-by
+    // trailer with an aider.chat email. git's --trailer adds a real trailer.
+    const env = { ...process.env, GIT_AUTHOR_DATE: aiderDate, GIT_COMMITTER_DATE: aiderDate };
+    writeFileSync(join(repo, "aider-edit.ts"), "export const z = 1;\n");
+    execFileSync("git", ["-C", repo, "add", "-A"], { stdio: "ignore" });
+    execFileSync(
+      "git",
+      ["-C", repo, "commit", "-q", "-m", "feat: aider change", "--trailer", "Co-authored-by: aider (gpt-4o) <aider@aider.chat>"],
+      { env, stdio: "ignore" },
+    );
+
+    // A Claude session in the SAME repo so collectDeepInsights discovers its cwd
+    // and hands it to the Aider (trailer) phase.
+    const projects = mkdtempSync(join(tmpdir(), "ccw-aider-projects-"));
+    cleanup.push(projects);
+    const home = mkdtempSync(join(tmpdir(), "ccw-aider-home-"));
+    cleanup.push(home);
+    const sessDir = join(projects, "proj");
+    mkdirSync(sessDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "user", message: { content: "start the work now please" }, cwd: repo, timestamp: claudeStart }),
+      JSON.stringify({ type: "assistant", message: { model: "claude-opus-4-8", content: [{ type: "text", text: "ok" }] }, cwd: repo, timestamp: claudeEnd }),
+    ];
+    writeFileSync(join(sessDir, "s.jsonl"), lines.join("\n") + "\n");
+
+    process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
+    process.env["CCWARRIORS_HOME"] = home;
+    // CODEX_DIR stays at the beforeEach absent default → no Codex sessions.
+
+    const { collectDeepInsights } = await import("../src/insights.js");
+    const result = await collectDeepInsights("salt");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+
+    const aider = result.payload.sessions.find((r) => r.tool === "aider");
+    const claude = result.payload.sessions.find((r) => r.tool === "claude");
+    expect(claude).toBeDefined();
+    expect(aider).toBeDefined();
+    expect(aider!.model).toBe("gpt-4o");
+    expect(aider!.assistantTurns).toBe(1); // one aider commit
+    expect(aider!.git).not.toBeNull();
+    expect(aider!.git!.commitsInWindow).toBeGreaterThanOrEqual(1);
+    expect(aider!.git!.aiLinkedCommits).toBe(1); // basename match on aider-edit.ts
+    // PRIVACY: no path/branch/model-args leak.
+    expect(JSON.stringify(result.payload)).not.toContain(repo);
+  });
+
+  it("collects Codex rollout sessions with tool=codex and a git outcome", async () => {
+    const repo = mkrepo();
+    const now = Date.now();
+    const startIso = new Date(now - 8 * 60_000).toISOString();
+    const midIso = new Date(now - 7 * 60_000).toISOString();
+    const endIso = new Date(now - 6 * 60_000).toISOString();
+
+    // A commit inside the Codex session window (editedFiles is [] for Codex, so
+    // attribution is time-window only: commitsInWindow counts it, aiLinked is 0).
+    const env = { ...process.env, GIT_AUTHOR_DATE: midIso, GIT_COMMITTER_DATE: midIso };
+    writeFileSync(join(repo, "thing.ts"), "export const a = 1;\n");
+    execFileSync("git", ["-C", repo, "add", "-A"], { stdio: "ignore" });
+    execFileSync("git", ["-C", repo, "commit", "-q", "-m", "feat: add thing"], { env, stdio: "ignore" });
+
+    // Synthetic Codex sessions dir with the real nested YYYY/MM/DD/rollout-*.jsonl shape.
+    const codex = mkdtempSync(join(tmpdir(), "ccw-codex-"));
+    cleanup.push(codex);
+    const dayDir = join(codex, "2026", "06", "29");
+    mkdirSync(dayDir, { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "session_meta", timestamp: startIso, payload: { session_id: "s1", cwd: repo } }),
+      JSON.stringify({ type: "turn_context", timestamp: startIso, payload: { cwd: repo, model: "gpt-5.5" } }),
+      JSON.stringify({ type: "event_msg", timestamp: startIso, payload: { type: "user_message", message: "do it" } }),
+      JSON.stringify({ type: "response_item", timestamp: endIso, payload: { type: "message", role: "assistant", content: [] } }),
+    ];
+    writeFileSync(join(dayDir, "rollout-2026-06-29T12-00-00-abc.jsonl"), lines.join("\n") + "\n");
+
+    // Isolate Claude (empty) so ONLY Codex contributes; point Codex at our dir.
+    const projects = mkdtempSync(join(tmpdir(), "ccw-codex-claude-"));
+    cleanup.push(projects);
+    const home = mkdtempSync(join(tmpdir(), "ccw-codex-home-"));
+    cleanup.push(home);
+    process.env["CCWARRIORS_CLAUDE_DIR"] = projects;
+    process.env["CCWARRIORS_HOME"] = home;
+    process.env["CCWARRIORS_CODEX_DIR"] = codex;
+
+    const { collectDeepInsights } = await import("../src/insights.js");
+    const result = await collectDeepInsights("salt");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.payload.sessions.length).toBe(1);
+    const rec = result.payload.sessions[0]!;
+    expect(rec.tool).toBe("codex");
+    expect(rec.model).toBe("gpt-5.5");
+    expect(rec.git).not.toBeNull();
+    expect(rec.git!.commitsInWindow).toBe(1);
+    // PRIVACY: no path/branch leaks.
+    expect(JSON.stringify(result.payload)).not.toContain(repo);
   });
 });
