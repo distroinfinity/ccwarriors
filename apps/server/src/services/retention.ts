@@ -22,14 +22,18 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  *  after deploy may face weeks of backlog — an unbatched DELETE of that would
  *  spike WAL and Postgres memory, which is exactly what this exists to lower. */
 export async function pruneSnapshots(db: DB): Promise<number> {
-  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000);
+  // ISO string + ::timestamptz cast, not a Date param: drizzle's db.execute()
+  // on the postgres-js driver failed to serialize a Date here in production
+  // ("Received an instance of Date"), which silently disabled pruning. The
+  // PGlite test driver accepts both, so only prod caught it.
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
   let total = 0;
   for (;;) {
     const rows = await db.execute(sql`
       DELETE FROM ${snapshots}
       WHERE id IN (
         SELECT id FROM ${snapshots}
-        WHERE captured_at < ${cutoff}
+        WHERE captured_at < ${cutoff}::timestamptz
         LIMIT ${BATCH_SIZE}
       )
       RETURNING id
