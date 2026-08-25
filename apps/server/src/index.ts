@@ -15,6 +15,7 @@ import { seedDemo, seedDemoDonations, seedDemoProfiles, startSimulation } from "
 import { startPricingRefresh } from "./lib/pricing.js";
 import { startFxRefresh } from "./lib/fx.js";
 import { startRetention } from "./services/retention.js";
+import { createDaemonHealth } from "./routes/daemon-health.js";
 import { captureEvent } from "./routes/telemetry.js";
 
 async function main() {
@@ -152,6 +153,12 @@ async function main() {
   // Prune old sync snapshots daily (first run delayed past boot hydration).
   startRetention(db);
 
+  // The stale-daemon report is a 7-day aggregate over `snapshots`. Computing it
+  // on a timer keeps it off the request path, so the hourly health check reads
+  // a precomputed value instead of paying for the scan every single poll.
+  const daemonHealth = createDaemonHealth(db);
+  daemonHealth.start();
+
   // permessage-deflate is OFF: each socket's zlib context costs ~200-400KB RSS
   // and fragments the allocator (a well-known `ws` memory issue). Memory is
   // ~90% of the Railway bill; the ~6× larger payload every 15s is far cheaper
@@ -203,6 +210,7 @@ async function main() {
   }
 
   const app = createApp({
+    daemonHealth,
     db,
     store,
     insightsStore,

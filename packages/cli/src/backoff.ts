@@ -15,3 +15,34 @@ export function nextBackoffMs(failStreak: number): number {
 export function shouldSync(now: number, nextAllowedSyncAt: number): boolean {
   return now >= nextAllowedSyncAt;
 }
+
+// ── Watch-driven sync floor ─────────────────────────────────────────────────
+// The daemon syncs on fs.watch with a 12s debounce, so the 15-minute heartbeat
+// floor bounds nothing while you're actually coding: prod daemons were syncing
+// 400-900 times a day (one per 1.6-3 min). Every one is a full ingest
+// transaction on a memory-billed host, and memory is ~90% of the hosting bill.
+// A floor between watch-driven syncs coalesces a burst into one sync without
+// losing anything — ccusage totals are cumulative, so the next sync carries
+// everything the skipped ones would have.
+const DEFAULT_MIN_SYNC_GAP_MS = 5 * 60_000;
+
+/** The floor, in ms. `CCWARRIORS_MIN_SYNC_GAP_MIN` overrides for debugging. */
+export function minSyncGapMs(env: NodeJS.ProcessEnv = process.env): number {
+  const m = Number(env["CCWARRIORS_MIN_SYNC_GAP_MIN"]);
+  return Number.isFinite(m) && m > 0 ? m * 60_000 : DEFAULT_MIN_SYNC_GAP_MS;
+}
+
+/**
+ * Delay before the next watch-driven sync may run: `debounceMs` normally, or
+ * long enough to clear the floor when the last sync was recent. Never negative.
+ * `lastSyncAt === 0` (no sync yet this process) takes the plain debounce.
+ */
+export function syncDelayMs(
+  now: number,
+  lastSyncAt: number,
+  debounceMs: number,
+  gapMs: number = minSyncGapMs(),
+): number {
+  if (lastSyncAt <= 0) return debounceMs;
+  return Math.max(debounceMs, lastSyncAt + gapMs - now);
+}

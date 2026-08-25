@@ -15,12 +15,22 @@ import {
   checkNewToolWindow,
   checkSettledDayGrowth,
   checkTokenShape,
+  isQuarantining,
+  totalTokens,
   type FlagSignal,
 } from "../lib/plausibility.js";
 import { captureEvent } from "../routes/telemetry.js";
 import { currentBuildId, isBuildOutdated } from "../lib/build-id.js";
 
 export const MIN_SYNC_INTERVAL_MS = 10_000;
+// `snapshots` gets one row per sync, and the daemon syncs on fs.watch (12s
+// debounce), so an active user wrote 400-900 rows/day — in prod that table was
+// 87MB of a 102MB database, and Postgres memory is ~90% of the Railway bill.
+// Nothing needs per-sync granularity: the stale-daemon report only counts rows
+// to tell a daemon (>=20/7d) from a manual syncer, and hourly still yields
+// ~168/7d. users.last_synced_at, which carries the actual freshness signal, is
+// still stamped on EVERY sync below.
+export const SNAPSHOT_INTERVAL_MS = 60 * 60_000;
 export const SANITY_CAP = 1_000_000;
 // A cheater could amplify the new-tool backfill cap by inventing machine ids.
 export const MAX_MACHINES_PER_USER = 5;
@@ -87,9 +97,24 @@ function breakdown30d(b: ToolBreakdown): Record<string, number> {
   );
 }
 
+/**
+ * Record plausibility signals. Only reasons on the quarantine allowlist
+ * (lib/plausibility.ts) hide the user; everything else is emitted as telemetry
+ * so we keep full visibility without taking anyone off the board. That split
+ * exists because the dollar-denominated gates quarantined 31 of 77 real users
+ * on LiteLLM price drift — see the header comment in lib/plausibility.ts.
+ */
 export async function flagUser(db: DB, store: LeaderboardStore | null, user: User, signals: FlagSignal[]) {
-  if (user.flaggedAt || signals.length === 0) return;
-  const reason = signals
+  if (signals.length === 0) return;
+
+  // Observation-only signals: always reported, never quarantining.
+  for (const s of signals.filter((x) => !isQuarantining(x.reason))) {
+    captureEvent("plausibility_signal", user.githubLogin, { reason: s.reason, detail: s.detail });
+  }
+
+  const quarantining = signals.filter((s) => isQuarantining(s.reason));
+  if (user.flaggedAt || quarantining.length === 0) return;
+  const reason = quarantining
     .slice(0, 3)
     .map((s) => `${s.reason}: ${s.detail}`)
     .join(" | ");
@@ -98,7 +123,7 @@ export async function flagUser(db: DB, store: LeaderboardStore | null, user: Use
   // leaderboard store handle; the DB flag is the authority, setFlagged is a
   // no-op if the user isn't currently in the store anyway.
   store?.setFlagged(user.id, true);
-  captureEvent("plausibility_flagged", user.githubLogin, { reason: signals[0]!.reason, detail: reason });
+  captureEvent("plausibility_flagged", user.githubLogin, { reason: quarantining[0]!.reason, detail: reason });
 }
 
 export async function ingestUsage(
@@ -161,9 +186,10 @@ async function ingestLegacy(
   };
   const totals = sumBreakdown(user.hasBreakdown ? next : { claude: next["claude"]! });
 
+  // No burn gate on the legacy path: v1 clients send dollars only, and every
+  // gate is now token-denominated (lib/plausibility.ts header). A legacy rigger
+  // is still bounded by the sanity cap in finalize().
   const signals: FlagSignal[] = [];
-  const burn = checkBurnRate(Number(user.cost30d), totals.cost30d, user.lastSyncedAt, now);
-  if (burn) signals.push(burn);
 
   // Legacy path has no per-day data — carry the spark from the live store
   // entry. It can go stale if the user stays on a legacy client as activity
@@ -245,6 +271,10 @@ async function ingestRaw(
     models: ModelTokens[];
     cost: number;
     prevCost: number;
+    // Tokens are what the gates compare — costs move under us when LiteLLM
+    // reprices, tokens don't. See lib/plausibility.ts.
+    tokens: number;
+    prevTokens: number;
   }
   // Server-computed dollars are the ONLY stored/ranked values. ccusage's
   // client-side estimates ride along purely as a cross-check: aggregate
@@ -264,16 +294,20 @@ async function ingestRaw(
       }
       const prev = existingByKey.get(dayKey(payload.machineId, tool, day));
       const prevCost = prev ? Number(prev.cost) : 0;
+      const tokens = totalTokens(models);
+      const prevTokens = prev
+        ? prev.inputTokens + prev.outputTokens + prev.cacheCreationTokens + prev.cacheReadTokens
+        : 0;
 
-      const ceiling = checkDailyCeiling(tool, day, cost);
+      const ceiling = checkDailyCeiling(tool, day, tokens);
       if (ceiling) signals.push(ceiling);
       const shape = checkTokenShape(tool, day, models);
       if (shape) signals.push(shape);
       if (prev) {
-        const grow = checkSettledDayGrowth(tool, day, prevCost, cost, now);
+        const grow = checkSettledDayGrowth(tool, day, prevTokens, tokens, now);
         if (grow) signals.push(grow);
       }
-      priced.push({ tool, day, models, cost, prevCost });
+      priced.push({ tool, day, models, cost, prevCost, tokens, prevTokens });
     }
   }
 
@@ -297,10 +331,14 @@ async function ingestRaw(
   // New-tool backfill gate: first-ever window for a tool can't be a fortune.
   const toolsWithHistory = new Set(existing.map((r) => r.tool));
   const windowByTool = new Map<string, number>();
-  for (const p of priced) windowByTool.set(p.tool, (windowByTool.get(p.tool) ?? 0) + p.cost);
-  for (const [tool, windowCost] of windowByTool) {
+  const windowTokensByTool = new Map<string, number>();
+  for (const p of priced) {
+    windowByTool.set(p.tool, (windowByTool.get(p.tool) ?? 0) + p.cost);
+    windowTokensByTool.set(p.tool, (windowTokensByTool.get(p.tool) ?? 0) + p.tokens);
+  }
+  for (const [tool, windowTokens] of windowTokensByTool) {
     if (!toolsWithHistory.has(tool) && !prevBreakdown[tool]) {
-      const gate = checkNewToolWindow(tool, windowCost);
+      const gate = checkNewToolWindow(tool, windowTokens);
       if (gate) signals.push(gate);
     }
   }
@@ -352,12 +390,18 @@ async function ingestRaw(
   // legitimately jumps when codex/gemini/... appear (bounded by the gates above).
   // Also skipped for a new machine's first sync: its backfill is legitimate and
   // bounded by the daily-ceiling, token-shape, machine-count and sanity gates.
-  const trackedNext = Object.entries(next)
-    .filter(([tool]) => prevBreakdown[tool])
-    .reduce((s, [, v]) => s + v.cost30d, 0);
+  // Denominated in tokens: comparing stored dollars to freshly-priced dollars
+  // made every LiteLLM refresh look like a spending spree.
+  let prevTokens30d = 0;
+  let nextTokens30d = 0;
+  for (const p of priced) {
+    if (!prevBreakdown[p.tool] || p.day < cutoff30Day) continue;
+    prevTokens30d += p.prevTokens;
+    nextTokens30d += p.tokens;
+  }
   const burn = machineIsNew
     ? null
-    : checkBurnRate(Number(user.cost30d), round2(trackedNext), user.lastSyncedAt, now);
+    : checkBurnRate(prevTokens30d, nextTokens30d, user.lastSyncedAt, now);
   if (burn) signals.push(burn);
 
   // Query the full 30d usage_days picture for this user (across all machines
@@ -443,6 +487,16 @@ interface FinalizeArgs {
   spark?: number[];
 }
 
+// userId → ms of the last snapshot row we wrote. In-process on purpose: it costs
+// no query, and losing it on deploy just means one extra row per user. A stale
+// entry can never suppress a row for longer than SNAPSHOT_INTERVAL_MS.
+const lastSnapshotAt = new Map<string, number>();
+
+/** Test seam: forget snapshot throttling between cases. */
+export function resetSnapshotThrottle(): void {
+  lastSnapshotAt.clear();
+}
+
 async function finalize(
   db: DB,
   store: LeaderboardStore,
@@ -451,6 +505,8 @@ async function finalize(
 ): Promise<IngestResult> {
   const tier = computeTier(args.totals.costAllTime);
   const syncedAt = new Date(args.now);
+  const prevSnapshot = lastSnapshotAt.get(user.id);
+  const writeSnapshot = prevSnapshot === undefined || args.now - prevSnapshot >= SNAPSHOT_INTERVAL_MS;
 
   await db.transaction(async (tx) => {
     await tx
@@ -466,14 +522,17 @@ async function finalize(
       })
       .where(eq(users.id, user.id));
 
-    await tx.insert(snapshots).values({
-      userId: user.id,
-      cost30d: String(args.totals.cost30d),
-      costAllTime: String(args.totals.costAllTime),
-      ccusageVersion: args.ccusageVersion ?? "",
-      toolBreakdown: args.breakdown,
-      clientBuildId: args.clientBuildId,
-    });
+    if (writeSnapshot) {
+      await tx.insert(snapshots).values({
+        userId: user.id,
+        cost30d: String(args.totals.cost30d),
+        costAllTime: String(args.totals.costAllTime),
+        ccusageVersion: args.ccusageVersion ?? "",
+        toolBreakdown: args.breakdown,
+        clientBuildId: args.clientBuildId,
+        capturedAt: syncedAt,
+      });
+    }
 
     for (const row of args.usageRows ?? []) {
       await tx
@@ -493,6 +552,9 @@ async function finalize(
         });
     }
   });
+  // Only after the transaction commits — a rolled-back insert must not suppress
+  // the next hour of snapshots.
+  if (writeSnapshot) lastSnapshotAt.set(user.id, args.now);
 
   // Shadow quarantine on violations — sync still succeeds, board membership doesn't.
   await flagUser(db, store, user, args.signals);

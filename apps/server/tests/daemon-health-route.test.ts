@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { daemonHealthRoute } from "../src/routes/daemon-health.js";
+import { createDaemonHealth, daemonHealthRoute } from "../src/routes/daemon-health.js";
 import { makeDb, seedUser } from "./helpers/db.js";
 import { users, snapshots } from "../src/db/schema.js";
 
@@ -67,5 +67,45 @@ describe("GET /telemetry/stale-daemons", () => {
     expect(body.silent12h).toBe(1); // only deadDaemon
     expect(body.stale.map((s) => s.githubLogin)).toEqual(["deadDaemon"]);
     expect(body.stale[0]).toMatchObject({ silentHours: 13, lastBuild: "ae19ade" });
+  });
+
+  // The 7-day aggregate must never run on the request path. It used to, on
+  // every hourly health poll, and intermittently blew the workflow's timeout —
+  // 8 false "prod health check failing" alerts in Aug 2026 (#110–#117).
+  it("serves a precomputed report without re-querying per request", async () => {
+    const db = await makeDb();
+    await seedDaemon(db, "d1", { count: 6, lastSyncH: 13, build: "ae19ade" });
+
+    const health = createDaemonHealth(db, () => NOW);
+    // First request computes (the timer hasn't run in this test).
+    const first = (await (await health.route.request("/stale-daemons")).json()) as {
+      daemonUsers: number;
+      computedAt: string;
+    };
+    expect(first.daemonUsers).toBe(1);
+    expect(first.computedAt).toBe(new Date(NOW).toISOString());
+
+    // A user goes silent AFTER the report was computed. The endpoint keeps
+    // serving the stored report — proof it did not re-run the aggregate.
+    await seedDaemon(db, "d2", { count: 6, lastSyncH: 40, build: "ae19ade" });
+    const second = (await (await health.route.request("/stale-daemons")).json()) as {
+      daemonUsers: number;
+    };
+    expect(second.daemonUsers).toBe(1);
+  });
+
+  it("each app instance owns its report (no cross-instance leakage)", async () => {
+    const dbA = await makeDb();
+    await seedDaemon(dbA, "onlyInA", { count: 6, lastSyncH: 13, build: "b" });
+    const dbB = await makeDb();
+
+    const a = (await (await daemonHealthRoute(dbA, () => NOW).request("/stale-daemons")).json()) as {
+      daemonUsers: number;
+    };
+    const b = (await (await daemonHealthRoute(dbB, () => NOW).request("/stale-daemons")).json()) as {
+      daemonUsers: number;
+    };
+    expect(a.daemonUsers).toBe(1);
+    expect(b.daemonUsers).toBe(0);
   });
 });

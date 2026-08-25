@@ -424,7 +424,6 @@ export function insightsRoute(deps: InsightsDeps) {
       totalSurvivingLoc,
       totalShippedCommits,
       usage.windowTokens,
-      usage.windowCostUsd,
     );
     if (outcome) signals.push(outcome);
     const timing = checkTimingRegularity(allSessions);
