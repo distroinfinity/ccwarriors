@@ -113,6 +113,11 @@ export async function runDaemon(heartbeatMin = 15): Promise<void> {
       return;
     }
     syncing = true;
+    // Stamp at START, not on completion: schedule() reads this to space syncs
+    // out, and an fs event arriving while a sync is still in flight would
+    // otherwise compare against the PREVIOUS sync and get the bare debounce —
+    // producing a second sync ~30s behind the first.
+    lastSyncAt = Date.now();
     try {
       const { tools, estimates, ccusageVersion } = await readUsage();
       const res = await postIngest(token, {
@@ -209,7 +214,6 @@ export async function runDaemon(heartbeatMin = 15): Promise<void> {
       }
     } finally {
       syncing = false;
-      lastSyncAt = Date.now();
       // We ran a full sync cycle without crashing → this build is alive even if
       // the sync itself failed for external reasons. Clears any rollback marker.
       // On a successful sync markUpdateSuccess() already cleared it, so this is a
