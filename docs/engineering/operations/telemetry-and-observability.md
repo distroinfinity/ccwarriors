@@ -13,6 +13,14 @@ Server-side code emits through the same `captureEvent()`, including `app.onError
 
 CLI beacons are fire-and-forget (4s await only on rollback, since the process is exiting); users opt out with `CCWARRIORS_TELEMETRY=0`, which also silences the installer.
 
+## OpenTelemetry → sigiro (`apps/server/src/otel.ts`)
+
+Separate pipeline from `captureEvent()` above, and complementary: product events go to PostHog, request/runtime telemetry goes to sigiro. `otel.ts` is loaded by `node --import` in the `start` script (and `tsx --import` in `dev`), before any app module, so `@opentelemetry/auto-instrumentations-node` can patch `http`, `dns`, `ws`, `fs` and friends. Traces, metrics and logs all export over OTLP/HTTP.
+
+The whole thing is dormant unless `SIGIRO_API_KEY` is set — tests, CI and local dev pay nothing. With it set, `otel.ts` derives `OTEL_EXPORTER_OTLP_ENDPOINT` (default `https://api.sigiro.com`; hosted sigiro terminates OTLP on **443**, not the conventional `:4318`), `OTEL_EXPORTER_OTLP_HEADERS` (`Authorization: Bearer $SIGIRO_API_KEY`) and `OTEL_SERVICE_NAME=ccwarriors-server`. Any of those already present in the environment wins, so the standard OTel env vars still work for overrides.
+
+Two gaps worth knowing: `console.*` has no upstream auto-instrumentation, so `otel.ts` bridges it into the OTLP logs pipeline by hand; and DB calls are **not** traced — the OTel `pg` instrumentation only patches `node-postgres`, and this server uses `postgres.js` via drizzle. Queries show up inside their HTTP server span, not as spans of their own.
+
 ## Named signals
 
 **Funnel:** `web_visit` (with `?ref` channel) → `install_started` / `install_completed` / `install_failed` (with the failing step: `node_missing`, `node_old`, `download`, …) → `user_enlisted` / `enlist_failed`.
