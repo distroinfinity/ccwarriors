@@ -13,6 +13,24 @@ Server-side code emits through the same `captureEvent()`, including `app.onError
 
 CLI beacons are fire-and-forget (4s await only on rollback, since the process is exiting); users opt out with `CCWARRIORS_TELEMETRY=0`, which also silences the installer.
 
+## OpenTelemetry (traces and metrics)
+
+Separate pipeline from `captureEvent()` above, and complementary: product events go to PostHog, request and runtime telemetry goes to whatever OTLP backend you point it at.
+
+There is no bootstrap file. `@opentelemetry/auto-instrumentations-node/register` loads through `node --import` in `start` (and `tsx --import` in `dev`) before any app module, so `http`, `dns`, `ws` and `fs` are patched in time. Everything else is standard `OTEL_*` env vars, listed in `.env.example`. Leave `OTEL_EXPORTER_OTLP_ENDPOINT` unset and the SDK finds no destination and stays silent, so tests, CI and local dev need no flags and no opt-out.
+
+Three layers of spans, each covering what the one below cannot:
+
+| Layer | Package | What it adds |
+| --- | --- | --- |
+| Node runtime | `@opentelemetry/auto-instrumentations-node` | `http` server and client spans, dns, fs, ws, plus Node runtime metrics |
+| Hono | `@hono/otel` | One `httpInstrumentationMiddleware()` as the outermost middleware. Spans named by matched route rather than raw path, and they wrap cors, etag and the handler |
+| Drizzle | `@kubiks/otel-drizzle` | `instrumentDrizzleClient()` in `db/index.ts`. Query spans with `db.system`, `db.operation` and the SQL statement |
+
+Why the drizzle layer is third-party: `drizzle-orm` ships its own tracer at `drizzle-orm/tracing`, but its `await import('@opentelemetry/api')` is commented out in the published source, so `otel` is always undefined and `startActiveSpan` just calls through. That is still true in 0.45.2, so upgrading does not fix it. The official `@opentelemetry/instrumentation-pg` is no help either, because it patches `node-postgres` and this server talks `postgres.js`.
+
+One gap remains: **logs are not exported.** The bundled OTel log bridges cover pino, winston and bunyan, and this server logs with `console.*` throughout. Bridging it by hand is possible but it is custom code, so the deliberate choice here is traces and metrics only. Swap to a real logger and `instrumentation-pino` picks logs up for free.
+
 ## Named signals
 
 **Funnel:** `web_visit` (with `?ref` channel) → `install_started` / `install_completed` / `install_failed` (with the failing step: `node_missing`, `node_old`, `download`, …) → `user_enlisted` / `enlist_failed`.

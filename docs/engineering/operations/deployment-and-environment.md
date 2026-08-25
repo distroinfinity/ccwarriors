@@ -38,13 +38,13 @@ Both platforms read their build config from the repo — **dashboard build setti
 
 **Auth:** `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` (unset → OAuth routes unmounted), `GITHUB_TOKEN` (server PAT fallback for public GitHub-stats reads).
 
-**Features (each unset → feature off):** `ANTHROPIC_API_KEY` + `STORY_MODEL` (stories), `DISCORD_CLIENT_ID` + `DISCORD_CLIENT_SECRET` + a GitHub session secret + `NS_GUILD_ID` (org verification), `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` + `RAZORPAY_WEBHOOK_SECRET` (donations), `ADMIN_TOKEN` (admin quarantine access; routes otherwise 401), `POSTHOG_API_KEY` + `POSTHOG_HOST` (default `https://us.i.posthog.com`).
+**Features (each unset → feature off):** `ANTHROPIC_API_KEY` + `STORY_MODEL` (stories), `DISCORD_CLIENT_ID` + `DISCORD_CLIENT_SECRET` + a GitHub session secret + `NS_GUILD_ID` (org verification), `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET` + `RAZORPAY_WEBHOOK_SECRET` (donations), `ADMIN_TOKEN` (admin quarantine access; routes otherwise 401), `POSTHOG_API_KEY` + `POSTHOG_HOST` (default `https://us.i.posthog.com`), `OTEL_EXPORTER_OTLP_ENDPOINT` (+ `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME`) for OpenTelemetry export.
 
 **Ops levers:** `CLI_UPDATE_ENABLED=0` — fleet-wide self-update kill switch served via `/cli/version`. `GATE_MAX_HOURLY_BURN` (500), `GATE_BURN_SLACK` (200), `GATE_MAX_DAILY_COST` (3000), `GATE_NEW_TOOL_WINDOW_CAP` (15000), `GATE_SETTLED_AFTER_DAYS` (2), `GATE_SETTLED_TOLERANCE` (0.10), `GATE_ESTIMATE_BAND` (0.25), `GATE_MAX_LOC_PER_TOKEN` (1.0), `GATE_MAX_COMMITS_PER_DOLLAR` (50), `GATE_TIMING_MIN_EVENTS` (20), `GATE_MAX_SUBSECOND_FRACTION` (0.9), `GATE_MIN_MEDIAN_GAP_MS` (300) — loosen gates for legit whales without a deploy.
 
 **Dev-only:** `SEED_DEMO` (15 named warriors), `SEED_EXTRA=N` (synthetic fill for pagination testing), `SIMULATE` (live-spend animation), `SEED_CLI_TOKEN` (known token for CLI testing).
 
-Note: `apps/server/src/config.ts` zod-parses only the core set; `GATE_*`, `ADMIN_TOKEN`, `POSTHOG_*`, `NS_GUILD_ID`, `CLI_UPDATE_ENABLED` are raw `process.env` reads at their call sites.
+Note: `apps/server/src/config.ts` zod-parses only the core set; `GATE_*`, `ADMIN_TOKEN`, `POSTHOG_*`, `NS_GUILD_ID`, `CLI_UPDATE_ENABLED` are raw `process.env` reads at their call sites, and `OTEL_*` is read by the OpenTelemetry SDK itself.
 
 **Web (Vercel):** `VITE_WS_URL=wss://api.ccwarriors.xyz` (also derives the HTTP API base), `VITE_EVM_ADDRESS`/`VITE_SOL_ADDRESS` (crypto tab; a chain hides when unset, the tab hides when both are).
 
