@@ -15,30 +15,30 @@ import { users, usageDays, type SessionRecord, type SessionGitOutcome } from "..
 
 describe("checkOutcomeImplausibility", () => {
   it("normal AI-assisted ratios → null", () => {
-    // 500 surviving LOC from 2M tokens, 5 commits from $40 spend.
-    expect(checkOutcomeImplausibility(500, 5, 2_000_000, 40)).toBeNull();
+    // 500 surviving LOC from 2M tokens, 5 commits across 2M tokens.
+    expect(checkOutcomeImplausibility(500, 5, 2_000_000)).toBeNull();
   });
 
   it("surviving LOC exceeding total tokens → flag", () => {
-    const sig = checkOutcomeImplausibility(5_000, 3, 1_000, 50);
+    const sig = checkOutcomeImplausibility(5_000, 3, 1_000);
     expect(sig?.reason).toBe("outcome_implausible");
     expect(sig?.detail).toContain("loc/token");
   });
 
-  it("absurd commits per dollar → flag", () => {
-    const sig = checkOutcomeImplausibility(10, 10_000, 5_000_000, 1);
+  it("absurd commits per million tokens → flag", () => {
+    const sig = checkOutcomeImplausibility(10, 10_000, 5_000_000);
     expect(sig?.reason).toBe("outcome_implausible");
-    expect(sig?.detail).toContain("commits/$");
+    expect(sig?.detail).toContain("commits/Mtok");
   });
 
   it("zero tokens with any surviving LOC trips the loc/token gate (no div-by-zero)", () => {
-    const sig = checkOutcomeImplausibility(2, 0, 0, 100);
+    const sig = checkOutcomeImplausibility(2, 0, 0);
     expect(sig?.reason).toBe("outcome_implausible");
   });
 
   it("exactly at the loc/token boundary does not flag (strict >)", () => {
     // locPerToken === maxLocPerToken (1.0) → not a violation.
-    expect(checkOutcomeImplausibility(1_000, 0, 1_000, 1_000)).toBeNull();
+    expect(checkOutcomeImplausibility(1_000, 0, 1_000)).toBeNull();
   });
 });
 
@@ -92,7 +92,7 @@ describe("checkTimingRegularity", () => {
 describe("GATES deep-ingest defaults", () => {
   it("documents the conservative defaults", () => {
     expect(GATES.maxLocPerToken()).toBe(1.0);
-    expect(GATES.maxCommitsPerDollar()).toBe(50);
+    expect(GATES.maxCommitsPerMTok()).toBe(200);
     expect(GATES.timingMinEvents()).toBe(20);
     expect(GATES.maxSubSecondFraction()).toBe(0.9);
     expect(GATES.minMedianGapMs()).toBe(300);

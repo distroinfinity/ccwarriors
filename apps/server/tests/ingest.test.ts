@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { ingestRoute } from "../src/routes/ingest.js";
 import { eq } from "drizzle-orm";
 import { makeDb, seedUser } from "./helpers/db.js";
-import { ingestUsage, type RawIngestPayload } from "../src/services/ingest.js";
+import { ingestUsage, resetSnapshotThrottle, SNAPSHOT_INTERVAL_MS, type RawIngestPayload } from "../src/services/ingest.js";
 import { LeaderboardStore } from "../src/lib/leaderboard-store.js";
 import { users, usageDays, snapshots, orgMembers } from "../src/db/schema.js";
 import { lookupModelPrice } from "../src/lib/pricing.js";
@@ -78,9 +78,11 @@ describe("ingest v1 (legacy clients)", () => {
     expect(res).toEqual({ ok: false, error: "rate_limited" });
   });
 
-  it("burn-rate gate quarantines a legacy rigger without rejecting the sync", async () => {
+  it("a legacy dollar jump no longer quarantines (gates are token-denominated)", async () => {
     await ingestUsage(db, store, TOKEN, { kind: "legacy", cost30d: 100, costAllTime: 100 }, NOW);
-    // +$50k eleven seconds later — impossible for a human.
+    // +$50k eleven seconds later. v1 clients send dollars only, and dollars are
+    // not a stable quantity (LiteLLM reprices under us), so the burn gate no
+    // longer runs here — the sanity cap is the remaining bound on this path.
     const res = await ingestUsage(
       db,
       store,
@@ -88,12 +90,10 @@ describe("ingest v1 (legacy clients)", () => {
       { kind: "legacy", cost30d: 50_100, costAllTime: 50_100 },
       NOW + 11_000,
     );
-    expect(res.ok).toBe(true); // shadow quarantine: no error feedback
+    expect(res.ok).toBe(true);
     const [u] = await db.select().from(users).where(eq(users.githubLogin, "legacy"));
-    expect(u!.flaggedAt).not.toBeNull();
-    expect(u!.flagReason).toContain("burn_rate");
-    expect(store.getTop("30d", 10)).toHaveLength(0); // off the board
-    expect(store.count()).toBe(0);
+    expect(u!.flaggedAt).toBeNull();
+    expect(store.getTop("30d", 10)).toHaveLength(1); // stays on the board
   });
 });
 
@@ -144,6 +144,39 @@ describe("ingest v3 (raw token counts)", () => {
     // Per-tool board has the entry; a tool the user doesn't use does not.
     expect(store.getTop("30d", 10, 0, "codex")).toHaveLength(1);
     expect(store.getTop("30d", 10, 0, "gemini")).toHaveLength(0);
+  });
+
+  // snapshots was 87MB of a 102MB production database because the daemon writes
+  // on fs.watch, not on the heartbeat — 400-900 syncs/user/day. Postgres memory
+  // is ~90% of the Railway bill, so the row rate is a direct cost lever.
+  it("writes at most one snapshot per user per hour", async () => {
+    resetSnapshotThrottle();
+    // Three syncs inside the hour → one row.
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW + 60_000);
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW + 120_000);
+    expect(await db.select().from(snapshots)).toHaveLength(1);
+
+    // Past the interval → a second row.
+    await ingestUsage(
+      db,
+      store,
+      TOKEN,
+      raw({ claude: [opusDay(isoDaysAgo(1))] }),
+      NOW + SNAPSHOT_INTERVAL_MS,
+    );
+    expect(await db.select().from(snapshots)).toHaveLength(2);
+  });
+
+  it("stamps last_synced_at on EVERY sync, throttled snapshot or not", async () => {
+    resetSnapshotThrottle();
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW);
+    // Suppressed snapshot, but freshness must still advance — this is the value
+    // the stale-daemon report reads to decide whether a daemon has gone silent.
+    await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }), NOW + 60_000);
+    expect(await db.select().from(snapshots)).toHaveLength(1);
+    const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
+    expect(u!.lastSyncedAt!.getTime()).toBe(NOW + 60_000);
   });
 
   it("re-syncing the same day is idempotent (upsert, not duplicate)", async () => {
@@ -198,14 +231,21 @@ describe("ingest v3 (raw token counts)", () => {
   });
 
   it("daily-ceiling gate quarantines a fabricated mega-day", async () => {
-    // ~$67k day from 2.2B output tokens — flagged, stored, hidden.
-    const res = await ingestUsage(
-      db,
-      store,
-      TOKEN,
-      raw({ claude: [opusDay(isoDaysAgo(1), 2_200_000_000)] }),
-      NOW,
-    );
+    // 25B tokens in one tool-day — past the 20B ceiling, but shaped like real
+    // cache-heavy traffic so it's the ceiling that catches it, not token_shape.
+    const megaDay = {
+      date: isoDaysAgo(1),
+      models: [
+        {
+          modelName: OPUS,
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+          cacheCreationTokens: 0,
+          cacheReadTokens: 25_000_000_000,
+        },
+      ],
+    };
+    const res = await ingestUsage(db, store, TOKEN, raw({ claude: [megaDay] }), NOW);
     expect(res.ok).toBe(true);
     const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
     expect(u!.flagReason).toContain("daily_ceiling");
@@ -213,17 +253,17 @@ describe("ingest v3 (raw token counts)", () => {
   });
 
   it("new-tool backfill gate catches a fabricated 40-day history", async () => {
-    // 8 days × ~$2.9k (via cache reads — under the per-day and shape gates)
-    // ≈ $23k for a tool we've never seen — over the $15k backfill cap.
-    const days = Array.from({ length: 8 }, (_, i) => ({
+    // 10 days × 16B tokens = 160B for a tool we've never seen — over the 150B
+    // backfill cap, while each single day stays under the 20B daily ceiling.
+    const days = Array.from({ length: 10 }, (_, i) => ({
       date: isoDaysAgo(i + 1),
       models: [
         {
           modelName: OPUS,
           inputTokens: 0,
-          outputTokens: 1_000_000, // $25
+          outputTokens: 1_000_000,
           cacheCreationTokens: 0,
-          cacheReadTokens: 5_700_000_000, // $2,850 at $0.5/M
+          cacheReadTokens: 15_999_000_000,
         },
       ],
     }));
@@ -232,10 +272,12 @@ describe("ingest v3 (raw token counts)", () => {
     expect(u!.flagReason).toContain("new_tool_backfill");
   });
 
-  it("history-immutability gate flags a settled day that grows", async () => {
-    const settled = isoDaysAgo(5);
+  it("a settled day that grows is reported but no longer quarantines", async () => {
+    // history_rewrite is observation-only (see DEFAULT_QUARANTINE_REASONS): it
+    // was the gate LiteLLM price drift tripped, taking 31 of 77 real users off
+    // the board. The signal still fires into telemetry; the user stays ranked.
+    const settled = isoDaysAgo(10);
     await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(settled)] }), NOW);
-    // Same settled day, 3x the tokens, two days later.
     await ingestUsage(
       db,
       store,
@@ -244,7 +286,8 @@ describe("ingest v3 (raw token counts)", () => {
       NOW + 60_000,
     );
     const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
-    expect(u!.flagReason).toContain("history_rewrite");
+    expect(u!.flaggedAt).toBeNull();
+    expect(store.getTop("30d", 10)).toHaveLength(1);
   });
 
   it("multi-machine days aggregate by sum instead of overwriting", async () => {
@@ -308,18 +351,19 @@ describe("ingest v3 (raw token counts)", () => {
     expect(Number(u!.cost30d)).toBeCloseTo(expectedOpusCost() * 11, 2);
   });
 
-  it("an EXISTING machine's implausible jump still trips the burn gate", async () => {
+  it("an EXISTING machine's implausible jump is reported but does not quarantine", async () => {
     await ingestUsage(db, store, TOKEN, raw({ claude: [opusDay(isoDaysAgo(1))] }, "aaaaaaaaaaaaaaaa"), NOW);
-    // Same machine re-syncs a $67k day seconds later — still caught.
+    // burn_rate is observation-only now — the same LiteLLM reprice that moved a
+    // settled day also moved the whole 30d window between two heartbeats.
     await ingestUsage(
       db,
       store,
       TOKEN,
-      raw({ claude: [opusDay(isoDaysAgo(1), 100_000_000)] }, "aaaaaaaaaaaaaaaa"),
+      raw({ claude: [opusDay(isoDaysAgo(1), 40_000_000)] }, "aaaaaaaaaaaaaaaa"),
       NOW + 11_000,
     );
     const [u] = await db.select().from(users).where(eq(users.githubLogin, "modern"));
-    expect(u!.flagReason).toContain("burn_rate");
+    expect(u!.flaggedAt).toBeNull();
   });
 
   it("v1 sync after v3 doesn't double count (old client lumps all agents)", async () => {

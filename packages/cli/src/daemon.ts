@@ -9,7 +9,7 @@ import { postIngest, postTelemetry, postInsightsDeep, postTranscripts } from "./
 import { collectTranscripts } from "./transcripts.js";
 import { maybeSelfUpdate, markUpdateSuccess, markBuildAlive } from "./selfupdate.js";
 import { relaunchAfterUpdate } from "./autosync.js";
-import { nextBackoffMs, shouldSync } from "./backoff.js";
+import { minSyncGapMs, nextBackoffMs, shouldSync, syncDelayMs } from "./backoff.js";
 import { resolveAuthAction } from "./authstate.js";
 import { collectDeepInsights, shouldSend, markSent } from "./insights.js";
 
@@ -49,6 +49,8 @@ export async function runDaemon(heartbeatMin = 15): Promise<void> {
   const machineId = await ensureMachineId(cfg);
 
   let timer: NodeJS.Timeout | null = null;
+  // Completion time of the last sync, for the watch-driven floor in schedule().
+  let lastSyncAt = 0;
   let syncing = false;
   let pending = false;
   // Beacon once after 3 consecutive hard failures (not 429s), reset on success —
@@ -207,6 +209,7 @@ export async function runDaemon(heartbeatMin = 15): Promise<void> {
       }
     } finally {
       syncing = false;
+      lastSyncAt = Date.now();
       // We ran a full sync cycle without crashing → this build is alive even if
       // the sync itself failed for external reasons. Clears any rollback marker.
       // On a successful sync markUpdateSuccess() already cleared it, so this is a
@@ -221,18 +224,26 @@ export async function runDaemon(heartbeatMin = 15): Promise<void> {
 
   function schedule(reason: string): void {
     if (authPaused) return; // paused on auth — heartbeat handles recovery
-    // Batch, don't reset: fire DEBOUNCE_MS after the FIRST event in a burst.
-    // Resetting on every fs event starved syncs during continuous agent
-    // activity (the timer never fired until a 12s quiet gap appeared).
+    // Batch, don't reset: fire after the FIRST event in a burst. Resetting on
+    // every fs event starved syncs during continuous agent activity (the timer
+    // never fired until a 12s quiet gap appeared).
     if (timer) return;
     if (!shouldSync(Date.now(), nextAllowedSyncAt)) return; // in backoff cooldown
+    // …and never closer together than the floor: continuous agent activity
+    // fires fs events for hours, which turned into 400-900 ingests a day per
+    // user. The delay stretches instead of the event being dropped, so nothing
+    // is lost — ccusage totals are cumulative.
+    const delay = syncDelayMs(Date.now(), lastSyncAt, DEBOUNCE_MS);
     timer = setTimeout(() => {
       timer = null;
       void syncNow(reason);
-    }, DEBOUNCE_MS);
+    }, delay);
   }
 
-  log(`ccwarriors daemon up (${__BUILD_ID__}) — heartbeat every ${effectiveMin}m`);
+  log(
+    `ccwarriors daemon up (${__BUILD_ID__}) — heartbeat every ${effectiveMin}m, ` +
+      `watch syncs no closer than ${Math.round(minSyncGapMs() / 60_000)}m`,
+  );
   void syncNow("startup");
   void checkForUpdate();
 

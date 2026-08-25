@@ -1,5 +1,5 @@
 name: health
-# Prod health checks every 10 minutes. On failure, opens (or updates) a
+# Hourly prod health checks. On failure, opens (or updates) a
 # "health-alert" issue so the repo owner gets a GitHub notification;
 # auto-closes it when everything recovers.
 
@@ -99,9 +99,17 @@ jobs:
           # release-wide relaunch failure) or >=8 silent >24h (a real cohort gone
           # dark for a full day). Normal idle laptops never page; raw numbers are
           # always reported.
-          dmn=$(curl -fsS -m 10 https://api.ccwarriors.xyz/telemetry/stale-daemons || echo ERR)
-          if ! jq -e '.daemonUsers' >/dev/null 2>&1 <<<"$dmn"; then
-            echo "- ❌ **stale-daemon telemetry unreachable** (\`/telemetry/stale-daemons\`)" >> "$report"
+          # -m 30, not 10: this is an analytics report, not a liveness probe. The
+          # server now precomputes it on a timer (routes/daemon-health.ts), but a
+          # cold boot still computes once inline — and a slow report must never
+          # read as "prod is down". Curl exit 28 is a timeout specifically; it is
+          # reported as a distinct, non-paging line. Every August 2026 health
+          # alert (#110–#117) was this check timing out, and every one auto-closed.
+          dmn=$(curl -fsS -m 30 https://api.ccwarriors.xyz/telemetry/stale-daemons); dmn_rc=$?
+          if [ "$dmn_rc" = "28" ]; then
+            echo "- ⏱️ stale-daemon report timed out after 30s *(slow, not down — not alerting)*" >> "$report"
+          elif ! jq -e '.daemonUsers' >/dev/null 2>&1 <<<"$dmn"; then
+            echo "- ❌ **stale-daemon telemetry unreachable** (\`/telemetry/stale-daemons\`, curl rc=$dmn_rc)" >> "$report"
             failed=1
           else
             du=$(jq -r '.daemonUsers' <<<"$dmn")

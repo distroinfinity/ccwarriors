@@ -43,3 +43,53 @@ Standing invariants: `snapshots` is pruned to 14 days by
 window — keep retention above that), and the daemon heartbeat is floored at
 15 min in `packages/cli/src/daemon.ts` so old 5-min plists/crontabs calm down
 via self-update.
+
+## Sync write volume (2026-08)
+
+Memory stayed the bill, and the row rate was the driver: `snapshots` was 87MB of
+a 102MB database because the daemon syncs on `fs.watch`, not on the heartbeat —
+400-900 syncs/user/day. Two floors now bound it, both env-overridable:
+
+- **Server**: `SNAPSHOT_INTERVAL_MS` (`services/ingest.ts`) writes at most one
+  `snapshots` row per user per hour. `users.last_synced_at` is still stamped on
+  every sync — that, not the row count, is the freshness signal the
+  stale-daemon report reads.
+- **Client**: `packages/cli/src/backoff.ts` floors watch-driven syncs at 5 min
+  (`CCWARRIORS_MIN_SYNC_GAP_MIN` overrides). Reaches the fleet via the
+  self-update bundle swap. Nothing is lost when a sync is deferred — ccusage
+  totals are cumulative.
+
+## Anti-gaming gates (2026-08)
+
+The plausibility gates compared **dollars**, and dollars are recomputed on every
+ingest from a LiteLLM table that changes upstream. Cache reads are ~94% of a real
+agentic day, so one upstream `cache_read_input_token_cost` change swung a settled
+day 30-40% — which quarantined **31 of 77 users**, 15 of them still actively
+syncing. Every gate is now denominated in **tokens** (`lib/plausibility.ts`).
+
+- `history_rewrite` and `burn_rate` are **observation-only**: they still emit
+  `plausibility_signal` telemetry, they never hide a user. They were the two that
+  price drift moved.
+- Everything else still quarantines, on token-denominated thresholds sized above
+  the observed population maximum (daily 20B tokens vs a 15.6B population max;
+  new-tool window 150B vs 83B).
+- Two escape hatches, no deploy needed: `GATE_QUARANTINE_ENABLED=0` lifts every
+  gate, `GATE_QUARANTINE_REASONS=a,b` replaces the allowlist.
+- `ADMIN_TOKEN` **must** stay set on the api service or `/admin/flag` and
+  `/admin/unflag` are mounted but reject everything — there is then no way to
+  clear a false positive.
+
+Keep the committed price snapshot fresh — it is what prices models between boot
+and the first background refresh, and a stale one makes the same day price twice:
+
+    pnpm --filter server exec tsx scripts/refresh-price-snapshot.ts
+
+## Health checks
+
+`/telemetry/stale-daemons` is a 7-day aggregate over `snapshots`. It is computed
+on a **timer** (`routes/daemon-health.ts`), never on the request path: it used to
+be a 30-min request cache while the workflow polled hourly, so every poll paid
+for a full parallel seq scan and intermittently blew the check's timeout — 8
+false "prod health check failing" alerts in Aug 2026 (#110-#117), all auto-closed
+within two hours. The workflow now allows 30s for that one check and reports a
+timeout distinctly from a genuine failure.
