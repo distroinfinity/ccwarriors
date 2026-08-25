@@ -20,15 +20,18 @@ importers:
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.23)
+      '@hono/otel':
+        specifier: ^1.1.2
+        version: 1.1.2(hono@4.12.23)
       '@hono/zod-validator':
         specifier: ^0.4.0
         version: 0.4.3(hono@4.12.23)(zod@3.25.76)
+      '@kubiks/otel-drizzle':
+        specifier: ^2.1.0
+        version: 2.1.0(@opentelemetry/api@1.9.1)(drizzle-orm@0.36.4(@electric-sql/pglite@0.2.17)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(@types/react@18.3.30)(postgres@3.4.9)(react@18.3.1))
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
-      '@opentelemetry/api-logs':
-        specifier: ^0.221.0
-        version: 0.221.0
       '@opentelemetry/auto-instrumentations-node':
         specifier: ^0.79.0
         version: 0.79.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))
@@ -1146,6 +1149,11 @@ packages:
     peerDependencies:
       hono: ^4
 
+  '@hono/otel@1.1.2':
+    resolution: {integrity: sha512-UaBMKPGaQTj4sjvpGqQ+57eolTwMI2znzxV/QBUF99XxhcmqtqaZX95flXpGgWb+lnlinlCy23Y1sZ8+TzzM9A==}
+    peerDependencies:
+      hono: '>=4.0.0'
+
   '@hono/zod-validator@0.4.3':
     resolution: {integrity: sha512-xIgMYXDyJ4Hj6ekm9T9Y27s080Nl9NXHcJkOvkXPhubOLj8hZkOL8pDnnXfvCf5xEE8Q4oMFenQUZZREUY2gqQ==}
     peerDependencies:
@@ -1177,6 +1185,13 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@kubiks/otel-drizzle@2.1.0':
+    resolution: {integrity: sha512-9UHb0od3jwa6zTWMyEYPIZcUq5PDaziCmQLMLakSK2zeqy12SFZ3SAGWXJTgEr8valn/Wa+DKVs+Z3aqKQUpvg==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.9.0 <2.0.0'
+      drizzle-orm: '>=0.28.0'
 
   '@opentelemetry/api-logs@0.221.0':
     resolution: {integrity: sha512-OlanaW1vv7ufTqQ3/fPLI4arGt5ZoM+P8abOMki6uEYnpRazepSWDwDnnw+la7kE26SHVC18//SMccrDvLKOXQ==}
@@ -4119,6 +4134,12 @@ snapshots:
     dependencies:
       hono: 4.12.23
 
+  '@hono/otel@1.1.2(hono@4.12.23)':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/semantic-conventions': 1.43.0
+      hono: 4.12.23
+
   '@hono/zod-validator@0.4.3(hono@4.12.23)(zod@3.25.76)':
     dependencies:
       hono: 4.12.23
@@ -4158,6 +4179,11 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@kubiks/otel-drizzle@2.1.0(@opentelemetry/api@1.9.1)(drizzle-orm@0.36.4(@electric-sql/pglite@0.2.17)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(@types/react@18.3.30)(postgres@3.4.9)(react@18.3.1))':
+    dependencies:
+      '@opentelemetry/api': 1.9.1
+      drizzle-orm: 0.36.4(@electric-sql/pglite@0.2.17)(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(@types/react@18.3.30)(postgres@3.4.9)(react@18.3.1)
 
   '@opentelemetry/api-logs@0.221.0':
     dependencies:

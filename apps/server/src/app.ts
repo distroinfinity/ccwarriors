@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { httpInstrumentationMiddleware } from "@hono/otel";
 import { cors } from "hono/cors";
 import { etag, RETAINED_304_HEADERS } from "hono/etag";
 import type { DB } from "./db/index.js";
@@ -53,6 +54,12 @@ export interface AppDeps {
 
 export function createApp(deps?: AppDeps) {
   const app = new Hono();
+
+  // Outermost middleware so the span covers cors, etag and the handler. Names
+  // spans by matched route rather than raw path, which the node http
+  // auto-instrumentation cannot do. No-ops when no SDK is registered, so tests
+  // and local runs pay nothing.
+  app.use("*", httpInstrumentationMiddleware());
 
   // Uncaught route errors: structured log + PostHog trace, generic 500 to the client.
   app.onError((err, c) => {

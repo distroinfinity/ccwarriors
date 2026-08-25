@@ -1,4 +1,5 @@
 import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
+import { instrumentDrizzleClient } from "@kubiks/otel-drizzle";
 import postgres from "postgres";
 import * as schema from "./schema.js";
 
@@ -17,8 +18,13 @@ export function createDb(url: string) {
 // Picks a driver from the environment: real Postgres when DATABASE_URL is set
 // (production / Railway), otherwise in-memory PGlite (local dev + zero-setup demo).
 export async function createDbFromEnv(databaseUrl?: string): Promise<DB> {
-  if (databaseUrl) return createDb(databaseUrl);
-  return createTestDb();
+  const db = databaseUrl ? createDb(databaseUrl) : await createTestDb();
+  // drizzle-orm ships a tracer at drizzle-orm/tracing, but its
+  // `await import('@opentelemetry/api')` is commented out in the published
+  // source (still true in 0.45.2), so it can never emit a span. This wraps the
+  // session instead. No-ops when no SDK is registered.
+  instrumentDrizzleClient(db, { dbSystem: "postgresql" });
+  return db;
 }
 
 export async function createTestDb(): Promise<DB> {
