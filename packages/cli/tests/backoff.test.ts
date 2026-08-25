@@ -51,6 +51,20 @@ describe("syncDelayMs (watch-driven sync floor)", () => {
     expect(syncDelayMs(2_000_000, 1_000, DEBOUNCE, GAP)).toBe(DEBOUNCE);
   });
 
+  // Regression: an fs event that lands WHILE a sync is in flight must still be
+  // spaced by the floor. Stamping lastSyncAt on completion instead of on start
+  // made these events compare against the previous sync, so they got the bare
+  // 12s debounce and fired a second sync ~30s behind the first.
+  it("an event during an in-flight sync still respects the floor", () => {
+    const startedAt = 1_000_000;
+    // Sync started at `startedAt` and is still running 2s later when an fs
+    // event arrives. lastSyncAt is the START of the running sync.
+    const delay = syncDelayMs(startedAt + 2_000, startedAt, DEBOUNCE, GAP);
+    expect(delay).toBe(GAP - 2_000);
+    // …i.e. it fires a full gap after the running sync began, not 12s later.
+    expect(startedAt + 2_000 + delay).toBe(startedAt + GAP);
+  });
+
   it("a continuous burst collapses to one sync per gap", () => {
     // Mirrors daemon.ts schedule(): an fs event while a timer is already
     // pending is ignored; otherwise it arms a timer for syncDelayMs.
